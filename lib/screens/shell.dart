@@ -38,36 +38,50 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int _tab = 0;
 
-  Widget _page(bool wide) => switch (_tab) {
-        0 => ChatScreen(wide: wide),
-        1 => ModelsScreen(wide: wide),
-        2 => PersonasScreen(wide: wide),
-        _ => SettingsScreen(wide: wide),
-      };
+  void _setTab(int i) => setState(() => _tab = i);
+
+  Widget _body(bool wide) => IndexedStack(
+        index: _tab,
+        children: [
+          ChatScreen(wide: wide),
+          ModelsScreen(wide: wide),
+          PersonasScreen(wide: wide),
+          SettingsScreen(wide: wide),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= kDesktopBreakpoint;
-        if (wide) {
+    // ignore: deprecated_member_use
+    return WillPopScope(
+      onWillPop: () async {
+        if (_tab != 0) {
+          _setTab(0);
+          return false;
+        }
+        return true;
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= kDesktopBreakpoint;
+          if (wide) {
+            return Scaffold(
+              backgroundColor: AppColors.bg,
+              body: Row(
+                children: [
+                  _Sidebar(tab: _tab, onTab: _setTab),
+                  Expanded(child: _body(true)),
+                ],
+              ),
+            );
+          }
           return Scaffold(
             backgroundColor: AppColors.bg,
-            body: Row(
-              children: [
-                _Sidebar(tab: _tab, onTab: (i) => setState(() => _tab = i)),
-                Expanded(child: _page(true)),
-              ],
-            ),
+            body: _body(false),
+            bottomNavigationBar: _BottomNav(tab: _tab, onTab: _setTab),
           );
-        }
-        return Scaffold(
-          backgroundColor: AppColors.bg,
-          body: _page(false),
-          bottomNavigationBar:
-              _BottomNav(tab: _tab, onTab: (i) => setState(() => _tab = i)),
-        );
-      },
+        },
+      ),
     );
   }
 }

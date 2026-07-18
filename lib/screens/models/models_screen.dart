@@ -28,6 +28,16 @@ class _ModelsScreenState extends State<ModelsScreen> {
 
   // ─── Desktop ───────────────────────────────────────────────────────────────
 
+  Widget _listStack(bool wide) => Expanded(
+        child: IndexedStack(
+          index: _tab,
+          children: [
+            const _LocalList(wide: true),
+            const _NetworkList(wide: true),
+          ],
+        ),
+      );
+
   Widget _buildWide(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
@@ -90,11 +100,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
             ],
           ),
           const SizedBox(height: 18),
-          Expanded(
-            child: _tab == 0
-                ? const _LocalList(wide: true)
-                : const _NetworkList(wide: true),
-          ),
+          _listStack(true),
         ],
       ),
     );
@@ -158,9 +164,13 @@ class _ModelsScreenState extends State<ModelsScreen> {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: _tab == 0
-                ? const _LocalList(wide: false)
-                : const _NetworkList(wide: false),
+            child: IndexedStack(
+              index: _tab,
+              children: const [
+                _LocalList(wide: false),
+                _NetworkList(wide: false),
+              ],
+            ),
           ),
         ],
       ),
