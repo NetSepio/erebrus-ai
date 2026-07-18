@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:erebrus_ai/app.dart';
+import 'package:erebrus_ai/auth/wallet_auth_controller.dart';
+import 'package:erebrus_ai/org/org_state.dart';
+import 'package:erebrus_ai/state/app_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,11 +31,16 @@ void main() {
     await mono.load();
   });
 
-  Future<void> pumpApp(WidgetTester tester, Size size) async {
+  Future<void> pumpApp(WidgetTester tester, Size size,
+      {WalletAuthController? auth, OrgState? orgState}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const ErebrusApp());
+    final controller = auth ?? WalletAuthController();
+    await tester.pumpWidget(ErebrusApp(
+      auth: controller,
+      orgState: orgState ?? OrgState(auth: controller),
+    ));
     await tester.pump(const Duration(milliseconds: 400));
   }
 
@@ -83,6 +91,14 @@ void main() {
       expect(find.text('CONTINUE AS GUEST'), findsOneWidget);
 
       await tester.tap(find.text('Continue with Email'));
+      await tester.pumpAndSettle();
+
+      // Real Reown auth cannot run in widget tests, so toggle signed-in state
+      // through AppScope and close the sign-in surface to verify the signed-in
+      // UI surfaces.
+      final appContext = tester.element(find.text('Welcome to Erebrus AI'));
+      AppScope.of(appContext).signIn();
+      Navigator.of(appContext).pop();
       await tester.pumpAndSettle();
 
       // Back on settings, signed in now.

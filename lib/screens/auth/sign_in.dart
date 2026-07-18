@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../auth/wallet_auth_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -26,25 +27,39 @@ void openSignIn(BuildContext context) {
   }
 }
 
-void _mockSignIn(BuildContext context) {
-  AppScope.of(context).signIn();
-  Navigator.of(context).pop();
+Future<void> _doSignIn(BuildContext context, WalletAuthController auth, {String method = 'reown'}) async {
+  if (method == 'solana') {
+    await auth.openSignIn();
+  } else if (method == 'ethereum') {
+    await auth.openWalletModal();
+  } else if (method == 'google' || method == 'apple' || method == 'email') {
+    // Use Reown socials until native OIDC is fully wired; the social wrappers
+    // return id tokens the gateway can verify.
+    await auth.openWalletModal();
+  } else {
+    await auth.openSignIn();
+  }
+  if (auth.isAuthenticated && context.mounted) {
+    Navigator.of(context).pop();
+  }
 }
 
 // ─── Shared pieces ───────────────────────────────────────────────────────────
 
 class _AuthButton extends StatelessWidget {
-  const _AuthButton({required this.label, this.icon, this.monoGlyph, this.compact = false});
+  const _AuthButton({required this.label, this.icon, this.monoGlyph, this.compact = false, this.onTap, this.loading = false});
 
   final String label;
   final IconData? icon;
   final String? monoGlyph;
   final bool compact;
+  final VoidCallback? onTap;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _mockSignIn(context),
+      onTap: loading ? null : onTap,
       child: Container(
         padding: EdgeInsets.all(compact ? 14 : 15),
         decoration: BoxDecoration(
@@ -55,7 +70,13 @@ class _AuthButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (icon != null)
+            if (loading)
+              SizedBox(
+                width: compact ? 18 : 19,
+                height: compact ? 18 : 19,
+                child: const CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
+              )
+            else if (icon != null)
               Icon(icon, size: compact ? 18 : 19, color: AppColors.accent)
             else if (monoGlyph != null)
               Text(monoGlyph!,
@@ -104,6 +125,7 @@ class _WalletCard extends StatelessWidget {
     required this.gradient,
     this.primary = false,
     this.compact = false,
+    this.onTap,
   });
 
   final String name;
@@ -111,11 +133,12 @@ class _WalletCard extends StatelessWidget {
   final Gradient gradient;
   final bool primary;
   final bool compact;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _mockSignIn(context),
+      onTap: onTap,
       child: Container(
         padding: compact
             ? const EdgeInsets.symmetric(horizontal: 14, vertical: 13)
@@ -178,7 +201,11 @@ class SignInPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final app = AppScope.of(context);
+    final auth = app.auth;
+    return AnimatedBuilder(
+      animation: auth,
+      builder: (context, _) => Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.warmRadial),
         child: Stack(
@@ -231,29 +258,37 @@ class SignInPage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      const _AuthButton(
-                          label: 'Continue with Email', icon: Symbols.mail),
+                      _AuthButton(
+                          label: 'Continue with Email',
+                          icon: Symbols.mail,
+                          loading: auth.isAuthenticating || auth.awaitingWebCallback,
+                          onTap: () => _doSignIn(context, auth, method: 'email')),
                       const SizedBox(height: 11),
-                      const _AuthButton(
-                          label: 'Continue with Google', monoGlyph: 'G'),
+                      _AuthButton(
+                          label: 'Continue with Google',
+                          monoGlyph: 'G',
+                          loading: auth.isAuthenticating,
+                          onTap: () => _doSignIn(context, auth, method: 'google')),
                       const _WalletDivider(),
-                      const _WalletCard(
+                      _WalletCard(
                         name: 'Solana',
                         wallets: 'Phantom · Solflare · Backpack',
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [AppColors.solanaA, AppColors.solanaB]),
                         primary: true,
+                        onTap: () => _doSignIn(context, auth, method: 'solana'),
                       ),
                       const SizedBox(height: 11),
-                      const _WalletCard(
+                      _WalletCard(
                         name: 'Ethereum',
                         wallets: 'MetaMask · WalletConnect',
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [AppColors.ethereumA, AppColors.ethereumB]),
+                        onTap: () => _doSignIn(context, auth, method: 'ethereum'),
                       ),
                       const SizedBox(height: 24),
                       Text(
@@ -270,7 +305,7 @@ class SignInPage extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -281,88 +316,103 @@ class SignInSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        border: Border(top: BorderSide(color: Color(0x1AFFFFFF))),
-      ),
-      padding: EdgeInsets.only(
-        top: 14,
-        left: 22,
-        right: 22,
-        bottom: 34 + MediaQuery.viewPaddingOf(context).bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withA(0.12),
-                borderRadius: BorderRadius.circular(2),
+    final app = AppScope.of(context);
+    final auth = app.auth;
+    return AnimatedBuilder(
+      animation: auth,
+      builder: (context, _) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          border: Border(top: BorderSide(color: Color(0x1AFFFFFF))),
+        ),
+        padding: EdgeInsets.only(
+          top: 14,
+          left: 22,
+          right: 22,
+          bottom: 34 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withA(0.12),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              const LogoTile(size: 40, radius: 12),
-              const SizedBox(width: 11),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Sign in to Erebrus',
-                      style: AppText.grotesk(18, weight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('Only needed for private workspace models.',
-                      style: AppText.grotesk(12.5, color: AppColors.textTertiary)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const _AuthButton(
-              label: 'Continue with Email', icon: Symbols.mail, compact: true),
-          const SizedBox(height: 10),
-          const _AuthButton(
-              label: 'Continue with Google', monoGlyph: 'G', compact: true),
-          const _WalletDivider(compact: true),
-          const _WalletCard(
-            name: 'Solana',
-            wallets: 'SEED VAULT · PHANTOM · SOLFLARE',
-            gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.solanaA, AppColors.solanaB]),
-            primary: true,
-            compact: true,
-          ),
-          const SizedBox(height: 10),
-          const _WalletCard(
-            name: 'Ethereum',
-            wallets: 'METAMASK · WALLETCONNECT',
-            gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.ethereumA, AppColors.ethereumB]),
-            compact: true,
-          ),
-          const SizedBox(height: 18),
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Center(
-              child: Text('NOT NOW — KEEP USING AS GUEST',
-                  style: AppText.mono(11,
-                      weight: FontWeight.w500,
-                      color: AppColors.textMuted,
-                      lsEm: 0.08)),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                const LogoTile(size: 40, radius: 12),
+                const SizedBox(width: 11),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sign in to Erebrus',
+                        style: AppText.grotesk(18, weight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text('Only needed for private workspace models.',
+                        style: AppText.grotesk(12.5, color: AppColors.textTertiary)),
+                  ],
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            _AuthButton(
+                label: 'Continue with Email',
+                icon: Symbols.mail,
+                compact: true,
+                loading: auth.isAuthenticating || auth.awaitingWebCallback,
+                onTap: () => _doSignIn(context, auth, method: 'email')),
+            const SizedBox(height: 10),
+            _AuthButton(
+                label: 'Continue with Google',
+                monoGlyph: 'G',
+                compact: true,
+                loading: auth.isAuthenticating,
+                onTap: () => _doSignIn(context, auth, method: 'google')),
+            const _WalletDivider(compact: true),
+            _WalletCard(
+              name: 'Solana',
+              wallets: 'SEED VAULT · PHANTOM · SOLFLARE',
+              gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.solanaA, AppColors.solanaB]),
+              primary: true,
+              compact: true,
+              onTap: () => _doSignIn(context, auth, method: 'solana'),
+            ),
+            const SizedBox(height: 10),
+            _WalletCard(
+              name: 'Ethereum',
+              wallets: 'METAMASK · WALLETCONNECT',
+              gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.ethereumA, AppColors.ethereumB]),
+              compact: true,
+              onTap: () => _doSignIn(context, auth, method: 'ethereum'),
+            ),
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Center(
+                child: Text('NOT NOW — KEEP USING AS GUEST',
+                    style: AppText.mono(11,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted,
+                        lsEm: 0.08)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

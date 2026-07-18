@@ -1,19 +1,34 @@
 import 'package:flutter/material.dart';
 
+import 'auth/wallet_auth_controller.dart';
+import 'org/org_state.dart';
 import 'screens/onboarding/onboarding_flow.dart';
 import 'screens/shell.dart';
 import 'state/app_state.dart';
 import 'theme/app_colors.dart';
 
 class ErebrusApp extends StatefulWidget {
-  const ErebrusApp({super.key});
+  const ErebrusApp({
+    super.key,
+    required this.auth,
+    required this.orgState,
+  });
+
+  final WalletAuthController auth;
+  final OrgState orgState;
 
   @override
   State<ErebrusApp> createState() => _ErebrusAppState();
 }
 
 class _ErebrusAppState extends State<ErebrusApp> {
-  final _state = AppState();
+  late final AppState _state;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = AppState(auth: widget.auth, orgState: widget.orgState);
+  }
 
   @override
   Widget build(BuildContext context) {

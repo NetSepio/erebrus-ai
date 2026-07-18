@@ -459,7 +459,7 @@ class _ShareCardState extends State<_ShareCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Share to NetSepio Workspace',
+                      Text('Share to ${app.selectedOrg?.name ?? 'NetSepio Workspace'}',
                           style:
                               AppText.grotesk(13, weight: FontWeight.w500)),
                       const SizedBox(height: 2),

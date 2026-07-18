@@ -99,7 +99,7 @@ Erebrus AI is a cross-platform local LLM runner. A user can download, load, and 
 ### Flutter / Dart
 
 - **Flutter SDK:** `^3.24.0`
-- **State management:** `Get` or `Riverpod`. Use `Get` if reusing Erebrus VPN patterns.
+- **State management:** `Get` or `Riverpod`. Use `Get` if reusing existing Erebrus app patterns.
 - **HTTP client:** `dio`
 - **Local DB:** `isar` or `drift` for personas/chat history; `hive` for settings.
 - **File system:** `path_provider`, `file_picker`
@@ -445,7 +445,7 @@ The response is merged into the model browser.
 
 ### CI/CD
 
-- GitHub Actions workflow similar to `erebrus-vpn` `ci.yml` and `release.yml`.
+- GitHub Actions workflow similar to the existing Erebrus project CI setup.
 - Jobs:
   - `lint` and `test`
   - `build-llama-binaries`

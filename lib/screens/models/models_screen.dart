@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/mock_data.dart';
+import '../../org/shared_model.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -371,9 +372,12 @@ class _NetworkList extends StatelessWidget {
           _NodeCard(node: node),
           const SizedBox(height: 14),
         ],
-        if (app.signedIn)
-          const _NodeCard(node: mockOrgNode, org: true)
-        else
+        if (app.signedIn) ...[
+          if (app.orgModels.isNotEmpty)
+            _OrgModelsCard(models: app.orgModels, wide: wide)
+          else
+            const _NodeCard(node: mockOrgNode, org: true),
+        ] else
           _LockedCard(compact: !wide),
       ],
     );
@@ -478,6 +482,139 @@ class _NodeCard extends StatelessWidget {
               ),
             _NodeModelRow(model: node.models[i]),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OrgModelsCard extends StatelessWidget {
+  const _OrgModelsCard({required this.models, required this.wide});
+
+  final List<SharedModel> models;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.orgPurple.withA(0.35)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppColors.strokeSoft)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.orgPurple.withA(0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Symbols.apartment,
+                      size: 19, color: AppColors.orgPurple),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(app.selectedOrg?.name ?? 'NetSepio Workspace',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.grotesk(14.5,
+                                    weight: FontWeight.w600)),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Symbols.verified,
+                              size: 15, fill: 1, color: AppColors.orgPurple),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text('${models.length} shared model${models.length == 1 ? '' : 's'}',
+                          style: AppText.mono(10.5, color: AppColors.textMuted)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.orgPurple.withA(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('PRIVATE',
+                      style: AppText.mono(10,
+                          weight: FontWeight.w600,
+                          color: AppColors.orgPurple,
+                          lsEm: 0.08)),
+                ),
+              ],
+            ),
+          ),
+          for (var i = 0; i < models.length; i++) ...[
+            if (i > 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Divider(height: 1, color: AppColors.strokeSoft),
+              ),
+            _OrgModelRow(model: models[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OrgModelRow extends StatelessWidget {
+  const _OrgModelRow({required this.model});
+
+  final SharedModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      child: Row(
+        children: [
+          LetterTile(model.name.isNotEmpty ? model.name[0] : '?',
+              size: 36, radius: 10, fontSize: 13, accent: true),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: model.name,
+                style: AppText.grotesk(13.5, weight: FontWeight.w600),
+                children: [
+                  TextSpan(
+                      text: (model.quant != null && model.quant!.isNotEmpty)
+                          ? '  · ${model.quant} · ${model.size ?? ''}'
+                          : (model.size != null && model.size!.isNotEmpty)
+                              ? '  · ${model.size}'
+                              : '',
+                      style: AppText.mono(11, color: AppColors.textMuted)),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          AccentChip('USE',
+              onTap: () => app.selectModel(model.name, '')),
         ],
       ),
     );

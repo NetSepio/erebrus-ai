@@ -244,6 +244,10 @@ class _AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final displayName = app.userProfile?.name ?? 'shachi.eth';
+    final wallet = app.walletAddress ?? '7xKp…3Fq2';
+    final initials = _initials(displayName);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -264,7 +268,7 @@ class _AccountCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
-            child: Text('SA',
+            child: Text(initials,
                 style: AppText.mono(16,
                     weight: FontWeight.w600, color: AppColors.onAccent)),
           ),
@@ -273,10 +277,10 @@ class _AccountCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('shachi.eth',
+                Text(displayName,
                     style: AppText.grotesk(16, weight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text('Solana · 7xKp…3Fq2',
+                Text('Solana · $wallet',
                     style: AppText.mono(12, color: AppColors.textTertiary)),
               ],
             ),
@@ -302,37 +306,67 @@ class _OrganizationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final org = app.orgs.isNotEmpty ? app.orgs.first : null;
+    final invite = app.pendingInvites.isNotEmpty ? app.pendingInvites.first : null;
+
     return SettingsCard(
       children: [
-        SettingsRow(
-          icon: Symbols.apartment,
-          iconColor: AppColors.orgPurple,
-          title: 'NetSepio Workspace',
-          subtitle: 'Admin · 3 shared models · 12 members',
-          trailing: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.orgPurple.withA(0.14),
-                borderRadius: BorderRadius.circular(6),
+        if (org != null)
+          SettingsRow(
+            icon: Symbols.apartment,
+            iconColor: AppColors.orgPurple,
+            title: org.name,
+            subtitle: '${org.isAdmin ? 'Admin' : org.role} · ${app.orgModels.length} shared model${app.orgModels.length == 1 ? '' : 's'}',
+            trailing: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.orgPurple.withA(0.14),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('PRIVATE',
+                    style: AppText.mono(10,
+                        weight: FontWeight.w600,
+                        color: AppColors.orgPurple,
+                        lsEm: 0.08)),
               ),
-              child: Text('PRIVATE',
-                  style: AppText.mono(10,
-                      weight: FontWeight.w600,
-                      color: AppColors.orgPurple,
-                      lsEm: 0.08)),
-            ),
-          ],
-        ),
-        const SettingsRow(
-          icon: Symbols.mail,
-          title: 'Pending invites',
-          subtitle: '1 invitation · Research Guild',
-          trailing: [GlowDot(size: 8, color: AppColors.accent, glow: false)],
-        ),
+            ],
+          )
+        else
+          const SettingsRow(
+            icon: Symbols.apartment,
+            title: 'NetSepio Workspace',
+            subtitle: 'Admin · 3 shared models · 12 members',
+            trailing: [GlowDot(size: 8, color: AppColors.accent, glow: false)],
+          ),
+        if (invite != null)
+          SettingsRow(
+            icon: Symbols.mail,
+            title: 'Pending invites',
+            subtitle: '1 invitation · ${invite.orgName}',
+            trailing: const [GlowDot(size: 8, color: AppColors.accent, glow: false)],
+          )
+        else
+          const SettingsRow(
+            icon: Symbols.mail,
+            title: 'Pending invites',
+            subtitle: '1 invitation · Research Guild',
+            trailing: [GlowDot(size: 8, color: AppColors.accent, glow: false)],
+          ),
       ],
     );
   }
+}
+
+String _initials(String name) {
+  if (name.isEmpty) return '??';
+  if (name.contains('.')) return name.split('.').first.substring(0, 1).toUpperCase();
+  final parts = name.split(' ').where((s) => s.isNotEmpty).toList();
+  if (parts.length >= 2) {
+    return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
+  }
+  return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
 }
 
 class _CopySquare extends StatelessWidget {
