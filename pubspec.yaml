@@ -16,9 +16,30 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/erebrus-ai-icon-1024.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  background_color_ios: "#0A0A0C"
+  adaptive_icon_background: "#0A0A0C"
+  adaptive_icon_foreground: "assets/icons/erebrus-ai-icon-1024.png"
+  macos:
+    generate: true
+    image_path: "assets/icons/erebrus-ai-icon-1024.png"
+  windows:
+    generate: true
+    image_path: "assets/icons/erebrus-ai-icon-1024.png"
+    icon_size: 256
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/icons/erebrus-ai-icon-1024.png
 
   fonts:
     - family: Space Grotesk
