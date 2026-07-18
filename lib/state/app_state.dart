@@ -1,12 +1,15 @@
 import 'package:flutter/widgets.dart';
 
 import '../auth/entitlement_state.dart';
+import '../services/model_download_service.dart';
 import '../auth/user_org_invite.dart';
 import '../auth/user_profile.dart';
 import '../auth/wallet_auth_controller.dart';
 import '../org/ai_org.dart';
 import '../org/org_state.dart';
 import '../org/shared_model.dart';
+import '../services/local_server_service.dart';
+import '../services/power_service.dart';
 
 /// App-level state that wraps auth and org controllers for the existing UI.
 ///
@@ -28,6 +31,7 @@ class AppState extends ChangeNotifier {
 
   bool signedIn = false;
   bool onboarded = false;
+  int onboardingTargetTab = 0; // Tab the shell should open on after onboarding.
 
   // Local node / server mock state.
   bool serving = true;
@@ -37,8 +41,15 @@ class AppState extends ChangeNotifier {
 
   // Chat header selections.
   String selectedModel = 'Qwen 3.5 0.8B';
+  String selectedModelId = '';
   String selectedModelQuant = 'Q4_K_M';
   String selectedPersona = 'Concise Analyst';
+
+  /// True when the currently selected model has been downloaded and is ready
+  /// to chat with locally.
+  bool get isSelectedModelReady =>
+      selectedModelId.isNotEmpty &&
+      ModelDownloadService.instance.isDownloaded(selectedModelId);
 
   String? get walletAddress => auth.walletAddress.isNotEmpty ? auth.walletAddress : null;
   String? get userId => auth.userId.isNotEmpty ? auth.userId : null;
@@ -90,6 +101,17 @@ class AppState extends ChangeNotifier {
 
   void setServing(bool v) {
     serving = v;
+    PowerService.instance.setServing(v,
+        label: v ? 'Serving on LAN' : 'Node paused');
+    if (v) {
+      LocalServerService.instance.start().catchError((e) {
+        debugPrint('[AppState] server start failed: $e');
+      });
+    } else {
+      LocalServerService.instance.stop().catchError((e) {
+        debugPrint('[AppState] server stop failed: $e');
+      });
+    }
     notifyListeners();
   }
 
@@ -108,9 +130,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectModel(String name, String quant) {
+  void selectModel(String name, String quant, {String? id}) {
     selectedModel = name;
     selectedModelQuant = quant;
+    if (id != null) selectedModelId = id;
     notifyListeners();
   }
 

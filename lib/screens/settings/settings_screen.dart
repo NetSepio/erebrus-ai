@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -43,6 +46,19 @@ class SettingsScreen extends StatelessWidget {
       SizedBox(height: wide ? 20 : 18),
       _SectionLabel('LOCAL SERVER', wide: wide),
       SizedBox(height: wide ? 9 : 8),
+      if (!kIsWeb && Platform.isIOS) ...[
+        SettingsCard(children: [
+          SettingsRow(
+            icon: Symbols.info,
+            iconColor: AppColors.accentHi,
+            title: 'Keep Erebrus AI open',
+            subtitle:
+                'On iOS, stay in the app while serving or downloading. The screen stays on automatically.',
+            dense: !wide,
+          ),
+        ]),
+        const SizedBox(height: 12),
+      ],
       if (wide)
         SettingsCard(children: [
           const SettingsRow(
@@ -69,7 +85,7 @@ class SettingsScreen extends StatelessWidget {
           SettingsRow(
             icon: Symbols.wifi,
             title: 'Serve on local network',
-            subtitle: 'Publish _erebrus-ai._tcp so other devices find this node',
+            subtitle: 'Publish _erebrusai._tcp so other devices find this node',
             trailing: [
               EreToggle(
                   value: app.serveOnNetwork, onChanged: app.setServeOnNetwork),

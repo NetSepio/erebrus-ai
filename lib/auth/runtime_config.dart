@@ -18,6 +18,18 @@ class RuntimeConfig {
   static String get gatewayUrl =>
       _firstNonEmpty([_values['GATEWAY_URL'], '']);
 
+  /// Erebrus AI base URL (e.g. https://dev.erebrus.io).
+  static String get aiBaseUrl =>
+      _firstNonEmpty([_values['AI_BASE_URL'], 'https://dev.erebrus.io']);
+
+  /// Optional explicit models catalog URL. Falls back to {aiBaseUrl}/ai/models.json.
+  static String get modelsCatalogUrl {
+    final explicit = _firstNonEmpty([_values['MODELS_CATALOG_URL'], '']);
+    if (explicit.isNotEmpty) return explicit;
+    final base = aiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+    return '$base/ai/models.json';
+  }
+
   /// Erebrus webapp origin for desktop browser sign-in (`.env` may use localhost).
   static String get erebrusWebOrigin =>
       _firstNonEmpty([_values['EREBRUS_WEB_ORIGIN'], kErebrusWebOrigin]);

@@ -31,5 +31,16 @@ class AiOrg {
         pendingInviteCount: j['pending_invite_count'] is int ? j['pending_invite_count'] as int : null,
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        if (slug != null) 'slug': slug,
+        'role': role,
+        if (plan != null) 'plan': plan,
+        if (memberCount != null) 'member_count': memberCount,
+        if (privateModelCount != null) 'private_model_count': privateModelCount,
+        if (pendingInviteCount != null) 'pending_invite_count': pendingInviteCount,
+      };
+
   bool get isAdmin => role == 'admin' || role == 'owner';
 }

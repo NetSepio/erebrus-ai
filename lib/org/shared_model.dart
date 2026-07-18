@@ -27,4 +27,14 @@ class SharedModel {
         status: (j['status'] ?? 'idle').toString(),
         accent: j['accent'] == true,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        if (quant != null) 'quant': quant,
+        if (size != null) 'size': size,
+        'source': source,
+        'status': status,
+        'accent': accent,
+      };
 }

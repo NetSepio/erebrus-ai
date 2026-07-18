@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../data/catalog_service.dart';
+import '../../data/model_catalog.dart';
+import '../../services/device_info_service.dart';
+import '../../services/model_download_service.dart';
+import '../../services/storage_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -47,7 +52,7 @@ const _pages = [
     '03 / GUEST FIRST',
     'No account. Unless you want one.',
     'Everything works as a guest, forever. Sign in only when your team shares '
-        'private models in an org workspace — same as Erebrus VPN.',
+        'private models in an org workspace or plan on exploring publicly hosted models.',
     OnboardingArt.meshOrg,
     'Get started',
   ),
@@ -73,6 +78,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
   }
 
+  void _skipToModels() {
+    final app = AppScope.of(context);
+    app.onboardingTargetTab = 1; // Models screen.
+    app.completeOnboarding();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_pickingModel) return const FirstModelPage();
@@ -90,7 +101,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   children: [
                     const LogoLockup(tileSize: 22, fontSize: 11),
                     GestureDetector(
-                      onTap: () => setState(() => _pickingModel = true),
+                      onTap: _skipToModels,
                       child: Text('SKIP',
                           style: AppText.mono(11,
                               weight: FontWeight.w500,
@@ -208,82 +219,353 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
 // ─── 04 / Pick your first model ──────────────────────────────────────────────
 
-class FirstModelPage extends StatelessWidget {
+class FirstModelPage extends StatefulWidget {
   const FirstModelPage({super.key});
 
   @override
+  State<FirstModelPage> createState() => _FirstModelPageState();
+}
+
+class _FirstModelPageState extends State<FirstModelPage> {
+  DeviceProfile? _profile;
+  Recommendation? _recommendation;
+  CatalogEntry? _selected;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final profile = DeviceInfoService.detect();
+    final entries = await CatalogService.fetch();
+    if (!mounted) return;
+    final rec = recommendModel(profile, catalog: entries);
+    setState(() {
+      _profile = profile;
+      _recommendation = rec;
+      _selected = rec.recommended;
+      _loading = false;
+    });
+    final selected = _selected;
+    if (selected != null) {
+      AppScope.of(context)
+          .selectModel(selected.name, selected.quant, id: selected.id);
+    }
+  }
+
+  void _onSelect(CatalogEntry entry) {
+    if (!mounted) return;
+    setState(() => _selected = entry);
+    final app = AppScope.of(context);
+    app.selectModel(entry.name, entry.quant, id: entry.id);
+  }
+
+  Future<void> _onDownload(CatalogEntry entry) async {
+    final ok = await ModelDownloadService.instance.download(entry);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Download could not start. Check storage permission and network.'),
+          action: SnackBarAction(
+            label: 'SETTINGS',
+            onPressed: () => StorageService.instance.openSettings(),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _startChatting() {
+    final app = AppScope.of(context);
+    final selected = _selected;
+    if (selected == null) return;
+    app.selectModel(selected.name, selected.quant, id: selected.id);
+    app.onboardingTargetTab = 0;
+    app.completeOnboarding();
+  }
+
+  void _skipToNetwork() {
+    final app = AppScope.of(context);
+    app.onboardingTargetTab = 1;
+    app.completeOnboarding();
+  }
+
+  bool _isReady(CatalogEntry entry) =>
+      entry.id.isNotEmpty && ModelDownloadService.instance.isDownloaded(entry.id);
+
+  bool _isDownloading(CatalogEntry entry) {
+    final p = ModelDownloadService.instance.progressOf(entry.id);
+    return p > 0 && p < 1;
+  }
+
+  double _progress(CatalogEntry entry) =>
+      ModelDownloadService.instance.progressOf(entry.id);
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
+    return AnimatedBuilder(
+      animation: ModelDownloadService.instance,
+      builder: (context, _) {
+        final rec = _recommendation;
+        final profile = _profile;
+        final selected = _selected;
+        final ready = selected != null && _isReady(selected);
+        return Scaffold(
+          backgroundColor: AppColors.bg,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('04 / PICK YOUR FIRST MODEL',
+                          style: AppText.mono(12,
+                              weight: FontWeight.w600,
+                              color: AppColors.accent,
+                              lsEm: 0.18)),
+                      const SizedBox(height: 12),
+                      Text('Start with one that fits this device',
+                          style: AppText.grotesk(26,
+                              weight: FontWeight.w600,
+                              lsEm: -0.02,
+                              height: 1.15)),
+                      const SizedBox(height: 8),
+                      if (profile != null)
+                        _DeviceInfoChip(profile: profile)
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            border: Border.all(color: AppColors.stroke),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text('Detecting your device…',
+                              style: AppText.grotesk(13.5,
+                                  color: AppColors.textSecondary)),
+                        ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    children: [
+                      if (_loading) ...[
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 40),
+                            child: CircularProgressIndicator(
+                                color: AppColors.accent),
+                          ),
+                        ),
+                      ] else if (rec != null &&
+                          rec.recommended.id.isNotEmpty) ...[
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(left: 4, bottom: 10),
+                          child: Text('AVAILABLE MODELS',
+                              style: AppText.mono(10,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textFaint,
+                                  lsEm: 0.12)),
+                        ),
+                        _RecommendedModelCard(
+                          entry: rec.recommended,
+                          selected: selected?.id == rec.recommended.id,
+                          onTap: () => _onSelect(rec.recommended),
+                          onDownload: () => _onDownload(rec.recommended),
+                          isReady: _isReady(rec.recommended),
+                          isDownloading: _isDownloading(rec.recommended),
+                          progress: _progress(rec.recommended),
+                        ),
+                        const SizedBox(height: 12),
+                        for (final alt in rec.alternatives)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _AltModelCard(
+                              entry: alt,
+                              selected: selected?.id == alt.id,
+                              onTap: () => _onSelect(alt),
+                              onDownload: () => _onDownload(alt),
+                              isReady: _isReady(alt),
+                              isDownloading: _isDownloading(alt),
+                              progress: _progress(alt),
+                            ),
+                          ),
+                      ] else ...[
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                                top: 40, left: 24, right: 24),
+                            child: Text(
+                              _error ??
+                                  'No models match this device. You can still use a network model.',
+                              textAlign: TextAlign.center,
+                              style: AppText.grotesk(14,
+                                  color: AppColors.textSecondary, height: 1.5),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 30),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PrimaryCta('START CHATTING',
+                          radius: 14,
+                          padding: const EdgeInsets.all(14),
+                          glow: false,
+                          enabled: ready,
+                          onTap: ready ? _startChatting : null),
+                      const SizedBox(height: 16),
+                      GestureDetector(
+                        onTap: _skipToNetwork,
+                        child: Center(
+                          child: Text('SKIP — USE A NETWORK MODEL',
+                              style: AppText.mono(11,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted,
+                                  lsEm: 0.08)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RecommendedModelCard extends StatelessWidget {
+  const _RecommendedModelCard({
+    required this.entry,
+    required this.selected,
+    required this.onTap,
+    required this.onDownload,
+    required this.isReady,
+    required this.isDownloading,
+    required this.progress,
+  });
+
+  final CatalogEntry entry;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDownload;
+  final bool isReady;
+  final bool isDownloading;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.accent.withA(0.06),
+          border: Border.all(
+            color: selected
+                ? AppColors.accent
+                : AppColors.accent.withA(0.45),
+            width: selected ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('04 / PICK YOUR FIRST MODEL',
-                      style: AppText.mono(12,
+            Row(
+              children: [
+                LetterTile(entry.letter,
+                    size: 38, radius: 10, fontSize: 14, accent: true),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(entry.name,
+                          style: AppText.grotesk(15,
+                              weight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(entry.spec,
+                          style: AppText.mono(10.5,
+                              color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withA(0.16),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('RECOMMENDED',
+                      style: AppText.mono(10,
                           weight: FontWeight.w600,
                           color: AppColors.accent,
-                          lsEm: 0.18)),
-                  const SizedBox(height: 12),
-                  Text('Start with one that fits this phone',
-                      style: AppText.grotesk(26,
-                          weight: FontWeight.w600, lsEm: -0.02, height: 1.15)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You can grab bigger models later — or use the ones on your desktop over Wi-Fi.',
-                    style: AppText.grotesk(13.5,
-                        color: AppColors.textSecondary, height: 1.5),
-                  ),
-                ],
-              ),
+                          lsEm: 0.06)),
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                children: const [
-                  _RecommendedModelCard(),
-                  SizedBox(height: 12),
-                  _AltModelCard(
-                      letter: 'L',
-                      name: 'Llama 3.2 1B',
-                      spec: 'Q8_0 · 1.3 GB',
-                      accentDownload: true),
-                  SizedBox(height: 12),
-                  _AltModelCard(
-                      letter: 'G',
-                      name: 'Gemma 3 4B',
-                      spec: 'Q4_K_M · 2.6 GB · BEST ON DESKTOP NODE'),
-                ],
-              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                    isReady ? Symbols.check_circle : Symbols.memory,
+                    size: 14,
+                    color: isReady ? AppColors.success : AppColors.accentHi),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                      isReady
+                          ? 'READY TO CHAT'
+                          : (isDownloading
+                              ? 'DOWNLOADING · ${(progress * 100).round()}%'
+                              : 'REQUIRES ${formatGB(entry.ramGB)} RAM'),
+                      style: AppText.mono(10.5,
+                          color: isReady ? AppColors.success : AppColors.accentHi,
+                          lsEm: 0.05)),
+                ),
+                if (!isReady && !isDownloading)
+                  AccentChip('GET',
+                      icon: Symbols.download, onTap: onDownload),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 30),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PrimaryCta('START CHATTING',
-                      radius: 14,
-                      padding: EdgeInsets.all(14),
-                      glow: false,
-                      enabled: false),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () => AppScope.of(context).completeOnboarding(),
-                    child: Center(
-                      child: Text('SKIP — USE A NETWORK MODEL',
-                          style: AppText.mono(11,
-                              weight: FontWeight.w500,
-                              color: AppColors.textMuted,
-                              lsEm: 0.08)),
-                    ),
-                  ),
-                ],
-              ),
+            if (isDownloading) ...[
+              const SizedBox(height: 10),
+              EreProgressBar(value: progress),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('${formatGB(entry.sizeGB)} DOWNLOAD',
+                    style: AppText.mono(10.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.accentHi)),
+                if (isReady || isDownloading)
+                  Text(isReady ? 'LOADED' : '${(progress * 100).round()}%',
+                      style: AppText.mono(10.5,
+                          color: AppColors.textMuted)),
+              ],
             ),
           ],
         ),
@@ -292,78 +574,35 @@ class FirstModelPage extends StatelessWidget {
   }
 }
 
-class _RecommendedModelCard extends StatelessWidget {
-  const _RecommendedModelCard();
+class _DeviceInfoChip extends StatelessWidget {
+  const _DeviceInfoChip({required this.profile});
+
+  final DeviceProfile profile;
 
   @override
   Widget build(BuildContext context) {
+    final icon = profile.type == DeviceType.mobile
+        ? Symbols.smartphone
+        : Symbols.desktop_windows;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.accent.withA(0.06),
-        border: Border.all(color: AppColors.accent.withA(0.45)),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.stroke),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              const LetterTile('Q',
-                  size: 38, radius: 10, fontSize: 14, accent: true),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Qwen 3.5 0.8B',
-                        style: AppText.grotesk(15, weight: FontWeight.w600)),
-                    const SizedBox(height: 2),
-                    Text('Q4_K_M · 620 MB',
-                        style:
-                            AppText.mono(10.5, color: AppColors.textTertiary)),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withA(0.16),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text('RECOMMENDED',
-                    style: AppText.mono(10,
-                        weight: FontWeight.w600,
-                        color: AppColors.accent,
-                        lsEm: 0.06)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Symbols.check_circle,
-                  size: 14, color: AppColors.success),
-              const SizedBox(width: 6),
-              Text('RUNS ON THIS DEVICE',
-                  style: AppText.mono(10.5,
-                      color: AppColors.success, lsEm: 0.05)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const EreProgressBar(value: 0.46, height: 6),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('DOWNLOADING · 46%',
-                  style: AppText.mono(10.5,
-                      weight: FontWeight.w600, color: AppColors.accentHi)),
-              Text('279 MB / 620 MB · 4.2 MB/S',
-                  style: AppText.mono(10.5, color: AppColors.textMuted)),
-            ],
-          ),
+          Icon(icon, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 10),
+          Text(profile.name,
+              style: AppText.grotesk(13.5, weight: FontWeight.w600)),
+          const SizedBox(width: 10),
+          Container(width: 1, height: 16, color: AppColors.stroke),
+          const SizedBox(width: 10),
+          Text('${profile.ramGB.toStringAsFixed(1)} GB RAM',
+              style: AppText.mono(11, color: AppColors.textTertiary)),
         ],
       ),
     );
@@ -372,45 +611,118 @@ class _RecommendedModelCard extends StatelessWidget {
 
 class _AltModelCard extends StatelessWidget {
   const _AltModelCard({
-    required this.letter,
-    required this.name,
-    required this.spec,
-    this.accentDownload = false,
+    required this.entry,
+    required this.selected,
+    required this.onTap,
+    required this.onDownload,
+    required this.isReady,
+    required this.isDownloading,
+    required this.progress,
   });
 
-  final String letter;
-  final String name;
-  final String spec;
-  final bool accentDownload;
+  final CatalogEntry entry;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDownload;
+  final bool isReady;
+  final bool isDownloading;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.stroke),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          LetterTile(letter, size: 38, radius: 10, fontSize: 14),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(
+            color: selected ? AppColors.accent : AppColors.stroke,
+            width: selected ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Row(
               children: [
-                Text(name, style: AppText.grotesk(15, weight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(spec,
-                    style: AppText.mono(10.5, color: AppColors.textTertiary)),
+                LetterTile(entry.letter,
+                    size: 38, radius: 10, fontSize: 14),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(entry.name,
+                          style: AppText.grotesk(15,
+                              weight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(entry.spec,
+                          style: AppText.mono(10.5,
+                              color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                if (isReady)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withA(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Symbols.check,
+                            size: 12, color: AppColors.success),
+                        const SizedBox(width: 4),
+                        Text('READY',
+                            style: AppText.mono(9,
+                                weight: FontWeight.w600,
+                                color: AppColors.success)),
+                      ],
+                    ),
+                  )
+                else if (isDownloading)
+                  SizedBox(
+                    width: 42,
+                    child: Text('${(progress * 100).round()}%',
+                        textAlign: TextAlign.right,
+                        style: AppText.mono(10,
+                            weight: FontWeight.w600,
+                            color: AppColors.accent)),
+                  )
+                else
+                  AccentChip('GET',
+                      icon: Symbols.download, onTap: onDownload),
               ],
             ),
-          ),
-          Icon(Symbols.download,
-              size: 20,
-              color: accentDownload ? AppColors.accent : AppColors.textMuted),
-        ],
+            if (selected && !isReady && !isDownloading) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(Symbols.memory,
+                      size: 14, color: AppColors.accentHi),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                        'REQUIRES ${formatGB(entry.ramGB)} RAM',
+                        style: AppText.mono(10.5,
+                            color: AppColors.accentHi, lsEm: 0.05)),
+                  ),
+                  Text('${formatGB(entry.sizeGB)} DOWNLOAD',
+                      style: AppText.mono(10.5,
+                          color: AppColors.textMuted)),
+                ],
+              ),
+            ],
+            if (isDownloading) ...[
+              const SizedBox(height: 10),
+              EreProgressBar(value: progress),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import '../auth/wallet_auth_controller.dart';
+import '../services/storage_service.dart';
 import 'ai_org.dart';
 import 'org_client.dart';
 import 'shared_model.dart';
@@ -37,7 +40,7 @@ class OrgState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    unawaited(refreshOrgs());
+    unawaited(_loadCache().then((_) => refreshOrgs()));
   }
 
   Future<void> refreshOrgs() async {
@@ -52,6 +55,7 @@ class OrgState extends ChangeNotifier {
         selectedOrg = orgs.first;
       }
       await refreshOrgModels();
+      await _persistCache();
     } on OrgException catch (e) {
       error = e.message;
       orgs = [];
@@ -87,6 +91,7 @@ class OrgState extends ChangeNotifier {
     notifyListeners();
     try {
       orgModels = await _client.fetchOrgModels(org.id, token);
+      await _persistCache();
     } on OrgException catch (e) {
       error = e.message;
       orgModels = [];
@@ -109,6 +114,60 @@ class OrgState extends ChangeNotifier {
       error = e.message;
       notifyListeners();
       rethrow;
+    }
+  }
+
+  Future<void> _loadCache() async {
+    if (kIsWeb) return;
+    try {
+      final dir = await StorageService.instance.baseDir();
+      final file = File('${dir.path}/org_state.json');
+      if (!await file.exists()) return;
+      final text = await file.readAsString();
+      final j = jsonDecode(text) as Map<String, dynamic>;
+      final orgList = j['orgs'];
+      if (orgList is List) {
+        orgs = orgList
+            .map((e) => AiOrg.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((o) => o.id.isNotEmpty)
+            .toList();
+      }
+      final selectedId = j['selected_org_id']?.toString();
+      if (selectedId != null && selectedId.isNotEmpty) {
+        selectedOrg = orgs.firstWhere(
+          (o) => o.id == selectedId,
+          orElse: () => orgs.isNotEmpty ? orgs.first : const AiOrg(id: '', name: ''),
+        );
+        if (selectedOrg!.id.isEmpty) selectedOrg = null;
+      } else if (orgs.isNotEmpty) {
+        selectedOrg = orgs.first;
+      }
+      final modelList = j['org_models'];
+      if (modelList is List) {
+        orgModels = modelList
+            .map((e) => SharedModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((m) => m.id.isNotEmpty)
+            .toList();
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[OrgState] cache load failed: $e');
+    }
+  }
+
+  Future<void> _persistCache() async {
+    if (kIsWeb) return;
+    try {
+      final dir = await StorageService.instance.baseDir();
+      final file = File('${dir.path}/org_state.json');
+      final payload = {
+        'orgs': orgs.map((o) => o.toJson()).toList(),
+        'selected_org_id': selectedOrg?.id,
+        'org_models': orgModels.map((m) => m.toJson()).toList(),
+      };
+      await file.writeAsString(jsonEncode(payload));
+    } catch (e) {
+      debugPrint('[OrgState] cache persist failed: $e');
     }
   }
 

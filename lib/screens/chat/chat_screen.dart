@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_data.dart';
+import '../../services/chat_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -60,70 +60,105 @@ class _SessionsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('SESSIONS', style: AppText.sectionHeader()),
-                const AccentChip('NEW',
-                    icon: Symbols.add,
-                    iconSize: 14,
-                    fontSize: 10,
-                    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 5)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: ListView.separated(
-              itemCount: mockSessions.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 3),
-              itemBuilder: (context, i) {
-                final s = mockSessions[i];
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: s.active ? AppColors.surface3 : null,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        s.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.grotesk(13,
-                            weight:
-                                s.active ? FontWeight.w600 : FontWeight.w500,
-                            color: s.active
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary),
+    return AnimatedBuilder(
+      animation: ChatService.instance,
+      builder: (context, _) {
+        final chat = ChatService.instance;
+        final sessions = chat.sessions;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('SESSIONS', style: AppText.sectionHeader()),
+                    AccentChip('NEW',
+                        icon: Symbols.add,
+                        iconSize: 14,
+                        fontSize: 10,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 5),
+                        onTap: () => chat.newSession()),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: sessions.isEmpty
+                    ? Center(
+                        child: Text('No chats yet',
+                            style: AppText.grotesk(13,
+                                color: AppColors.textMuted)))
+                    : ListView.separated(
+                        itemCount: sessions.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 3),
+                        itemBuilder: (context, i) {
+                          final s = sessions[i];
+                          final active = chat.activeSessionId == s.id;
+                          return GestureDetector(
+                            onTap: () => chat.selectSession(s.id),
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 11, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: active ? AppColors.surface3 : null,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.grotesk(13,
+                                        weight: active
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        color: active
+                                            ? AppColors.textPrimary
+                                            : AppColors.textSecondary),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _sessionMeta(s),
+                                    style: AppText.mono(10,
+                                        color: active
+                                            ? AppColors.textTertiary
+                                            : AppColors.textFaint),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        s.meta,
-                        style: AppText.mono(10,
-                            color: s.active
-                                ? AppColors.textTertiary
-                                : AppColors.textFaint),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  String _sessionMeta(ChatSession s) {
+    final name = s.modelId.isEmpty ? 'NO MODEL' : s.modelId.toUpperCase();
+    final when = _formatWhen(s.updatedAt);
+    return '$name · $when';
+  }
+
+  String _formatWhen(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'NOW';
+    if (diff.inHours < 1) return '${diff.inMinutes}M AGO';
+    if (diff.inDays < 1) return '${diff.inHours}H AGO';
+    return '${diff.inDays}D AGO';
   }
 }
 
@@ -143,13 +178,28 @@ class _ChatPane extends StatelessWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
-              child: ListView.separated(
-                padding: EdgeInsets.fromLTRB(
-                    wide ? 28 : 16, wide ? 22 : 18, wide ? 28 : 16, 8),
-                itemCount: mockMessages.length,
-                separatorBuilder: (_, _) => SizedBox(height: wide ? 18 : 14),
-                itemBuilder: (context, i) =>
-                    _MessageTile(message: mockMessages[i], wide: wide),
+              child: AnimatedBuilder(
+                animation: ChatService.instance,
+                builder: (context, _) {
+                  final messages = ChatService.instance
+                      .messagesFor(ChatService.instance.activeSessionId);
+                  if (messages.isEmpty) {
+                    return Center(
+                      child: Text('Start a conversation',
+                          style: AppText.grotesk(14,
+                              color: AppColors.textMuted)),
+                    );
+                  }
+                  return ListView.separated(
+                    padding: EdgeInsets.fromLTRB(wide ? 28 : 16,
+                        wide ? 22 : 18, wide ? 28 : 16, 8),
+                    itemCount: messages.length,
+                    separatorBuilder: (_, _) =>
+                        SizedBox(height: wide ? 18 : 14),
+                    itemBuilder: (context, i) =>
+                        _MessageTile(message: messages[i], wide: wide),
+                  );
+                },
               ),
             ),
           ),
@@ -309,7 +359,11 @@ class _MobileHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          const Icon(Symbols.add, size: 20, color: AppColors.textSecondary),
+          GestureDetector(
+            onTap: () => ChatService.instance.newSession(),
+            child: const Icon(Symbols.add,
+                size: 20, color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -321,7 +375,7 @@ class _MobileHeader extends StatelessWidget {
 class _MessageTile extends StatelessWidget {
   const _MessageTile({required this.message, required this.wide});
 
-  final MockMessage message;
+  final ChatMessage message;
   final bool wide;
 
   @override
@@ -479,17 +533,44 @@ class _BlinkCursorState extends State<_BlinkCursor> {
 
 // ─── Composer ────────────────────────────────────────────────────────────────
 
-class _Composer extends StatelessWidget {
+class _Composer extends StatefulWidget {
   const _Composer({required this.wide});
 
   final bool wide;
 
   @override
+  State<_Composer> createState() => _ComposerState();
+}
+
+class _ComposerState extends State<_Composer> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    final app = AppScope.of(context);
+    _controller.clear();
+    _focusNode.unfocus();
+    setState(() => _busy = true);
+    await ChatService.instance.send(text, modelId: app.selectedModelId);
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(wide ? 28 : 16, wide ? 14 : 12,
-          wide ? 28 : 16, wide ? 16 : 8),
+      padding: EdgeInsets.fromLTRB(widget.wide ? 28 : 16, widget.wide ? 14 : 12,
+          widget.wide ? 28 : 16, widget.wide ? 16 : 8),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
@@ -507,43 +588,50 @@ class _Composer extends StatelessWidget {
                   children: [
                     Expanded(
                       child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        enabled: !_busy,
                         style: AppText.grotesk(14),
                         cursorColor: AppColors.accent,
                         decoration: InputDecoration(
                           isDense: true,
                           border: InputBorder.none,
-                          hintText: wide
+                          hintText: widget.wide
                               ? 'Message ${app.selectedModel.split(' ').take(2).join(' ')}…'
                               : 'Message…',
                           hintStyle: AppText.grotesk(14,
                               color: AppColors.textMuted),
                         ),
+                        onSubmitted: (_) => _send(),
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.accent,
-                        borderRadius: BorderRadius.circular(11),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.accent.withA(0.6),
-                            blurRadius: 18,
-                            offset: const Offset(0, 6),
-                            spreadRadius: -6,
-                          ),
-                        ],
+                    GestureDetector(
+                      onTap: _busy ? null : _send,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _busy ? AppColors.textMuted : AppColors.accent,
+                          borderRadius: BorderRadius.circular(11),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.accent.withA(0.6),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                              spreadRadius: -6,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Symbols.arrow_upward,
+                            size: 19, color: AppColors.onAccent),
                       ),
-                      child: const Icon(Symbols.arrow_upward,
-                          size: 19, color: AppColors.onAccent),
                     ),
                   ],
                 ),
               ),
-              SizedBox(height: wide ? 9 : 7),
-              if (wide)
+              SizedBox(height: widget.wide ? 9 : 7),
+              if (widget.wide)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Row(

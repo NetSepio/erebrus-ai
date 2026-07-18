@@ -1,0 +1,267 @@
+import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path/path.dart' as p;
+
+import '../data/catalog_entry.dart';
+import 'power_service.dart';
+import 'storage_service.dart';
+
+/// Downloads model artifacts to persistent storage and tracks progress,
+/// both in the UI and as an Android system notification.
+class ModelDownloadService extends ChangeNotifier {
+  ModelDownloadService._();
+  static final ModelDownloadService _instance = ModelDownloadService._();
+  static ModelDownloadService get instance => _instance;
+
+  final Map<String, double> _progress = {};
+  final Set<String> _completed = {};
+  final Map<String, int> _lastNotifiedPercent = {};
+
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
+  bool _notificationsReady = false;
+
+  UnmodifiableMapView<String, double> get progress => UnmodifiableMapView(_progress);
+  UnmodifiableSetView<String> get completed => UnmodifiableSetView(_completed);
+
+  bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
+
+  /// Scans the models directory for existing downloads and completed manifests.
+  Future<void> scanDownloads() async {
+    final dir = await StorageService.instance.modelsDir();
+    if (!await dir.exists()) return;
+    final manifests = await dir
+        .list()
+        .where((e) => e is File && e.path.endsWith('.json'))
+        .cast<File>()
+        .toList();
+    for (final file in manifests) {
+      try {
+        final text = await file.readAsString();
+        final manifest = json.decode(text) as Map<String, dynamic>;
+        final id = manifest['id'] as String?;
+        if (id != null && id.isNotEmpty) _completed.add(id);
+      } catch (_) {
+        // Ignore corrupt manifest files.
+      }
+    }
+    notifyListeners();
+  }
+
+  bool isDownloaded(String id) => _completed.contains(id);
+
+  double progressOf(String id) => _progress[id] ?? 0.0;
+
+  /// Downloads the recommended model artifact (and optional mmproj) for [entry].
+  Future<bool> download(CatalogEntry entry) async {
+    if (_completed.contains(entry.id)) return true;
+
+    final permitted = await StorageService.instance.ensurePermissions();
+    if (!permitted) {
+      debugPrint('[Download] storage permission denied');
+      return false;
+    }
+
+    final dir = await StorageService.instance.modelsDir();
+    final baseName = _safeName(entry.id);
+    final modelFile = File(p.join(dir.path, '$baseName.gguf'));
+    final manifestFile = File(p.join(dir.path, '$baseName.json'));
+
+    _progress[entry.id] = 0.0;
+    _lastNotifiedPercent.remove(entry.id);
+    notifyListeners();
+
+    await _showNotification('Downloading ${entry.name}', 0.0);
+    await PowerService.instance.startDownload(entry.name);
+
+    final ok = await _downloadUrl(
+        entry.downloadUrl, modelFile, entry.id, entry.name);
+    if (!ok) {
+      await _showNotification('Download failed', 0.0, failed: true);
+      await PowerService.instance.stopDownload();
+      return false;
+    }
+
+    if (entry.mmprojDownloadUrl.isNotEmpty) {
+      final mmprojFile = File(p.join(dir.path, '${baseName}_mmproj.gguf'));
+      final mmprojTitle = '${entry.name} (vision)';
+      await _showNotification('Downloading $mmprojTitle', 0.0);
+      await PowerService.instance.updateDownload(mmprojTitle, 0.0);
+      final ok2 = await _downloadUrl(
+          entry.mmprojDownloadUrl, mmprojFile, '${entry.id}_mmproj', mmprojTitle);
+      if (!ok2) {
+        _progress.remove(entry.id);
+        notifyListeners();
+        await _showNotification('Download failed', 0.0, failed: true);
+        await PowerService.instance.stopDownload();
+        return false;
+      }
+    }
+
+    final manifest = {
+      'id': entry.id,
+      'name': entry.name,
+      'family': entry.family,
+      'quant': entry.quant,
+      'parameterB': entry.parameterB,
+      'sizeBytes': entry.sizeBytes,
+      'downloadUrl': entry.downloadUrl,
+      'mmprojDownloadUrl': entry.mmprojDownloadUrl,
+    };
+    await manifestFile.writeAsString(json.encode(manifest));
+
+    _completed.add(entry.id);
+    _progress[entry.id] = 1.0;
+    notifyListeners();
+    await _showNotification('${entry.name} is ready', 1.0, complete: true);
+    await PowerService.instance.stopDownload();
+    return true;
+  }
+
+  Future<bool> _downloadUrl(
+      String url, File file, String progressId, String title) async {
+    if (url.isEmpty) return false;
+    HttpClient? client;
+    IOSink? sink;
+    try {
+      client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 30);
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != HttpStatus.ok) {
+        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+      }
+
+      final total = response.headers.contentLength;
+      var received = 0;
+      sink = file.openWrite();
+
+      await for (final chunk in response) {
+        sink.add(chunk);
+        received += chunk.length;
+        double progress;
+        if (total > 0) {
+          progress = received / total;
+        } else {
+          progress = 0.5;
+        }
+        _progress[progressId] = progress;
+        notifyListeners();
+        await _showNotification(title, progress);
+        await PowerService.instance.updateDownload(title, progress);
+      }
+      await sink.close();
+      sink = null;
+      client.close();
+      client = null;
+      _progress[progressId] = 1.0;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[Download] error downloading $url: $e');
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        await file.delete();
+      } catch (_) {}
+      client?.close();
+      _progress.remove(progressId);
+      _lastNotifiedPercent.remove(progressId);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> _ensureNotifications() async {
+    if (_notificationsReady || _inTest) return;
+
+    try {
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: android);
+      await _notifications.initialize(initSettings);
+
+      const channel = AndroidNotificationChannel(
+        'model_download_channel',
+        'Model downloads',
+        description: 'Shows progress while AI models are downloading',
+        importance: Importance.low,
+        showBadge: false,
+      );
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+
+      // Android 13+ notification permission.
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+
+      _notificationsReady = true;
+    } on MissingPluginException catch (e) {
+      debugPrint('[Download] local notifications plugin not registered: $e');
+      // Mark ready so we don't retry every tick; downloads still work silently.
+      _notificationsReady = true;
+    } catch (e) {
+      debugPrint('[Download] could not initialize notifications: $e');
+      _notificationsReady = true;
+    }
+  }
+
+  Future<void> _showNotification(String title, double progress,
+      {bool complete = false, bool failed = false}) async {
+    if (_inTest) return;
+    await _ensureNotifications();
+
+    final percent = (progress * 100).round();
+    final progressId = title;
+    if (!complete && !failed && _lastNotifiedPercent[progressId] == percent) {
+      return;
+    }
+    _lastNotifiedPercent[progressId] = percent;
+
+    final body = complete
+        ? 'Download complete and ready to chat'
+        : failed
+            ? 'Tap to retry from the app'
+            : '$percent%';
+
+    final details = AndroidNotificationDetails(
+      'model_download_channel',
+      'Model downloads',
+      channelDescription: 'Shows progress while AI models are downloading',
+      importance: Importance.low,
+      priority: Priority.low,
+      showProgress: !complete && !failed,
+      maxProgress: 100,
+      progress: complete ? 0 : percent,
+      onlyAlertOnce: true,
+      ongoing: !complete && !failed,
+      autoCancel: complete || failed,
+    );
+
+    try {
+      await _notifications.show(
+        title.hashCode.abs(),
+        title,
+        body,
+        NotificationDetails(android: details),
+      );
+    } on MissingPluginException catch (e) {
+      debugPrint('[Download] cannot show notification: $e');
+    } catch (e) {
+      debugPrint('[Download] notification error: $e');
+    }
+  }
+
+  static String _safeName(String id) {
+    return id.replaceAll(RegExp(r'[^a-zA-Z0-9_.-]'), '_');
+  }
+}

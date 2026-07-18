@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:erebrus_ai/app.dart';
 import 'package:erebrus_ai/auth/wallet_auth_controller.dart';
+import 'package:erebrus_ai/data/catalog_service.dart';
+import 'package:erebrus_ai/data/model_catalog.dart';
 import 'package:erebrus_ai/org/org_state.dart';
 import 'package:erebrus_ai/state/app_state.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +31,10 @@ void main() {
       ..addFont(read('assets/fonts/IBMPlexMono-Medium.ttf'))
       ..addFont(read('assets/fonts/IBMPlexMono-SemiBold.ttf'));
     await mono.load();
+
+    // Use the compiled-in catalog in widget tests so remote network calls are
+    // not attempted and expected model names stay stable.
+    CatalogService.setEntries(modelCatalog);
   });
 
   Future<void> pumpApp(WidgetTester tester, Size size,
@@ -153,20 +159,19 @@ void main() {
       await tester.tap(find.text('SKIP — USE A NETWORK MODEL'));
       await tester.pump(const Duration(milliseconds: 400));
 
-      // Shell with bottom nav + chat.
+      // Shell opens on the Models network tab.
       expect(find.text('CHAT'), findsOneWidget);
-      expect(find.text('ON-DEVICE · NOTHING LEAVES YOUR PHONE'), findsOneWidget);
+      expect(find.text('Erebrus AI on MacBook-Pro'), findsOneWidget);
     });
 
-    testWidgets('models tabs, settings, and sign-in sheet', (tester) async {
+    testWidgets('models tabs, settings, and sign-in page', (tester) async {
       await pumpApp(tester, const Size(390, 844));
-      // Skip onboarding quickly.
+      // Skip onboarding — goes straight to the Models screen.
       await tester.tap(find.text('SKIP'));
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('SKIP — USE A NETWORK MODEL'));
-      await tester.pump(const Duration(milliseconds: 400));
 
-      await tester.tap(find.text('MODELS'));
+      // Skip lands on the network tab; switch to local to verify local list.
+      await tester.tap(find.textContaining('LOCAL ·'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('STORAGE · 1.9 GB OF 128 GB'), findsOneWidget);
       expect(find.text('2 nodes on your network'), findsOneWidget);
@@ -176,11 +181,11 @@ void main() {
       expect(find.text('Serve while app is open'), findsOneWidget);
       expect(find.text('Pause on low battery'), findsOneWidget);
 
-      // Sign-in bottom sheet with guest escape.
+      // Sign-in is a full-screen page with guest escape.
       await tester.tap(find.text('SIGN IN / REGISTER'));
       await tester.pumpAndSettle();
-      expect(find.text('Sign in to Erebrus'), findsOneWidget);
-      await tester.tap(find.text('NOT NOW — KEEP USING AS GUEST'));
+      expect(find.text('Welcome to Erebrus AI'), findsOneWidget);
+      await tester.tap(find.text('CONTINUE AS GUEST'));
       await tester.pumpAndSettle();
       expect(find.text('Unlock private models & workspaces'), findsOneWidget);
     });

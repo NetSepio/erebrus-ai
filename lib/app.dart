@@ -96,7 +96,7 @@ class _RootGate extends StatelessWidget {
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= kDesktopBreakpoint;
         if (!wide && !app.onboarded) return const OnboardingFlow();
-        return const Shell();
+        return Shell(initialTab: app.onboardingTargetTab);
       },
     );
   }

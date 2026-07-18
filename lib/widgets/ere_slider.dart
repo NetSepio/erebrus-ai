@@ -12,6 +12,7 @@ class SamplerSlider extends StatefulWidget {
     required this.max,
     required this.value,
     required this.format,
+    this.onChanged,
   });
 
   final String label;
@@ -19,6 +20,7 @@ class SamplerSlider extends StatefulWidget {
   final double max;
   final double value;
   final String Function(double) format;
+  final ValueChanged<double>? onChanged;
 
   @override
   State<SamplerSlider> createState() => _SamplerSliderState();
@@ -27,9 +29,17 @@ class SamplerSlider extends StatefulWidget {
 class _SamplerSliderState extends State<SamplerSlider> {
   late double _value = widget.value;
 
+  @override
+  void didUpdateWidget(covariant SamplerSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) _value = widget.value;
+  }
+
   void _setFromDx(double dx, double width) {
     final t = (dx / width).clamp(0.0, 1.0);
-    setState(() => _value = widget.min + t * (widget.max - widget.min));
+    final v = widget.min + t * (widget.max - widget.min);
+    setState(() => _value = v);
+    widget.onChanged?.call(v);
   }
 
   @override

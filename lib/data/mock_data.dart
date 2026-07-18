@@ -47,7 +47,7 @@ const mockMessages = [
       'Summarize what mDNS discovery means for our LAN setup — two sentences.'),
   MockMessage.assistant(
     'mDNS lets every device on your network announce and find services without '
-    'a central server — this desktop broadcasts `_erebrus-ai._tcp`, and any '
+    'a central server — this desktop broadcasts `_erebrusai._tcp`, and any '
     'phone on the Wi-Fi lists its models instantly. In practice: no IP '
     'addresses to type, no config — open the app and the node is just there.',
     meta: '0.9S · 214 TOKENS',
@@ -69,6 +69,7 @@ class MockModel {
     this.name,
     this.letter,
     this.spec, {
+    this.id,
     this.status = ModelStatus.idle,
     this.progress,
     this.progressLabel,
@@ -78,6 +79,9 @@ class MockModel {
   final String name;
   final String letter;
 
+  /// Catalog id, when this model is backed by a downloadable catalog entry.
+  final String? id;
+
   /// e.g. `Q4_K_M · 620 MB`
   final String spec;
   final ModelStatus status;
@@ -86,6 +90,28 @@ class MockModel {
 
   /// Accent-tinted letter avatar (the model currently in use).
   final bool accent;
+
+  MockModel copyWith({
+    String? name,
+    String? letter,
+    String? id,
+    String? spec,
+    ModelStatus? status,
+    double? progress,
+    String? progressLabel,
+    bool? accent,
+  }) {
+    return MockModel(
+      name ?? this.name,
+      letter ?? this.letter,
+      spec ?? this.spec,
+      id: id ?? this.id,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      progressLabel: progressLabel ?? this.progressLabel,
+      accent: accent ?? this.accent,
+    );
+  }
 }
 
 const mockLocalModels = [
@@ -151,6 +177,7 @@ class MockPersona {
     this.name,
     this.initials,
     this.meta, {
+    this.id,
     required this.builtIn,
     this.systemPrompt = '',
     this.stopSequences = '',
@@ -160,6 +187,7 @@ class MockPersona {
     this.repeatPenalty = 1.1,
   });
 
+  final String? id;
   final String name;
   final String initials;
   final String meta;
@@ -170,6 +198,63 @@ class MockPersona {
   final double topP;
   final int maxTokens;
   final double repeatPenalty;
+
+  String get effectiveId => id ?? name;
+
+  factory MockPersona.fromJson(Map<String, dynamic> json) => MockPersona(
+        json['name'] as String,
+        json['initials'] as String? ?? '',
+        json['meta'] as String? ?? '',
+        id: json['id'] as String?,
+        builtIn: json['built_in'] as bool? ?? false,
+        systemPrompt: json['system_prompt'] as String? ?? '',
+        stopSequences: json['stop_sequences'] as String? ?? '',
+        temperature: (json['temperature'] as num?)?.toDouble() ?? 0.7,
+        topP: (json['top_p'] as num?)?.toDouble() ?? 0.9,
+        maxTokens: (json['max_tokens'] as int?) ?? 2048,
+        repeatPenalty: (json['repeat_penalty'] as num?)?.toDouble() ?? 1.1,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': effectiveId,
+        'name': name,
+        'initials': initials,
+        'meta': meta,
+        'built_in': builtIn,
+        'system_prompt': systemPrompt,
+        'stop_sequences': stopSequences,
+        'temperature': temperature,
+        'top_p': topP,
+        'max_tokens': maxTokens,
+        'repeat_penalty': repeatPenalty,
+      };
+
+  MockPersona copyWith({
+    String? id,
+    String? name,
+    String? initials,
+    String? meta,
+    bool? builtIn,
+    String? systemPrompt,
+    String? stopSequences,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+    double? repeatPenalty,
+  }) =>
+      MockPersona(
+        name ?? this.name,
+        initials ?? this.initials,
+        meta ?? this.meta,
+        id: id ?? this.id,
+        builtIn: builtIn ?? this.builtIn,
+        systemPrompt: systemPrompt ?? this.systemPrompt,
+        stopSequences: stopSequences ?? this.stopSequences,
+        temperature: temperature ?? this.temperature,
+        topP: topP ?? this.topP,
+        maxTokens: maxTokens ?? this.maxTokens,
+        repeatPenalty: repeatPenalty ?? this.repeatPenalty,
+      );
 }
 
 const mockBuiltInPersonas = [

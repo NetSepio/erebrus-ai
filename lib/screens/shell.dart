@@ -29,14 +29,22 @@ const _navItems = [
 ];
 
 class Shell extends StatefulWidget {
-  const Shell({super.key});
+  const Shell({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   @override
   State<Shell> createState() => _ShellState();
 }
 
 class _ShellState extends State<Shell> {
-  int _tab = 0;
+  late int _tab;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = widget.initialTab;
+  }
 
   void _setTab(int i) => setState(() => _tab = i);
 
@@ -44,7 +52,10 @@ class _ShellState extends State<Shell> {
         index: _tab,
         children: [
           ChatScreen(wide: wide),
-          ModelsScreen(wide: wide),
+          ModelsScreen(
+            wide: wide,
+            initialSubTab: widget.initialTab == 1 ? 1 : 0,
+          ),
           PersonasScreen(wide: wide),
           SettingsScreen(wide: wide),
         ],

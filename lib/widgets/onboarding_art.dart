@@ -153,7 +153,7 @@ class _ArtPainter extends CustomPainter {
     canvas.drawRRect(tv, _stroke(_accent.withA(0.6), 1.4));
 
     _spark(canvas, const Offset(118, 118), 0.38, _accent);
-    _caption(canvas, '_EREBRUS-AI._TCP');
+    _caption(canvas, '_EREBRUSAI._TCP');
   }
 
   /// 03 — spark above a shielded lock, satellites outside the dashed ring.
