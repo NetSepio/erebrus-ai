@@ -20,6 +20,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Create .env placeholder
+        run: cp env.example .env
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -49,6 +52,9 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Create .env placeholder
+        run: cp env.example .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -85,6 +91,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Create .env placeholder
+        run: cp env.example .env
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -120,6 +129,9 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Create .env placeholder
+        run: cp env.example .env
 
       - name: Install dependencies
         run: flutter pub get
