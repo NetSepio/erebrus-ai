@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../data/catalog_service.dart';
-import 'local_server_service.dart';
+import '../data/mock_data.dart';
+import 'inference_service.dart';
 import 'model_download_service.dart';
 import 'storage_service.dart';
 
@@ -105,7 +105,11 @@ class ChatService extends ChangeNotifier {
   }
 
   /// Sends a user message in the active session and streams the assistant reply.
-  Future<void> send(String text, {String? modelId}) async {
+  Future<void> send(
+    String text, {
+    String? modelId,
+    MockPersona? persona,
+  }) async {
     if (text.trim().isEmpty) return;
     if (activeSession == null) await newSession();
     final session = activeSession!;
@@ -113,8 +117,8 @@ class ChatService extends ChangeNotifier {
     final resolvedModel = modelId?.isNotEmpty == true
         ? modelId!
         : session.modelId.isNotEmpty
-            ? session.modelId
-            : '';
+        ? session.modelId
+        : '';
 
     // Remember the model used for this session.
     if (resolvedModel.isNotEmpty && session.modelId != resolvedModel) {
@@ -135,10 +139,39 @@ class ChatService extends ChangeNotifier {
     _messages[sid]!.add(assistant);
     notifyListeners();
 
-    final stream = await _infer(resolvedModel, text);
-    await for (final chunk in stream) {
-      assistant.text += chunk;
-      notifyListeners();
+    await _generateAssistant(
+      sid: sid,
+      assistant: assistant,
+      prompt: text,
+      modelId: resolvedModel,
+      persona: persona,
+    );
+  }
+
+  Future<void> _generateAssistant({
+    required String sid,
+    required ChatMessage assistant,
+    required String prompt,
+    required String modelId,
+    MockPersona? persona,
+  }) async {
+    final raw = StringBuffer();
+    try {
+      final stream = await _infer(modelId, prompt, persona);
+      await for (final chunk in stream) {
+        raw.write(chunk);
+        assistant.text = sanitizeAssistantText(raw.toString());
+        assistant.tokensPerSecond =
+            InferenceService.instance.currentTokensPerSecond;
+        notifyListeners();
+      }
+      assistant.text = sanitizeAssistantText(raw.toString());
+      assistant.tokensPerSecond =
+          InferenceService.instance.lastTokensPerSecond ??
+          assistant.tokensPerSecond;
+      assistant.truncated = InferenceService.instance.lastOutputWasTruncated;
+    } catch (e) {
+      assistant.text = 'Local inference failed: $e';
     }
     assistant.streaming = false;
     assistant.meta = 'LOCAL';
@@ -146,77 +179,76 @@ class ChatService extends ChangeNotifier {
     await _persist(sid);
   }
 
-  Future<Stream<String>> _infer(String modelId, String prompt) async {
+  /// Replaces an assistant response using the user message immediately before
+  /// it. This does not duplicate the user prompt in the conversation.
+  Future<void> regenerate(
+    String assistantMessageId, {
+    MockPersona? persona,
+  }) async {
+    if (InferenceService.instance.isGenerating) return;
+    final sid = _activeSessionId;
+    final session = activeSession;
+    final messages = sid == null ? null : _messages[sid];
+    if (sid == null || session == null || messages == null) return;
+
+    final assistantIndex = messages.indexWhere(
+      (message) => message.id == assistantMessageId && !message.isUser,
+    );
+    if (assistantIndex <= 0) return;
+    final userIndex = messages
+        .sublist(0, assistantIndex)
+        .lastIndexWhere((message) => message.isUser);
+    if (userIndex < 0) return;
+
+    final replacement = ChatMessage.streaming('');
+    messages[assistantIndex] = replacement;
+    notifyListeners();
+    await _persist(sid);
+    await _generateAssistant(
+      sid: sid,
+      assistant: replacement,
+      prompt: messages[userIndex].text,
+      modelId: session.modelId,
+      persona: persona,
+    );
+  }
+
+  Future<Stream<String>> _infer(
+    String modelId,
+    String prompt,
+    MockPersona? persona,
+  ) async {
     if (kIsWeb || _inTest) {
       return Stream.fromIterable(['Test mode: no inference.']);
     }
 
-    if (!LocalServerService.instance.isRunning) {
-      try {
-        await LocalServerService.instance.start();
-      } catch (e) {
-        return Stream.fromIterable(
-            ['Local server could not start: $e']);
-      }
-    }
-
-    if (modelId.isEmpty || !ModelDownloadService.instance.isDownloaded(modelId)) {
+    if (modelId.isEmpty ||
+        !ModelDownloadService.instance.isDownloaded(modelId)) {
       final catalog = CatalogService.entries;
       final byId = {for (final e in catalog) e.id: e};
       final name = byId[modelId]?.name ?? modelId;
       return Stream.fromIterable([
-        'Model "$name" is not downloaded. Download it from the Models tab first.'
+        'Model "$name" is not downloaded. Download it from the Models tab first.',
       ]);
     }
 
-    final url =
-        'http://127.0.0.1:${LocalServerService.instance.port}/v1/chat/completions';
-    final key = await LocalServerService.instance.apiKey;
-    final request = http.Request('POST', Uri.parse(url));
-    request.headers['authorization'] = 'Bearer $key';
-    request.headers['content-type'] = 'application/json';
-    request.body = jsonEncode({
-      'model': modelId,
-      'messages': [
-        {'role': 'user', 'content': prompt}
-      ],
-      'stream': true,
-    });
-
     try {
-      final response = await http.Client().send(request);
-      if (response.statusCode != 200) {
-        final body = await response.stream.bytesToString();
-        return Stream.fromIterable(['Server error ${response.statusCode}: $body']);
-      }
-      return response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .where((line) => line.startsWith('data: '))
-          .map((line) => line.substring(6))
-          .where((data) => data != '[DONE]')
-          .map((data) {
-            try {
-              final json = jsonDecode(data) as Map<String, dynamic>;
-              final choices = json['choices'] as List<dynamic>?;
-              final delta = choices?.firstOrNull?['delta'] as Map<String, dynamic>?;
-              final content = delta?['content'] as String? ?? '';
-              return content;
-            } catch (_) {
-              return '';
-            }
-          })
-          .where((c) => c.isNotEmpty);
-    } on SocketException catch (e) {
-      return Stream.fromIterable([
-        'Could not reach the local server (${e.message}). Make sure "Serve on local network" is enabled in Settings.'
-      ]);
-    } on http.ClientException catch (e) {
-      return Stream.fromIterable([
-        'Could not connect to the local server (${e.message}). Check that the server is running.'
-      ]);
+      return InferenceService.instance.generate(
+        modelId: modelId,
+        prompt: prompt,
+        systemPrompt: persona?.systemPrompt ?? '',
+        maxOutputTokens: persona?.maxTokens ?? 768,
+        temperature: persona?.temperature ?? 0.7,
+        topP: persona?.topP ?? 0.9,
+        repeatPenalty: persona?.repeatPenalty ?? 1.1,
+        stop: (persona?.stopSequences ?? '')
+            .split(RegExp(r'[\n,]'))
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(),
+      );
     } catch (e) {
-      return Stream.fromIterable(['Request failed: $e']);
+      return Stream.fromIterable(['Local inference failed: $e']);
     }
   }
 
@@ -262,18 +294,18 @@ class ChatSession {
   final DateTime updatedAt;
 
   factory ChatSession.fromJson(Map<String, dynamic> json) => ChatSession(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        modelId: json['model_id'] as String? ?? '',
-        updatedAt: DateTime.parse(json['updated_at'] as String),
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    modelId: json['model_id'] as String? ?? '',
+    updatedAt: DateTime.parse(json['updated_at'] as String),
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'model_id': modelId,
-        'updated_at': updatedAt.toIso8601String(),
-      };
+    'id': id,
+    'title': title,
+    'model_id': modelId,
+    'updated_at': updatedAt.toIso8601String(),
+  };
 
   ChatSession copyWith({String? title, String? modelId, DateTime? updatedAt}) =>
       ChatSession(
@@ -291,6 +323,8 @@ class ChatMessage {
     required this.text,
     this.streaming = false,
     this.meta,
+    this.tokensPerSecond,
+    this.truncated = false,
   });
 
   final String id;
@@ -298,35 +332,56 @@ class ChatMessage {
   String text;
   bool streaming;
   String? meta;
+  double? tokensPerSecond;
+  bool truncated;
 
   ChatMessage.user(String text)
-      : this(
-          id: const Uuid().v4(),
-          isUser: true,
-          text: text,
-        );
+    : this(id: const Uuid().v4(), isUser: true, text: text);
 
   ChatMessage.streaming(String text)
-      : this(
-          id: const Uuid().v4(),
-          isUser: false,
-          text: text,
-          streaming: true,
-        );
+    : this(id: const Uuid().v4(), isUser: false, text: text, streaming: true);
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id'] as String,
-        isUser: json['is_user'] as bool,
-        text: json['text'] as String,
-        streaming: json['streaming'] as bool? ?? false,
-        meta: json['meta'] as String?,
-      );
+    id: json['id'] as String,
+    isUser: json['is_user'] as bool,
+    text: (json['is_user'] as bool? ?? false)
+        ? json['text'] as String
+        : sanitizeAssistantText(json['text'] as String),
+    streaming: json['streaming'] as bool? ?? false,
+    meta: json['meta'] as String?,
+    tokensPerSecond: (json['tokens_per_second'] as num?)?.toDouble(),
+    truncated: json['truncated'] as bool? ?? false,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'is_user': isUser,
-        'text': text,
-        'streaming': streaming,
-        'meta': meta,
-      };
+    'id': id,
+    'is_user': isUser,
+    'text': text,
+    'streaming': streaming,
+    'meta': meta,
+    if (tokensPerSecond != null) 'tokens_per_second': tokensPerSecond,
+    if (truncated) 'truncated': true,
+  };
+}
+
+/// Removes private model reasoning from both live and persisted output.
+/// While a leading think block is incomplete, nothing from it is exposed.
+String sanitizeAssistantText(String text) {
+  var result = text;
+  final leadingOpen = RegExp(
+    r'^\s*<think>',
+    caseSensitive: false,
+  ).firstMatch(result);
+  if (leadingOpen != null) {
+    final close = result.toLowerCase().indexOf('</think>', leadingOpen.end);
+    if (close < 0) return '';
+    result = result.substring(close + '</think>'.length);
+  }
+
+  result = result.replaceAll(
+    RegExp(r'<think>.*?</think>', caseSensitive: false, dotAll: true),
+    '',
+  );
+  result = result.replaceAll(RegExp(r'</?think>', caseSensitive: false), '');
+  return result.trimLeft();
 }

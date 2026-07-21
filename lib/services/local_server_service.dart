@@ -10,6 +10,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:uuid/uuid.dart';
 
 import '../data/catalog_service.dart';
+import 'inference_service.dart';
+import 'mdns_config.dart';
 import 'model_download_service.dart';
 
 /// A real OpenAI-compatible HTTP server that runs on the device.
@@ -18,8 +20,8 @@ import 'model_download_service.dart';
 /// It exposes `/v1/models` and `/v1/chat/completions` and advertises the
 /// node over mDNS (`_erebrusai._tcp`) so other devices can discover it.
 ///
-/// The actual GGUF inference still needs a `llama.cpp` backend; until that is
-/// wired the chat endpoint streams a clear placeholder explaining the state.
+/// GGUF inference is delegated to the same in-process llama.cpp runtime used by
+/// the local chat UI.
 class LocalServerService extends ChangeNotifier {
   LocalServerService._();
   static final LocalServerService _instance = LocalServerService._();
@@ -106,23 +108,23 @@ class LocalServerService extends ChangeNotifier {
         'status': 'ok',
         'name': 'Erebrus AI',
         'version': '1.0.0',
-        'inference_ready': false,
+        'inference_ready': true,
       });
     }
 
     if (method == 'GET' && path == 'v1/models') {
       final ids = ModelDownloadService.instance.completed;
-      final byId = {
-        for (final e in CatalogService.entries) e.id: e,
-      };
+      final byId = {for (final e in CatalogService.entries) e.id: e};
       final models = ids
-          .map((id) => {
-                'id': id,
-                'object': 'model',
-                'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                'owned_by': 'erebrus-ai',
-                'name': byId[id]?.name ?? id,
-              })
+          .map(
+            (id) => {
+              'id': id,
+              'object': 'model',
+              'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              'owned_by': 'erebrus-ai',
+              'name': byId[id]?.name ?? id,
+            },
+          )
           .toList();
       return _jsonResponse({'object': 'list', 'data': models});
     }
@@ -147,52 +149,25 @@ class LocalServerService extends ChangeNotifier {
           'error': {
             'message': 'Model $modelId is not downloaded on this node.',
             'type': 'model_not_loaded',
-          }
+          },
         }),
         headers: {'content-type': 'application/json'},
       );
     }
 
-    // TODO: pipe to llama.cpp inference backend once integrated.
-    const placeholder =
-        'Inference engine is not yet integrated. The model is downloaded and the server is running, but no local backend is loaded.';
-
     if (stream) {
       final id = 'chatcmpl-${const Uuid().v4()}';
       final created = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final events = <String>[
-        for (var i = 0; i < placeholder.length; i++)
-          _sseData({
-            'id': id,
-            'object': 'chat.completion.chunk',
-            'created': created,
-            'model': modelId,
-            'choices': [
-              {
-                'index': 0,
-                'delta': {'role': 'assistant', 'content': placeholder[i]},
-                'finish_reason': null,
-              }
-            ],
-          }),
-        _sseData({
-          'id': id,
-          'object': 'chat.completion.chunk',
-          'created': created,
-          'model': modelId,
-          'choices': [
-            {'index': 0, 'delta': {}, 'finish_reason': 'stop'}
-          ],
-        }),
-        'data: [DONE]\n\n',
-      ];
-      final stream = Stream<String>.periodic(
-        const Duration(milliseconds: 50),
-        (i) => events[i],
-      ).take(events.length);
+      final prompt = _lastUserMessage(payload);
+      final events = _streamCompletion(
+        modelId: modelId,
+        prompt: prompt,
+        id: id,
+        created: created,
+      );
 
       return Response.ok(
-        stream,
+        events,
         headers: {
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache',
@@ -201,27 +176,93 @@ class LocalServerService extends ChangeNotifier {
       );
     }
 
-    return _jsonResponse({
-      'id': 'chatcmpl-${const Uuid().v4()}',
-      'object': 'chat.completion',
-      'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      'model': modelId,
-      'choices': [
-        {
-          'index': 0,
-          'message': {'role': 'assistant', 'content': placeholder},
-          'finish_reason': 'stop',
-        }
-      ],
-      'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
-    });
+    try {
+      final text = await InferenceService.instance
+          .generate(modelId: modelId, prompt: _lastUserMessage(payload))
+          .join();
+      return _jsonResponse({
+        'id': 'chatcmpl-${const Uuid().v4()}',
+        'object': 'chat.completion',
+        'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        'model': modelId,
+        'choices': [
+          {
+            'index': 0,
+            'message': {'role': 'assistant', 'content': text},
+            'finish_reason': 'stop',
+          },
+        ],
+        'usage': {
+          'prompt_tokens': 0,
+          'completion_tokens': 0,
+          'total_tokens': 0,
+        },
+      });
+    } on InferenceException catch (e) {
+      return _jsonResponse({
+        'error': {'message': e.message, 'type': 'inference_error'},
+      }, status: 500);
+    }
+  }
+
+  Stream<String> _streamCompletion({
+    required String modelId,
+    required String prompt,
+    required String id,
+    required int created,
+  }) async* {
+    try {
+      await for (final token in InferenceService.instance.generate(
+        modelId: modelId,
+        prompt: prompt,
+      )) {
+        yield _sseData({
+          'id': id,
+          'object': 'chat.completion.chunk',
+          'created': created,
+          'model': modelId,
+          'choices': [
+            {
+              'index': 0,
+              'delta': {'role': 'assistant', 'content': token},
+              'finish_reason': null,
+            },
+          ],
+        });
+      }
+      yield _sseData({
+        'id': id,
+        'object': 'chat.completion.chunk',
+        'created': created,
+        'model': modelId,
+        'choices': [
+          {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
+        ],
+      });
+    } on InferenceException catch (e) {
+      yield _sseData({
+        'error': {'message': e.message, 'type': 'inference_error'},
+      });
+    }
+    yield 'data: [DONE]\n\n';
+  }
+
+  static String _lastUserMessage(Map<String, dynamic> payload) {
+    final messages = payload['messages'];
+    if (messages is! List) return '';
+    for (final raw in messages.reversed) {
+      if (raw is Map && raw['role'] == 'user') {
+        return raw['content']?.toString() ?? '';
+      }
+    }
+    return '';
   }
 
   Future<void> _startBroadcast(int port) async {
     try {
       final service = BonsoirService(
         name: 'Erebrus AI',
-        type: '_erebrusai._tcp',
+        type: kErebrusAiMdnsType,
         port: port,
       );
       _broadcast = BonsoirBroadcast(service: service);
@@ -253,15 +294,15 @@ class LocalServerService extends ChangeNotifier {
   }
 
   static Response _jsonResponse(Object body, {int status = 200}) => Response(
-        status,
-        body: json.encode(body),
-        headers: {'content-type': 'application/json'},
-      );
+    status,
+    body: json.encode(body),
+    headers: {'content-type': 'application/json'},
+  );
 
   static String _sseData(Object data) => 'data: ${json.encode(data)}\n\n';
 
-  static Middleware get _corsMiddleware => (Handler inner) =>
-      (Request request) async {
+  static Middleware get _corsMiddleware =>
+      (Handler inner) => (Request request) async {
         if (request.method == 'OPTIONS') {
           return Response.ok(null, headers: _corsHeaders(request));
         }
@@ -269,25 +310,26 @@ class LocalServerService extends ChangeNotifier {
         return response.change(headers: _corsHeaders(request));
       };
 
-  static Middleware _authMiddleware(String apiKey) => (Handler inner) =>
-      (Request request) async {
+  static Middleware _authMiddleware(String apiKey) =>
+      (Handler inner) => (Request request) async {
         if (request.url.path == 'health') return inner(request);
         final auth = request.headers['authorization'] ?? '';
-        if (!auth.startsWith('Bearer ') ||
-            auth.substring(7).trim() != apiKey) {
-          return Response.unauthorized(json.encode({
-            'error': {
-              'message': 'Invalid API key',
-              'type': 'authentication_error',
-            }
-          }));
+        if (!auth.startsWith('Bearer ') || auth.substring(7).trim() != apiKey) {
+          return Response.unauthorized(
+            json.encode({
+              'error': {
+                'message': 'Invalid API key',
+                'type': 'authentication_error',
+              },
+            }),
+          );
         }
         return inner(request);
       };
 
   static Map<String, String> _corsHeaders(Request request) => {
-        'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET, POST, OPTIONS',
-        'access-control-allow-headers': 'authorization, content-type',
-      };
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'authorization, content-type',
+  };
 }

@@ -44,8 +44,10 @@ abstract final class AppText {
   }
 
   /// Section header — mono 10.5–11px uppercase, wide tracking.
-  static TextStyle sectionHeader({double size = 11, Color color = AppColors.textMuted}) =>
-      mono(size, weight: FontWeight.w600, color: color, lsEm: 0.14);
+  static TextStyle sectionHeader({
+    double size = 11,
+    Color color = AppColors.textMuted,
+  }) => mono(size, weight: FontWeight.w600, color: color, lsEm: 0.14);
 
   /// Screen title — 24px Space Grotesk 600, -0.02em.
   static TextStyle screenTitle({double size = 24}) =>

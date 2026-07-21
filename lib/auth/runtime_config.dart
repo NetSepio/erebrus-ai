@@ -15,18 +15,14 @@ class RuntimeConfig {
 
   static bool get hasReownProjectId => reownProjectId.isNotEmpty;
 
-  static String get gatewayUrl =>
-      _firstNonEmpty([_values['GATEWAY_URL'], '']);
+  static String get gatewayUrl => _firstNonEmpty([_values['GATEWAY_URL'], '']);
 
-  /// Erebrus AI base URL (e.g. https://dev.erebrus.io).
-  static String get aiBaseUrl =>
-      _firstNonEmpty([_values['AI_BASE_URL'], 'https://dev.erebrus.io']);
+  /// Single authoritative base for the Erebrus model catalog.
+  static String get modelCatalogBaseUrl =>
+      _firstNonEmpty([_values['MODEL_CATALOG_BASE_URL'], 'https://erebrus.io']);
 
-  /// Optional explicit models catalog URL. Falls back to {aiBaseUrl}/ai/models.json.
   static String get modelsCatalogUrl {
-    final explicit = _firstNonEmpty([_values['MODELS_CATALOG_URL'], '']);
-    if (explicit.isNotEmpty) return explicit;
-    final base = aiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+    final base = modelCatalogBaseUrl.replaceAll(RegExp(r'/+$'), '');
     return '$base/ai/models.json';
   }
 
@@ -45,18 +41,22 @@ class RuntimeConfig {
   }
 
   /// WalletConnect / Reown metadata `url`.
-  static String get erebrusSiteUrl => erebrusSiteUrlFromOrigin(erebrusWalletOrigin);
+  static String get erebrusSiteUrl =>
+      erebrusSiteUrlFromOrigin(erebrusWalletOrigin);
 
   /// Absolute HTTPS icon for Reown / WalletConnect pairing metadata.
-  static String get erebrusSiteIcon => erebrusSiteIconFromOrigin(erebrusWalletOrigin);
+  static String get erebrusSiteIcon =>
+      erebrusSiteIconFromOrigin(erebrusWalletOrigin);
 
   /// MWA authorize identity URI (`{origin}/ai/` + relative `logo.png`).
   static String get erebrusMwaIdentityUrl =>
       erebrusMwaIdentityUrlFromOrigin(erebrusWalletOrigin);
 
   /// Google server (web) client id for native Google sign-in.
-  static String get googleServerClientId =>
-      _firstNonEmpty([kGoogleServerClientId, _values['GOOGLE_SERVER_CLIENT_ID']]);
+  static String get googleServerClientId => _firstNonEmpty([
+    kGoogleServerClientId,
+    _values['GOOGLE_SERVER_CLIENT_ID'],
+  ]);
 
   static bool get hasGoogleSignIn => googleServerClientId.isNotEmpty;
 

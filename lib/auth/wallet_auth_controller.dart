@@ -22,11 +22,9 @@ import 'user_profile.dart';
 
 /// Wallet login via MWA on Solana Mobile, Reown elsewhere, and gateway v2 auth.
 class WalletAuthController extends ChangeNotifier {
-  WalletAuthController({
-    GatewayAuthClient? authClient,
-    AuthSessionStore? store,
-  })  : _authClient = authClient ?? GatewayAuthClient(),
-        _store = store ?? AuthSessionStore();
+  WalletAuthController({GatewayAuthClient? authClient, AuthSessionStore? store})
+    : _authClient = authClient ?? GatewayAuthClient(),
+      _store = store ?? AuthSessionStore();
 
   final GatewayAuthClient _authClient;
   final AuthSessionStore _store;
@@ -140,26 +138,33 @@ class WalletAuthController extends ChangeNotifier {
       debugPrint('[Reown] init skipped — REOWN_PROJECT_ID not in build env');
       return;
     }
-    if (appKitModal != null) {
+    if (appKitModal?.modalContext == context) {
       reownReady = true;
       notifyListeners();
       return;
     }
 
+    // The sign-in page is disposable. Reuse the underlying AppKit session but
+    // recreate its modal when a newly opened page provides a fresh context.
+    final existingAppKit = appKitModal?.appKit;
+    if (appKitModal != null) {
+      await appKitModal!.dispose();
+      appKitModal = null;
+    }
+    if (!context.mounted) return;
+
     ReownAppKitModalNetworks.removeSupportedNetworks('eip155');
     ReownAppKitModalNetworks.removeTestNetworks();
 
-    final solanaChains =
-        ReownAppKitModalNetworks.getAllSupportedNetworks(namespace: 'solana');
+    final solanaChains = ReownAppKitModalNetworks.getAllSupportedNetworks(
+      namespace: 'solana',
+    );
     final solanaNamespaces = solanaChains.isEmpty
         ? null
         : {
             'solana': RequiredNamespace(
               chains: solanaChains.map((c) => c.chainId).toList(),
-              methods: const [
-                'solana_signMessage',
-                'solana_signTransaction',
-              ],
+              methods: const ['solana_signMessage', 'solana_signTransaction'],
               events: const [],
             ),
           };
@@ -167,6 +172,7 @@ class WalletAuthController extends ChangeNotifier {
     final origin = RuntimeConfig.erebrusWalletOrigin;
     appKitModal = ReownAppKitModal(
       context: context,
+      appKit: existingAppKit,
       projectId: RuntimeConfig.reownProjectId,
       logLevel: LogLevel.error,
       metadata: PairingMetadata(
@@ -228,7 +234,9 @@ class WalletAuthController extends ChangeNotifier {
     if (!usesWebLogin) return;
     DeepLinkHandler.bind(this);
     DeepLinkHandler.checkInitialLink();
-    debugPrint('[Auth] desktop web-login ready — origin ${RuntimeConfig.erebrusWebOrigin}');
+    debugPrint(
+      '[Auth] desktop web-login ready — origin ${RuntimeConfig.erebrusWebOrigin}',
+    );
   }
 
   /// Opens MWA on Solana Mobile, browser on desktop, Reown modal on other mobile.
@@ -246,7 +254,6 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Opens erebrus.io in the system browser; PASETO returns via `erebrusai://auth`.
   Future<void> openWebSignIn() async {
-    if (!usesWebLogin) return;
     if (isAuthenticating || awaitingWebCallback) return;
 
     authError = null;
@@ -256,7 +263,10 @@ class WalletAuthController extends ChangeNotifier {
       final url = DesktopWebAuth.buildLoginUrl();
       debugPrint('[Auth] opening web login: $url');
       final uri = Uri.parse(url);
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
       if (!launched) {
         awaitingWebCallback = false;
         authError = 'Could not open the browser — check your default browser';
@@ -277,7 +287,8 @@ class WalletAuthController extends ChangeNotifier {
     try {
       final callback = DesktopWebAuth.parseManualAuthInput(input);
       if (callback == null || callback.token.isEmpty) {
-        authError = 'Could not read a sign-in token — paste the PASETO or full callback URL';
+        authError =
+            'Could not read a sign-in token — paste the PASETO or full callback URL';
         isAuthenticating = false;
         notifyListeners();
         return;
@@ -329,8 +340,6 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Completes sign-in from `erebrusai://auth?token=…` (called by [DeepLinkHandler]).
   Future<void> handleWebAuthCallback(String url) async {
-    if (!usesWebLogin) return;
-
     awaitingWebCallback = false;
     isAuthenticating = true;
     authError = null;
@@ -380,6 +389,125 @@ class WalletAuthController extends ChangeNotifier {
     await appKitModal!.openModalView();
   }
 
+  void cancelAuthentication() {
+    isAuthenticating = false;
+    awaitingWebCallback = false;
+    try {
+      if (appKitModal?.isOpen == true) appKitModal?.closeModal();
+    } catch (_) {}
+    authError = 'Sign-in cancelled';
+    notifyListeners();
+  }
+
+  Future<void> signInWithGoogle() async {
+    if (isAuthenticating || !googleLoginAvailable) return;
+    isAuthenticating = true;
+    authError = null;
+    notifyListeners();
+    try {
+      final idToken = await googleIdToken();
+      if (idToken == null) return;
+      final session = await _authClient.googleLogin(idToken);
+      await _finishIdentitySignIn(session, 'google');
+    } on AuthException catch (e) {
+      authError = e.message;
+    } on SocialLoginException catch (e) {
+      authError = e.message;
+    } catch (e) {
+      authError = e.toString();
+    } finally {
+      isAuthenticating = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signInWithApple() async {
+    if (isAuthenticating || !appleLoginAvailable) return;
+    isAuthenticating = true;
+    authError = null;
+    notifyListeners();
+    try {
+      final credential = await appleCredential();
+      if (credential == null) return;
+      final session = await _authClient.appleLogin(
+        idToken: credential.identityToken,
+        authorizationCode: credential.authorizationCode,
+        nonce: credential.nonce,
+        state: credential.state,
+      );
+      await _finishIdentitySignIn(session, 'apple');
+    } on AuthException catch (e) {
+      authError = e.message;
+    } on SocialLoginException catch (e) {
+      authError = e.message;
+    } catch (e) {
+      authError = e.toString();
+    } finally {
+      isAuthenticating = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> requestEmailLoginCode(String email) async {
+    authError = null;
+    notifyListeners();
+    try {
+      await _authClient.emailLoginStart(email);
+      return true;
+    } on AuthException catch (e) {
+      authError = e.message;
+    } catch (e) {
+      authError = e.toString();
+    }
+    notifyListeners();
+    return false;
+  }
+
+  Future<void> verifyEmailLoginCode({
+    required String email,
+    required String code,
+  }) async {
+    final normalized = code.replaceAll(RegExp(r'\D'), '');
+    if (normalized.length < 4) {
+      authError = 'Enter the full code from your email';
+      notifyListeners();
+      return;
+    }
+    isAuthenticating = true;
+    authError = null;
+    notifyListeners();
+    try {
+      final session = await _authClient.emailLoginVerify(
+        email: email,
+        code: normalized,
+      );
+      if (session.token.isEmpty) {
+        authError = 'Sign-in succeeded but no session token was returned';
+        return;
+      }
+      await _finishIdentitySignIn(session, 'email');
+    } on AuthException catch (e) {
+      authError = e.message;
+    } on TimeoutException {
+      authError = 'Sign-in timed out — check your connection and try again';
+    } catch (e) {
+      authError = e.toString();
+    } finally {
+      isAuthenticating = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _finishIdentitySignIn(AuthSession session, String method) async {
+    if (session.token.isEmpty) {
+      throw AuthException('Sign-in did not return a session token');
+    }
+    await _persistSession(session, method: method);
+    await refreshEntitlement();
+    await refreshProfile();
+    await refreshAccountOrgInvites();
+  }
+
   /// Mobile Wallet Adapter path — opens the native wallet selector on Seeker/Saga.
   Future<void> signInWithSolanaMobile() async {
     if (!isSolanaMobileDevice) {
@@ -397,7 +525,9 @@ class WalletAuthController extends ChangeNotifier {
       final result = await mwaSignIn(
         storedAuthToken: _mwaAuthToken,
         challengeBuilder: (address, publicKey) async {
-          final challenge = await _authClient.fetchFlowId(walletAddress: address);
+          final challenge = await _authClient.fetchFlowId(
+            walletAddress: address,
+          );
           flowId = challenge.flowId;
           return challenge.message;
         },
@@ -409,7 +539,11 @@ class WalletAuthController extends ChangeNotifier {
         signature: result.signature,
         publicKey: result.address,
       );
-      await _persistSession(session, method: 'solana_mobile', mwaToken: result.authToken);
+      await _persistSession(
+        session,
+        method: 'solana_mobile',
+        mwaToken: result.authToken,
+      );
       await refreshEntitlement();
       await refreshProfile();
       await refreshAccountOrgInvites();
@@ -643,8 +777,9 @@ class WalletAuthController extends ChangeNotifier {
   Future<String?> _solanaAddress(ReownAppKitModal modal) async {
     final chainId = modal.selectedChain?.chainId ?? '';
     if (!chainId.startsWith('solana:')) {
-      final solChains =
-          ReownAppKitModalNetworks.getAllSupportedNetworks(namespace: 'solana');
+      final solChains = ReownAppKitModalNetworks.getAllSupportedNetworks(
+        namespace: 'solana',
+      );
       if (solChains.isNotEmpty) {
         await modal.selectChain(solChains.first);
       }

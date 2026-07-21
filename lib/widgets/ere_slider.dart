@@ -44,7 +44,10 @@ class _SamplerSliderState extends State<SamplerSlider> {
 
   @override
   Widget build(BuildContext context) {
-    final t = ((_value - widget.min) / (widget.max - widget.min)).clamp(0.0, 1.0);
+    final t = ((_value - widget.min) / (widget.max - widget.min)).clamp(
+      0.0,
+      1.0,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -53,11 +56,18 @@ class _SamplerSliderState extends State<SamplerSlider> {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(widget.label,
-                style: AppText.grotesk(13, weight: FontWeight.w500)),
-            Text(widget.format(_value),
-                style: AppText.mono(12,
-                    weight: FontWeight.w600, color: AppColors.accentHi)),
+            Text(
+              widget.label,
+              style: AppText.grotesk(13, weight: FontWeight.w500),
+            ),
+            Text(
+              widget.format(_value),
+              style: AppText.mono(
+                12,
+                weight: FontWeight.w600,
+                color: AppColors.accentHi,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 10),

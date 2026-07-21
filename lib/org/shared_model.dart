@@ -19,22 +19,22 @@ class SharedModel {
   final bool accent;
 
   factory SharedModel.fromJson(Map<String, dynamic> j) => SharedModel(
-        id: (j['id'] ?? '').toString(),
-        name: (j['name'] ?? '').toString(),
-        quant: j['quant']?.toString(),
-        size: j['size']?.toString(),
-        source: (j['source'] ?? 'org').toString(),
-        status: (j['status'] ?? 'idle').toString(),
-        accent: j['accent'] == true,
-      );
+    id: (j['id'] ?? '').toString(),
+    name: (j['name'] ?? '').toString(),
+    quant: j['quant']?.toString(),
+    size: j['size']?.toString(),
+    source: (j['source'] ?? 'org').toString(),
+    status: (j['status'] ?? 'idle').toString(),
+    accent: j['accent'] == true,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        if (quant != null) 'quant': quant,
-        if (size != null) 'size': size,
-        'source': source,
-        'status': status,
-        'accent': accent,
-      };
+    'id': id,
+    'name': name,
+    if (quant != null) 'quant': quant,
+    if (size != null) 'size': size,
+    'source': source,
+    'status': status,
+    'accent': accent,
+  };
 }

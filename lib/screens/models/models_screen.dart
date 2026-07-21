@@ -34,6 +34,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
     super.initState();
     _tab = widget.initialSubTab;
   }
+
   final _searchController = TextEditingController();
   String _query = '';
 
@@ -46,28 +47,32 @@ class _ModelsScreenState extends State<ModelsScreen> {
   void _setQuery(String q) => setState(() => _query = q);
 
   void _rescan() {
-    unawaited(NodeDiscoveryService.instance.stop().then((_) {
-      if (mounted) NodeDiscoveryService.instance.start();
-    }));
+    unawaited(
+      NodeDiscoveryService.instance.stop().then((_) {
+        if (mounted) NodeDiscoveryService.instance.start();
+      }),
+    );
   }
 
   int get _networkCount {
-    final discovered = NodeDiscoveryService.instance.nodes.length;
-    return discovered > 0 ? discovered : mockNodes.length;
+    return NodeDiscoveryService.instance.nodes.length;
   }
 
   String get _browsingLabel =>
       'BROWSING _EREBRUSAI._TCP · $_networkCount NODES FOUND';
 
   List<String> get _segmentItems => [
-        'LOCAL · ${mockLocalModels.length}',
-        'NETWORK · $_networkCount',
-      ];
+    'LOCAL · ${ModelDownloadService.instance.completed.length}',
+    'NETWORK · $_networkCount',
+  ];
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: NodeDiscoveryService.instance,
+      animation: Listenable.merge([
+        NodeDiscoveryService.instance,
+        ModelDownloadService.instance,
+      ]),
       builder: (context, _) {
         return widget.wide ? _buildWide(context) : _buildNarrow(context);
       },
@@ -77,14 +82,14 @@ class _ModelsScreenState extends State<ModelsScreen> {
   // ─── Desktop ───────────────────────────────────────────────────────────────
 
   Widget _listStack(bool wide) => Expanded(
-        child: IndexedStack(
-          index: _tab,
-          children: [
-            _LocalList(wide: true, query: _query),
-            _NetworkList(wide: true, query: _query),
-          ],
-        ),
-      );
+    child: IndexedStack(
+      index: _tab,
+      children: [
+        _LocalList(wide: true, query: _query),
+        _NetworkList(wide: true, query: _query),
+      ],
+    ),
+  );
 
   Widget _buildWide(BuildContext context) {
     return Padding(
@@ -102,17 +107,17 @@ class _ModelsScreenState extends State<ModelsScreen> {
                     Text('Models', style: AppText.screenTitle()),
                     const SizedBox(height: 3),
                     Text(
-                        'Local downloads and models discovered on your network.',
-                        style: AppText.grotesk(13,
-                            color: AppColors.textSecondary)),
+                      'Local downloads and models discovered on your network.',
+                      style: AppText.grotesk(
+                        13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(width: 16),
-              _SearchField(
-                controller: _searchController,
-                onChanged: _setQuery,
-              ),
+              _SearchField(controller: _searchController, onChanged: _setQuery),
             ],
           ),
           const SizedBox(height: 18),
@@ -131,24 +136,33 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 const Icon(Symbols.wifi, size: 15, color: AppColors.success),
                 const SizedBox(width: 7),
                 Expanded(
-                  child: Text(_browsingLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.mono(10.5,
-                          color: AppColors.textMuted, lsEm: 0.06)),
+                  child: Text(
+                    _browsingLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.mono(
+                      10.5,
+                      color: AppColors.textMuted,
+                      lsEm: 0.06,
+                    ),
+                  ),
                 ),
               ] else
                 Expanded(
-                  child: Text('STORAGE · 1.9 GB USED',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.mono(10.5,
-                          color: AppColors.textMuted, lsEm: 0.06)),
+                  child: Text(
+                    'STORAGE · ${formatBytes(ModelDownloadService.instance.downloadedBytes)} USED',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.mono(
+                      10.5,
+                      color: AppColors.textMuted,
+                      lsEm: 0.06,
+                    ),
+                  ),
                 ),
               const SizedBox(width: 14),
               if (_tab == 1)
-                GhostButton('RESCAN',
-                    icon: Symbols.refresh, onTap: _rescan),
+                GhostButton('RESCAN', icon: Symbols.refresh, onTap: _rescan),
             ],
           ),
           const SizedBox(height: 18),
@@ -189,34 +203,46 @@ class _ModelsScreenState extends State<ModelsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('STORAGE · 1.9 GB OF 128 GB',
-                          style: AppText.mono(10,
-                              color: AppColors.textMuted, lsEm: 0.08)),
-                      Text('MANAGE',
-                          style: AppText.mono(10,
-                              color: AppColors.textMuted, lsEm: 0.05)),
+                      Text(
+                        'STORAGE · ${formatBytes(ModelDownloadService.instance.downloadedBytes)} USED',
+                        style: AppText.mono(
+                          10,
+                          color: AppColors.textMuted,
+                          lsEm: 0.08,
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 7),
-                  const EreProgressBar(value: 0.12),
                 ] else
                   Row(
                     children: [
-                      const Icon(Symbols.wifi,
-                          size: 15, color: AppColors.success),
+                      const Icon(
+                        Symbols.wifi,
+                        size: 15,
+                        color: AppColors.success,
+                      ),
                       const SizedBox(width: 7),
                       Expanded(
-                        child: Text(_browsingLabel,
-                            style: AppText.mono(10,
-                                color: AppColors.textMuted, lsEm: 0.06)),
+                        child: Text(
+                          _browsingLabel,
+                          style: AppText.mono(
+                            10,
+                            color: AppColors.textMuted,
+                            lsEm: 0.06,
+                          ),
+                        ),
                       ),
                       GestureDetector(
                         onTap: _rescan,
-                        child: Text('RESCAN',
-                            style: AppText.mono(10,
-                                weight: FontWeight.w600,
-                                color: AppColors.textSecondary,
-                                lsEm: 0.05)),
+                        child: Text(
+                          'RESCAN',
+                          style: AppText.mono(
+                            10,
+                            weight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                            lsEm: 0.05,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -310,14 +336,16 @@ class _LocalListState extends State<_LocalList> {
     if (ModelDownloadService.instance.isDownloaded(e.id)) {
       return ModelStatus.loaded;
     }
-    final p = ModelDownloadService.instance.progressOf(e.id);
-    if (p > 0 && p < 1) return ModelStatus.downloading;
+    if (ModelDownloadService.instance.isDownloading(e.id)) {
+      return ModelStatus.downloading;
+    }
     return ModelStatus.catalog;
   }
 
   double? _progressFor(CatalogEntry e) {
-    final p = ModelDownloadService.instance.progressOf(e.id);
-    return (p > 0 && p < 1) ? p : null;
+    return ModelDownloadService.instance.isDownloading(e.id)
+        ? ModelDownloadService.instance.progressOf(e.id)
+        : null;
   }
 
   bool _isSelected(AppState app, MockModel m) {
@@ -335,12 +363,29 @@ class _LocalListState extends State<_LocalList> {
           builder: (context, snapshot) {
             final app = AppScope.of(context);
             final q = widget.query.toLowerCase();
-            final filteredLocal = mockLocalModels
-                .where((m) => q.isEmpty || m.name.toLowerCase().contains(q))
+            final catalog = (snapshot.data ?? CatalogService.entries)
+                .where(
+                  (entry) =>
+                      entry.status != 'deprecated' &&
+                      entry.downloadUrl.isNotEmpty,
+                )
                 .toList();
-            final catalog = snapshot.data ?? CatalogService.entries;
             final filteredCatalog = catalog
                 .where((e) => q.isEmpty || e.matchesQuery(widget.query))
+                .toList();
+            final onDevice = filteredCatalog
+                .where(
+                  (entry) =>
+                      ModelDownloadService.instance.isDownloaded(entry.id) ||
+                      ModelDownloadService.instance.isDownloading(entry.id),
+                )
+                .toList();
+            final available = filteredCatalog
+                .where(
+                  (entry) =>
+                      !ModelDownloadService.instance.isDownloaded(entry.id) &&
+                      !ModelDownloadService.instance.isDownloading(entry.id),
+                )
                 .toList();
 
             final pad = widget.wide
@@ -350,88 +395,47 @@ class _LocalListState extends State<_LocalList> {
             return ListView(
               padding: pad,
               children: [
-                for (final m in filteredLocal) ...[
-                  _LocalModelCard(
-                    model: m.copyWith(accent: _isSelected(app, m)),
-                    onUse: () => app.selectModel(
-                      m.name,
-                      m.spec.split(' · ').first,
-                      id: m.id,
-                    ),
-                  ),
-                  const SizedBox(height: 11),
+                if (onDevice.isNotEmpty) ...[
+                  _ListSectionLabel('ON THIS DEVICE'),
+                  for (final entry in onDevice) ...[
+                    _catalogCard(context, app, entry),
+                    const SizedBox(height: 11),
+                  ],
                 ],
                 if (!widget.wide) ...[
                   const _NetworkStripCard(),
                   const SizedBox(height: 11),
                   if (!app.signedIn) const _LockedCard(compact: true),
                 ],
-                if (filteredCatalog.isNotEmpty) ...[
+                if (available.isNotEmpty) ...[
                   const SizedBox(height: 7),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 8),
-                    child: Text('CATALOG',
-                        style: AppText.mono(10,
-                            weight: FontWeight.w500,
-                            color: AppColors.textFaint,
-                            lsEm: 0.12)),
-                  ),
-                  for (final e in filteredCatalog) ...[
-                    Builder(builder: (context) {
-                      final status = _statusFor(e);
-                      final progress = _progressFor(e);
-                      final m = MockModel(
-                        e.name,
-                        e.letter,
-                        e.spec,
-                        id: e.id,
-                        status: status,
-                        progress: progress,
-                        accent: _isSelected(app, MockModel(e.name, e.letter, e.spec, id: e.id)),
-                      );
-                      return _LocalModelCard(
-                        model: m,
-                        onTap: () => app.selectModel(
-                          e.name,
-                          e.quant,
-                          id: e.id,
-                        ),
-                        onUse: status == ModelStatus.loaded
-                            ? () => app.selectModel(
-                                  e.name,
-                                  e.quant,
-                                  id: e.id,
-                                )
-                            : null,
-                        onDownload: status == ModelStatus.catalog
-                            ? () async {
-                                final ok = await ModelDownloadService.instance
-                                    .download(e);
-                                if (!ok && context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: const Text(
-                                          'Download could not start. Check storage permission and network.'),
-                                      action: SnackBarAction(
-                                        label: 'SETTINGS',
-                                        onPressed: () => StorageService.instance
-                                            .openSettings(),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }
-                            : null,
-                      );
-                    }),
+                  _ListSectionLabel('CATALOG · ${available.length}'),
+                  for (final e in available) ...[
+                    _catalogCard(context, app, e),
                     const SizedBox(height: 11),
                   ],
                 ] else if (!snapshot.hasData) ...[
                   const Center(
-                      child: Padding(
-                    padding: EdgeInsets.only(top: 32),
-                    child: CircularProgressIndicator(color: AppColors.accent),
-                  )),
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 32),
+                      child: CircularProgressIndicator(color: AppColors.accent),
+                    ),
+                  ),
+                ] else if (filteredCatalog.isEmpty) ...[
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 32),
+                      child: Text(
+                        CatalogService.lastError == null
+                            ? 'No models match your search'
+                            : 'Catalog unavailable · pull to retry',
+                        style: AppText.grotesk(
+                          13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             );
@@ -440,6 +444,73 @@ class _LocalListState extends State<_LocalList> {
       },
     );
   }
+
+  Widget _catalogCard(BuildContext context, AppState app, CatalogEntry entry) {
+    final status = _statusFor(entry);
+    final received = ModelDownloadService.instance.receivedBytesOf(entry.id);
+    final total = ModelDownloadService.instance.totalBytesOf(entry.id);
+    final model = MockModel(
+      entry.name,
+      entry.letter,
+      entry.spec,
+      id: entry.id,
+      status: status,
+      progress: _progressFor(entry),
+      progressLabel: status == ModelStatus.downloading
+          ? '${formatBytes(received)} / ${formatBytes(total > 0 ? total : entry.sizeBytes)}'
+          : null,
+      accent: _isSelected(
+        app,
+        MockModel(entry.name, entry.letter, entry.spec, id: entry.id),
+      ),
+    );
+    return _LocalModelCard(
+      model: model,
+      onTap: status == ModelStatus.loaded
+          ? () => app.selectModel(entry.name, entry.quant, id: entry.id)
+          : null,
+      onUse: status == ModelStatus.loaded
+          ? () => app.selectModel(entry.name, entry.quant, id: entry.id)
+          : null,
+      onDownload: status == ModelStatus.catalog
+          ? () async {
+              final ok = await ModelDownloadService.instance.download(entry);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Download could not start. Check storage permission and network.',
+                    ),
+                    action: SnackBarAction(
+                      label: 'SETTINGS',
+                      onPressed: StorageService.instance.openSettings,
+                    ),
+                  ),
+                );
+              }
+            }
+          : null,
+    );
+  }
+}
+
+class _ListSectionLabel extends StatelessWidget {
+  const _ListSectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 4, bottom: 8),
+    child: Text(
+      text,
+      style: AppText.mono(
+        10,
+        weight: FontWeight.w500,
+        color: AppColors.textFaint,
+        lsEm: 0.12,
+      ),
+    ),
+  );
 }
 
 class _LocalModelCard extends StatelessWidget {
@@ -457,7 +528,8 @@ class _LocalModelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canTap = model.status != ModelStatus.downloading &&
+    final canTap =
+        model.status != ModelStatus.downloading &&
         (onTap ?? onUse ?? onDownload) != null;
     return GestureDetector(
       onTap: canTap ? (onTap ?? onUse ?? onDownload) : null,
@@ -476,34 +548,49 @@ class _LocalModelCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                LetterTile(model.letter,
-                    size: 36, radius: 10, fontSize: 13, accent: model.accent),
+                LetterTile(
+                  model.letter,
+                  size: 36,
+                  radius: 10,
+                  fontSize: 13,
+                  accent: model.accent,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(model.name,
-                          style: AppText.grotesk(14.5,
-                              weight: FontWeight.w600)),
+                      Text(
+                        model.name,
+                        style: AppText.grotesk(14.5, weight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 2),
-                      Text(model.spec,
-                          style:
-                              AppText.mono(10, color: AppColors.textTertiary)),
+                      Text(
+                        model.spec,
+                        style: AppText.mono(10, color: AppColors.textTertiary),
+                      ),
                     ],
                   ),
                 ),
                 switch (model.status) {
                   ModelStatus.loaded => const StatusBadge('LOADED'),
-                  ModelStatus.idle => onUse != null
-                      ? AccentChip('USE', onTap: onUse!)
-                      : const StatusBadge('READY'),
-                  ModelStatus.downloading => const Icon(Symbols.close,
-                      size: 18, color: AppColors.textSecondary),
-                  ModelStatus.catalog => onDownload != null
-                      ? AccentChip('GET',
-                          icon: Symbols.download, onTap: onDownload!)
-                      : const StatusBadge('CATALOG'),
+                  ModelStatus.idle =>
+                    onUse != null
+                        ? AccentChip('USE', onTap: onUse!)
+                        : const StatusBadge('READY'),
+                  ModelStatus.downloading => const Icon(
+                    Symbols.close,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                  ModelStatus.catalog =>
+                    onDownload != null
+                        ? AccentChip(
+                            'GET',
+                            icon: Symbols.download,
+                            onTap: onDownload!,
+                          )
+                        : const StatusBadge('CATALOG'),
                 },
               ],
             ),
@@ -515,12 +602,17 @@ class _LocalModelCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                      'DOWNLOADING · ${((model.progress ?? 0) * 100).round()}%',
-                      style: AppText.mono(10,
-                          weight: FontWeight.w600,
-                          color: AppColors.accentHi)),
-                  Text(model.progressLabel ?? '',
-                      style: AppText.mono(10, color: AppColors.textMuted)),
+                    'DOWNLOADING · ${((model.progress ?? 0) * 100).round()}%',
+                    style: AppText.mono(
+                      10,
+                      weight: FontWeight.w600,
+                      color: AppColors.accentHi,
+                    ),
+                  ),
+                  Text(
+                    model.progressLabel ?? '',
+                    style: AppText.mono(10, color: AppColors.textMuted),
+                  ),
                 ],
               ),
             ],
@@ -541,11 +633,16 @@ class _NetworkStripCard extends StatelessWidget {
       animation: NodeDiscoveryService.instance,
       builder: (context, _) {
         final discovered = NodeDiscoveryService.instance.nodes;
-        final fallback = discovered.isEmpty;
-        final count = fallback ? mockNodes.length : discovered.length;
-        final subtitle = fallback
-            ? 'MACBOOK-PRO · PIXEL 9 · ${mockNodes.expand((n) => n.models).length} MODELS'
-            : discovered.map((n) => n.name.toUpperCase()).take(3).join(' · ');
+        final count = discovered.length;
+        final modelCount = discovered.fold<int>(
+          0,
+          (sum, node) => sum + node.models.length,
+        );
+        final subtitle = discovered.isEmpty
+            ? (NodeDiscoveryService.instance.isRunning
+                  ? 'SCANNING _EREBRUSAI._TCP'
+                  : 'DISCOVERY IS NOT RUNNING')
+            : '${discovered.map((n) => n.name.toUpperCase()).take(2).join(' · ')} · $modelCount MODELS';
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
           decoration: BoxDecoration(
@@ -561,18 +658,27 @@ class _NetworkStripCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$count nodes on your network',
-                        style: AppText.grotesk(13.5, weight: FontWeight.w600)),
+                    Text(
+                      count == 0
+                          ? 'No Erebrus nodes discovered'
+                          : '$count node${count == 1 ? '' : 's'} on your network',
+                      style: AppText.grotesk(13.5, weight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 2),
-                    Text(subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.mono(10, color: AppColors.textMuted)),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.mono(10, color: AppColors.textMuted),
+                    ),
                   ],
                 ),
               ),
-              const Icon(Symbols.chevron_right,
-                  size: 18, color: AppColors.success),
+              const Icon(
+                Symbols.chevron_right,
+                size: 18,
+                color: AppColors.success,
+              ),
             ],
           ),
         );
@@ -590,15 +696,25 @@ class _NetworkList extends StatelessWidget {
   final String query;
 
   List<MockNode> get _nodes {
-    final discovered = NodeDiscoveryService.instance.nodes
-        .map((n) => MockNode(
-              n.name,
-              '${n.host}:${n.port} · MDNS · V1',
-              Symbols.device_hub,
-              const [],
-            ))
+    return NodeDiscoveryService.instance.nodes
+        .map(
+          (node) => MockNode(
+            node.name,
+            '${node.host}:${node.port} · MDNS · ${node.isLoadingModels ? 'LOADING MODELS' : 'ONLINE'}',
+            Symbols.device_hub,
+            node.models
+                .map(
+                  (model) => MockModel(
+                    model.name,
+                    model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+                    model.id,
+                    id: model.id,
+                  ),
+                )
+                .toList(),
+          ),
+        )
         .toList();
-    return discovered.isNotEmpty ? discovered : mockNodes;
   }
 
   @override
@@ -637,8 +753,12 @@ class _NetworkList extends StatelessWidget {
               _OrgModelsCard(models: filteredOrgModels, wide: wide)
             else if (query.isNotEmpty)
               _emptyMessage('No matching workspace models')
+            else if (app.orgState.isLoading)
+              _emptyMessage('Loading workspace models…')
+            else if (app.orgState.error != null)
+              _emptyMessage('Workspace models unavailable')
             else
-              const _NodeCard(node: mockOrgNode, org: true),
+              _emptyMessage('No models shared with this workspace'),
           ] else
             _LockedCard(compact: !wide),
         ];
@@ -647,34 +767,40 @@ class _NetworkList extends StatelessWidget {
           padding: pad,
           children: children.isNotEmpty
               ? children
-              : [_emptyMessage('No matching nodes')],
+              : [
+                  _emptyMessage(
+                    NodeDiscoveryService.instance.isRunning
+                        ? 'No Erebrus AI nodes found on this network'
+                        : 'Network discovery is stopped',
+                  ),
+                ],
         );
       },
     );
   }
 
   Widget _emptyMessage(String text) => Padding(
-        padding: const EdgeInsets.only(top: 32),
-        child: Center(
-          child: Text(text,
-              style: AppText.grotesk(13, color: AppColors.textSecondary)),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 32),
+    child: Center(
+      child: Text(
+        text,
+        style: AppText.grotesk(13, color: AppColors.textSecondary),
+      ),
+    ),
+  );
 }
 
 class _NodeCard extends StatelessWidget {
-  const _NodeCard({required this.node, this.org = false});
+  const _NodeCard({required this.node});
 
   final MockNode node;
-  final bool org;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
-        border: Border.all(
-            color: org ? AppColors.orgPurple.withA(0.35) : AppColors.stroke),
+        border: Border.all(color: AppColors.stroke),
         borderRadius: BorderRadius.circular(16),
       ),
       clipBehavior: Clip.antiAlias,
@@ -691,16 +817,14 @@ class _NodeCard extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: org
-                        ? AppColors.orgPurple.withA(0.14)
-                        : AppColors.surface3,
+                    color: AppColors.surface3,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(node.icon,
-                      size: 19,
-                      color: org
-                          ? AppColors.orgPurple
-                          : AppColors.textSecondary),
+                  child: Icon(
+                    node.icon,
+                    size: 19,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -710,45 +834,30 @@ class _NodeCard extends StatelessWidget {
                       Row(
                         children: [
                           Flexible(
-                            child: Text(node.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.grotesk(14.5,
-                                    weight: FontWeight.w600)),
+                            child: Text(
+                              node.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.grotesk(
+                                14.5,
+                                weight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                          if (org) ...[
-                            const SizedBox(width: 6),
-                            const Icon(Symbols.verified,
-                                size: 15, fill: 1, color: AppColors.orgPurple),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text(node.meta,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              AppText.mono(10.5, color: AppColors.textMuted)),
+                      Text(
+                        node.meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.mono(10.5, color: AppColors.textMuted),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                if (org)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.orgPurple.withA(0.14),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text('PRIVATE',
-                        style: AppText.mono(10,
-                            weight: FontWeight.w600,
-                            color: AppColors.orgPurple,
-                            lsEm: 0.08)),
-                  )
-                else
-                  const StatusBadge('ONLINE'),
+                const StatusBadge('ONLINE'),
               ],
             ),
           ),
@@ -798,8 +907,11 @@ class _OrgModelsCard extends StatelessWidget {
                     color: AppColors.orgPurple.withA(0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Symbols.apartment,
-                      size: 19, color: AppColors.orgPurple),
+                  child: const Icon(
+                    Symbols.apartment,
+                    size: 19,
+                    color: AppColors.orgPurple,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -809,35 +921,52 @@ class _OrgModelsCard extends StatelessWidget {
                       Row(
                         children: [
                           Flexible(
-                            child: Text(app.selectedOrg?.name ?? 'NetSepio Workspace',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.grotesk(14.5,
-                                    weight: FontWeight.w600)),
+                            child: Text(
+                              app.selectedOrg?.name ?? 'Workspace',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.grotesk(
+                                14.5,
+                                weight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 6),
-                          const Icon(Symbols.verified,
-                              size: 15, fill: 1, color: AppColors.orgPurple),
+                          const Icon(
+                            Symbols.verified,
+                            size: 15,
+                            fill: 1,
+                            color: AppColors.orgPurple,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text('${models.length} shared model${models.length == 1 ? '' : 's'}',
-                          style: AppText.mono(10.5, color: AppColors.textMuted)),
+                      Text(
+                        '${models.length} shared model${models.length == 1 ? '' : 's'}',
+                        style: AppText.mono(10.5, color: AppColors.textMuted),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.orgPurple.withA(0.14),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text('PRIVATE',
-                      style: AppText.mono(10,
-                          weight: FontWeight.w600,
-                          color: AppColors.orgPurple,
-                          lsEm: 0.08)),
+                  child: Text(
+                    'PRIVATE',
+                    style: AppText.mono(
+                      10,
+                      weight: FontWeight.w600,
+                      color: AppColors.orgPurple,
+                      lsEm: 0.08,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -868,8 +997,13 @@ class _OrgModelRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       child: Row(
         children: [
-          LetterTile(model.name.isNotEmpty ? model.name[0] : '?',
-              size: 36, radius: 10, fontSize: 13, accent: true),
+          LetterTile(
+            model.name.isNotEmpty ? model.name[0] : '?',
+            size: 36,
+            radius: 10,
+            fontSize: 13,
+            accent: true,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text.rich(
@@ -878,12 +1012,13 @@ class _OrgModelRow extends StatelessWidget {
                 style: AppText.grotesk(13.5, weight: FontWeight.w600),
                 children: [
                   TextSpan(
-                      text: (model.quant != null && model.quant!.isNotEmpty)
-                          ? '  · ${model.quant} · ${model.size ?? ''}'
-                          : (model.size != null && model.size!.isNotEmpty)
-                              ? '  · ${model.size}'
-                              : '',
-                      style: AppText.mono(11, color: AppColors.textMuted)),
+                    text: (model.quant != null && model.quant!.isNotEmpty)
+                        ? '  · ${model.quant} · ${model.size ?? ''}'
+                        : (model.size != null && model.size!.isNotEmpty)
+                        ? '  · ${model.size}'
+                        : '',
+                    style: AppText.mono(11, color: AppColors.textMuted),
+                  ),
                 ],
               ),
               maxLines: 1,
@@ -891,8 +1026,7 @@ class _OrgModelRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          AccentChip('USE',
-              onTap: () => app.selectModel(model.name, '')),
+          AccentChip('USE', onTap: () => app.selectModel(model.name, '')),
         ],
       ),
     );
@@ -920,8 +1054,9 @@ class _NodeModelRow extends StatelessWidget {
                 style: AppText.grotesk(13.5, weight: FontWeight.w600),
                 children: [
                   TextSpan(
-                      text: '  · ${model.spec}',
-                      style: AppText.mono(11, color: AppColors.textMuted)),
+                    text: '  · ${model.spec}',
+                    style: AppText.mono(11, color: AppColors.textMuted),
+                  ),
                 ],
               ),
               maxLines: 1,
@@ -929,9 +1064,11 @@ class _NodeModelRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          AccentChip('USE',
-              onTap: () =>
-                  app.selectModel(model.name, model.spec.split(' · ').first)),
+          AccentChip(
+            'USE',
+            onTap: () =>
+                app.selectModel(model.name, model.spec.split(' · ').first),
+          ),
         ],
       ),
     );
@@ -967,22 +1104,32 @@ class _LockedCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Private workspace models',
-                        style: AppText.grotesk(13.5, weight: FontWeight.w600)),
+                    Text(
+                      'Private workspace models',
+                      style: AppText.grotesk(13.5, weight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 2),
-                    Text('Sign in to see models your team shares.',
-                        style: AppText.grotesk(11.5,
-                            color: AppColors.textSecondary)),
+                    Text(
+                      'Sign in to see models your team shares.',
+                      style: AppText.grotesk(
+                        11.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
               GestureDetector(
                 onTap: () => openSignIn(context),
-                child: Text('SIGN IN',
-                    style: AppText.mono(11,
-                        weight: FontWeight.w600,
-                        color: AppColors.accent,
-                        lsEm: 0.04)),
+                child: Text(
+                  'SIGN IN',
+                  style: AppText.mono(
+                    11,
+                    weight: FontWeight.w600,
+                    color: AppColors.accent,
+                    lsEm: 0.04,
+                  ),
+                ),
               ),
             ],
           ),
@@ -1003,35 +1150,44 @@ class _LockedCard extends StatelessWidget {
                 color: AppColors.accent.withA(0.12),
                 borderRadius: BorderRadius.circular(13),
               ),
-              child:
-                  const Icon(Symbols.lock, size: 22, color: AppColors.accent),
+              child: const Icon(
+                Symbols.lock,
+                size: 22,
+                color: AppColors.accent,
+              ),
             ),
             const SizedBox(width: 18),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Private workspace models',
-                      style: AppText.grotesk(15, weight: FontWeight.w600)),
+                  Text(
+                    'Private workspace models',
+                    style: AppText.grotesk(15, weight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 3),
                   Text(
                     'Teams share models on private org nodes. Sign in to see the '
                     'workspaces you belong to — everything else keeps working '
                     'without an account.',
-                    style: AppText.grotesk(12.5,
-                        color: AppColors.textSecondary, height: 1.45),
+                    style: AppText.grotesk(
+                      12.5,
+                      color: AppColors.textSecondary,
+                      height: 1.45,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 18),
-            PrimaryCta('SIGN IN / REGISTER',
-                fontSize: 12,
-                radius: 11,
-                glow: false,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-                onTap: () => openSignIn(context)),
+            PrimaryCta(
+              'SIGN IN / REGISTER',
+              fontSize: 12,
+              radius: 11,
+              glow: false,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+              onTap: () => openSignIn(context),
+            ),
           ],
         ),
       ),
@@ -1043,7 +1199,11 @@ class _LockedCard extends StatelessWidget {
 /// the solid low-alpha accent border reads equivalently at 1px — the custom
 /// painter below adds the dash pattern on top.
 class DottedBorderBox extends StatelessWidget {
-  const DottedBorderBox({super.key, required this.decoration, required this.child});
+  const DottedBorderBox({
+    super.key,
+    required this.decoration,
+    required this.child,
+  });
 
   final BoxDecoration decoration;
   final Widget child;
@@ -1079,8 +1239,9 @@ class _DashedRRectPainter extends CustomPainter {
       ..strokeWidth = 1
       ..color = color;
     final path = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-          Offset.zero & size, Radius.circular(radius)));
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
+      );
     for (final metric in path.computeMetrics()) {
       var d = 0.0;
       while (d < metric.length) {

@@ -27,7 +27,9 @@ class Artifact {
       repositoryId: (json['repository_id'] as String?) ?? '',
       downloadUrl: (json['download_url'] as String?) ?? '',
       fileSizeDisplay: fileSizeDisplay,
-      sizeBytes: (json['file_size_bytes'] as int?) ?? parseFileSizeDisplay(fileSizeDisplay),
+      sizeBytes:
+          (json['file_size_bytes'] as int?) ??
+          parseFileSizeDisplay(fileSizeDisplay),
       platforms: _stringList(json['platforms']),
       recommended: json['recommended'] == true,
     );
@@ -128,7 +130,8 @@ class CatalogEntry {
       ),
     );
 
-    final artifactSizeBytes = modelArtifact.sizeBytes ??
+    final artifactSizeBytes =
+        modelArtifact.sizeBytes ??
         parseFileSizeDisplay(modelArtifact.fileSizeDisplay) ??
         0;
     final artifactSizeDisplay =
@@ -138,27 +141,29 @@ class CatalogEntry {
     final platforms = _stringList(dsMap?['platforms']);
     final mobileStatus = (dsMap?['mobile_status'] as String?) ?? '';
 
-    final mobileFriendly = platforms.any((p) =>
-            p.startsWith('android') ||
-            p.startsWith('ios') ||
-            p.startsWith('mobile')) ||
-        tiers.any((t) =>
-            t == 'mobile' ||
-            t == 'tablet' ||
-            t == 'flagship_mobile') ||
+    final mobileFriendly =
+        platforms.any(
+          (p) =>
+              p.startsWith('android') ||
+              p.startsWith('ios') ||
+              p.startsWith('mobile'),
+        ) ||
+        tiers.any(
+          (t) => t == 'mobile' || t == 'tablet' || t == 'flagship_mobile',
+        ) ||
         mobileStatus == 'supported' ||
         mobileStatus == 'supported_on_recent_devices';
 
-    final desktopFriendly = platforms.any((p) =>
-            p.startsWith('macos') ||
-            p.startsWith('windows') ||
-            p.startsWith('linux') ||
-            p.startsWith('desktop') ||
-            p.startsWith('laptop')) ||
-        tiers.any((t) =>
-            t == 'laptop' ||
-            t == 'desktop' ||
-            t == 'gpu') ||
+    final desktopFriendly =
+        platforms.any(
+          (p) =>
+              p.startsWith('macos') ||
+              p.startsWith('windows') ||
+              p.startsWith('linux') ||
+              p.startsWith('desktop') ||
+              p.startsWith('laptop'),
+        ) ||
+        tiers.any((t) => t == 'laptop' || t == 'desktop' || t == 'gpu') ||
         platforms.isEmpty;
 
     return CatalogEntry(
@@ -257,7 +262,8 @@ class CatalogEntry {
   /// Catalog lifecycle state, e.g. `active`, `beta`, `deprecated`.
   final String status;
 
-  String get letter => name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  String get letter =>
+      name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
 
   double get sizeGB => sizeBytes / (1024 * 1024 * 1024);
 
@@ -269,8 +275,10 @@ class CatalogEntry {
       ? '$quant · ${formatBytes(sizeBytes)}'
       : (fileSizeDisplay.isNotEmpty ? '$quant · $fileSizeDisplay' : quant);
 
-  MockModel toMockModel({ModelStatus status = ModelStatus.catalog, bool accent = false}) =>
-      MockModel(name, letter, spec, id: id, status: status, accent: accent);
+  MockModel toMockModel({
+    ModelStatus status = ModelStatus.catalog,
+    bool accent = false,
+  }) => MockModel(name, letter, spec, id: id, status: status, accent: accent);
 
   bool matchesQuery(String query) {
     final q = query.toLowerCase();
@@ -290,15 +298,15 @@ String formatBytes(int bytes) {
   return '${(bytes / mb).round()} MB';
 }
 
-String formatGB(double gb) => gb >= 1
-    ? '${gb.toStringAsFixed(1)} GB'
-    : '${(gb * 1024).round()} MB';
+String formatGB(double gb) =>
+    gb >= 1 ? '${gb.toStringAsFixed(1)} GB' : '${(gb * 1024).round()} MB';
 
 /// Parses human-readable sizes like `533 MB` or `1.9 GB` into bytes.
 int? parseFileSizeDisplay(String? display) {
   if (display == null || display.trim().isEmpty) return null;
-  final match = RegExp(r'^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)\s*$')
-      .firstMatch(display.trim());
+  final match = RegExp(
+    r'^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)\s*$',
+  ).firstMatch(display.trim());
   if (match == null) return null;
   final value = double.tryParse(match.group(1)!) ?? 0;
   final unit = match.group(2)!.toLowerCase();

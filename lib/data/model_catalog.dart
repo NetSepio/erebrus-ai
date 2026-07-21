@@ -213,8 +213,10 @@ class Recommendation {
 /// Filters by platform support, device tier, mobile status and available RAM,
 /// then ranks by fit (recommended RAM <= budget), catalog display order and
 /// parameter count. Falls back to the smallest fit if nothing comfortably runs.
-Recommendation recommendModel(DeviceProfile device,
-    {List<CatalogEntry>? catalog}) {
+Recommendation recommendModel(
+  DeviceProfile device, {
+  List<CatalogEntry>? catalog,
+}) {
   final entries = catalog ?? modelCatalog;
   if (entries.isEmpty) {
     return Recommendation(
@@ -248,7 +250,7 @@ Recommendation recommendModel(DeviceProfile device,
       'flagship_mobile',
       'laptop',
       'desktop',
-      'gpu'
+      'gpu',
     ]);
     preferredTiers.addAll(const ['laptop', 'desktop']);
     if (device.ramGB >= 16) preferredTiers.add('gpu');
@@ -282,7 +284,8 @@ Recommendation recommendModel(DeviceProfile device,
     final minRam = e.minRamGB > 0 ? e.minRamGB : recRam * 0.8;
     final fitsRecommended = recRam <= maxRamGB;
     final fitsMinimum = minRam <= maxRamGB;
-    final viable = platformOk(e) && tierOk(e) && mobileStatusOk(e) && isActive(e);
+    final viable =
+        platformOk(e) && tierOk(e) && mobileStatusOk(e) && isActive(e);
 
     var score = 0.0;
     if (viable && fitsRecommended) score += 1000;
@@ -333,7 +336,12 @@ Recommendation recommendModel(DeviceProfile device,
 
 class _ScoredEntry {
   const _ScoredEntry(
-      this.entry, this.score, this.viable, this.fitsRecommended, this.fitsMinimum);
+    this.entry,
+    this.score,
+    this.viable,
+    this.fitsRecommended,
+    this.fitsMinimum,
+  );
 
   final CatalogEntry entry;
   final double score;

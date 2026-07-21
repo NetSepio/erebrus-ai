@@ -31,11 +31,20 @@ class _ArtPainter extends CustomPainter {
     ..strokeWidth = width
     ..color = color;
 
-  void _dashedPath(Canvas canvas, Path path, Paint paint, double dash, double gap) {
+  void _dashedPath(
+    Canvas canvas,
+    Path path,
+    Paint paint,
+    double dash,
+    double gap,
+  ) {
     for (final metric in path.computeMetrics()) {
       var d = 0.0;
       while (d < metric.length) {
-        canvas.drawPath(metric.extractPath(d, math.min(d + dash, metric.length)), paint);
+        canvas.drawPath(
+          metric.extractPath(d, math.min(d + dash, metric.length)),
+          paint,
+        );
         d += dash + gap;
       }
     }
@@ -81,7 +90,11 @@ class _ArtPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 260);
-    canvas.drawCircle(const Offset(130, 130), 92, _stroke(_accent.withA(0.16), 1));
+    canvas.drawCircle(
+      const Offset(130, 130),
+      92,
+      _stroke(_accent.withA(0.16), 1),
+    );
     switch (art) {
       case OnboardingArt.mesh:
         _paintMesh(canvas);
@@ -126,29 +139,44 @@ class _ArtPainter extends CustomPainter {
     canvas.drawLine(a, b, line);
     canvas.drawLine(b, c, line);
     canvas.drawLine(a, c, line);
-    _dashedPath(canvas, Path()..moveTo(b.dx, b.dy)..lineTo(a.dx, a.dy),
-        _stroke(_accent.withA(0.8), 1.4), 3, 5);
+    _dashedPath(
+      canvas,
+      Path()
+        ..moveTo(b.dx, b.dy)
+        ..lineTo(a.dx, a.dy),
+      _stroke(_accent.withA(0.8), 1.4),
+      3,
+      5,
+    );
 
     final deviceFill = Paint()..color = AppColors.bg;
     final deviceStroke = _stroke(_accent, 1.6);
     // Laptop screen + base
     final laptop = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(104, 44, 52, 34), const Radius.circular(6));
+      const Rect.fromLTWH(104, 44, 52, 34),
+      const Radius.circular(6),
+    );
     canvas.drawRRect(laptop, deviceFill);
     canvas.drawRRect(laptop, deviceStroke);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          const Rect.fromLTWH(96, 82, 68, 5), const Radius.circular(2.5)),
+        const Rect.fromLTWH(96, 82, 68, 5),
+        const Radius.circular(2.5),
+      ),
       Paint()..color = _accent.withA(0.7),
     );
     // Phone
     final phone = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(62, 132, 26, 42), const Radius.circular(7));
+      const Rect.fromLTWH(62, 132, 26, 42),
+      const Radius.circular(7),
+    );
     canvas.drawRRect(phone, deviceFill);
     canvas.drawRRect(phone, deviceStroke);
     // Third device
     final tv = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(170, 136, 34, 30), const Radius.circular(6));
+      const Rect.fromLTWH(170, 136, 34, 30),
+      const Radius.circular(6),
+    );
     canvas.drawRRect(tv, deviceFill);
     canvas.drawRRect(tv, _stroke(_accent.withA(0.6), 1.4));
 
@@ -158,35 +186,52 @@ class _ArtPainter extends CustomPainter {
 
   /// 03 — spark above a shielded lock, satellites outside the dashed ring.
   void _paintMeshOrg(Canvas canvas) {
-    canvas.drawCircle(const Offset(130, 130), 56, Paint()..color = _accent.withA(0.06));
+    canvas.drawCircle(
+      const Offset(130, 130),
+      56,
+      Paint()..color = _accent.withA(0.06),
+    );
     _dashedPath(
-        canvas,
-        Path()..addOval(Rect.fromCircle(center: const Offset(130, 130), radius: 56)),
-        _stroke(_accent.withA(0.4), 1.4),
-        4,
-        6);
+      canvas,
+      Path()
+        ..addOval(Rect.fromCircle(center: const Offset(130, 130), radius: 56)),
+      _stroke(_accent.withA(0.4), 1.4),
+      4,
+      6,
+    );
     _spark(canvas, const Offset(114, 84), 0.5, _accent);
 
     final bodyFill = Paint()..color = AppColors.bg;
     final bodyStroke = _stroke(_accent, 1.6);
     final lockBody = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(106, 128, 48, 34), const Radius.circular(10));
+      const Rect.fromLTWH(106, 128, 48, 34),
+      const Radius.circular(10),
+    );
     canvas.drawRRect(lockBody, bodyFill);
     canvas.drawRRect(lockBody, bodyStroke);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          const Rect.fromLTWH(122, 118, 16, 14), const Radius.circular(7)),
+        const Rect.fromLTWH(122, 118, 16, 14),
+        const Radius.circular(7),
+      ),
       bodyStroke,
     );
     canvas.drawCircle(const Offset(130, 143), 4, Paint()..color = _accent);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          const Rect.fromLTWH(127, 145, 6, 9), const Radius.circular(3)),
+        const Rect.fromLTWH(127, 145, 6, 9),
+        const Radius.circular(3),
+      ),
       Paint()..color = _accent,
     );
 
     final satStroke = _stroke(_accent.withA(0.6), 1.4);
-    const sats = [Offset(50, 180), Offset(210, 180), Offset(66, 62), Offset(194, 62)];
+    const sats = [
+      Offset(50, 180),
+      Offset(210, 180),
+      Offset(66, 62),
+      Offset(194, 62),
+    ];
     for (final p in sats) {
       canvas.drawCircle(p, 7, bodyFill);
       canvas.drawCircle(p, 7, satStroke);

@@ -24,16 +24,16 @@ class UserOrgInvite {
   final DateTime? createdAt;
 
   factory UserOrgInvite.fromJson(Map<String, dynamic> j) => UserOrgInvite(
-        id: (j['id'] ?? '').toString(),
-        orgId: (j['org_id'] ?? '').toString(),
-        orgName: (j['org_name'] ?? '').toString(),
-        orgSlug: j['org_slug']?.toString(),
-        role: j['role']?.toString(),
-        seatTier: j['seat_tier']?.toString(),
-        source: j['source']?.toString(),
-        invitedByName: j['invited_by_name']?.toString(),
-        createdAt: _parseDateTime(j['created_at']),
-      );
+    id: (j['id'] ?? '').toString(),
+    orgId: (j['org_id'] ?? '').toString(),
+    orgName: (j['org_name'] ?? '').toString(),
+    orgSlug: j['org_slug']?.toString(),
+    role: j['role']?.toString(),
+    seatTier: j['seat_tier']?.toString(),
+    source: j['source']?.toString(),
+    invitedByName: j['invited_by_name']?.toString(),
+    createdAt: _parseDateTime(j['created_at']),
+  );
 
   static DateTime? _parseDateTime(dynamic v) {
     if (v == null) return null;

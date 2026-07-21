@@ -21,6 +21,14 @@ class PersonaService extends ChangeNotifier {
   List<MockPersona> get userPersonas => List.unmodifiable(_userPersonas);
   List<MockPersona> get all => [...builtIns, ..._userPersonas];
 
+  MockPersona get defaultPersona => builtIns.firstWhere(
+    (persona) => persona.id == 'concise-analyst',
+    orElse: () => builtIns.first,
+  );
+
+  MockPersona? byId(String id) =>
+      all.where((persona) => persona.effectiveId == id).firstOrNull;
+
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
   Future<void> load() async {
@@ -55,11 +63,13 @@ class PersonaService extends ChangeNotifier {
   }
 
   /// Saves a persona. If it is built-in, it is saved as a user copy with a new id.
-  Future<void> save(MockPersona persona) async {
+  Future<MockPersona> save(MockPersona persona) async {
     var toSave = persona.builtIn || persona.id == null
         ? persona.copyWith(id: const Uuid().v4(), builtIn: false)
         : persona;
-    final idx = _userPersonas.indexWhere((p) => p.effectiveId == toSave.effectiveId);
+    final idx = _userPersonas.indexWhere(
+      (p) => p.effectiveId == toSave.effectiveId,
+    );
     if (idx >= 0) {
       _userPersonas[idx] = toSave;
     } else {
@@ -67,6 +77,7 @@ class PersonaService extends ChangeNotifier {
     }
     notifyListeners();
     await _persist(toSave);
+    return toSave;
   }
 
   Future<void> delete(String id) async {

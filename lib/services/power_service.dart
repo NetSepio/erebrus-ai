@@ -32,15 +32,16 @@ class PowerService {
         androidNotificationOptions: AndroidNotificationOptions(
           channelId: 'erebrus_foreground',
           channelName: 'Erebrus AI background work',
-          channelDescription:
-              'Keeps model downloads and the local node alive',
+          channelDescription: 'Keeps model downloads and the local node alive',
           channelImportance: NotificationChannelImportance.LOW,
           priority: NotificationPriority.LOW,
           onlyAlertOnce: true,
           showBadge: false,
         ),
-        iosNotificationOptions:
-            const IOSNotificationOptions(showNotification: true, playSound: false),
+        iosNotificationOptions: const IOSNotificationOptions(
+          showNotification: true,
+          playSound: false,
+        ),
         foregroundTaskOptions: ForegroundTaskOptions(
           eventAction: ForegroundTaskEventAction.nothing(),
           allowWakeLock: true,
@@ -79,7 +80,10 @@ class PowerService {
   }
 
   /// Call when the local node serving state changes.
-  Future<void> setServing(bool serving, {String label = 'Serving on LAN'}) async {
+  Future<void> setServing(
+    bool serving, {
+    String label = 'Serving on LAN',
+  }) async {
     _serving = serving;
     if (serving) {
       await WakelockPlus.enable();

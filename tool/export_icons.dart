@@ -27,20 +27,23 @@ void main() {
 
     // App icon source — 1024, tile radius 34/150 of size, glyph 82/150.
     final appIcon = await _renderTile(1024);
-    File('${iconsDir.path}/erebrus-ai-icon-1024.png')
-        .writeAsBytesSync(appIcon);
+    File('${iconsDir.path}/erebrus-ai-icon-1024.png').writeAsBytesSync(appIcon);
 
     // Color tray icons (Linux & generic).
-    File('${trayDir.path}/tray_icon.png')
-        .writeAsBytesSync(await _renderTile(32));
-    File('${trayDir.path}/tray_icon@2x.png')
-        .writeAsBytesSync(await _renderTile(64));
+    File(
+      '${trayDir.path}/tray_icon.png',
+    ).writeAsBytesSync(await _renderTile(32));
+    File(
+      '${trayDir.path}/tray_icon@2x.png',
+    ).writeAsBytesSync(await _renderTile(64));
 
     // macOS template icons — glyph only, pure black + alpha; macOS recolors.
-    File('${trayDir.path}/tray_icon_template.png')
-        .writeAsBytesSync(await _renderGlyph(22, const ui.Color(0xFF000000)));
-    File('${trayDir.path}/tray_icon_template@2x.png')
-        .writeAsBytesSync(await _renderGlyph(44, const ui.Color(0xFF000000)));
+    File(
+      '${trayDir.path}/tray_icon_template.png',
+    ).writeAsBytesSync(await _renderGlyph(22, const ui.Color(0xFF000000)));
+    File(
+      '${trayDir.path}/tray_icon_template@2x.png',
+    ).writeAsBytesSync(await _renderGlyph(44, const ui.Color(0xFF000000)));
 
     // Windows .ico — PNG-compressed entries.
     final icoSizes = [16, 24, 32, 48, 256];
@@ -48,8 +51,9 @@ void main() {
     for (final s in icoSizes) {
       icoImages.add(await _renderTile(s));
     }
-    File('${trayDir.path}/tray_icon.ico')
-        .writeAsBytesSync(_buildIco(icoSizes, icoImages));
+    File(
+      '${trayDir.path}/tray_icon.ico',
+    ).writeAsBytesSync(_buildIco(icoSizes, icoImages));
   });
 }
 
@@ -93,15 +97,17 @@ Future<Uint8List> _renderTile(int size) async {
   final half = s * (dx + dy) / 2;
   final center = ui.Offset(s / 2, s / 2);
   final gradient = ui.Gradient.linear(
-    center - const ui.Offset(dx, dy) * half as ui.Offset,
-    center + const ui.Offset(dx, dy) * half as ui.Offset,
+    center - const ui.Offset(dx, dy) * half,
+    center + const ui.Offset(dx, dy) * half,
     const [ui.Color(0xFFFF8A50), ui.Color(0xFFFF7E44), ui.Color(0xFFE0531F)],
     const [0.0, 0.3, 1.0],
   );
 
   canvas.drawRRect(
     ui.RRect.fromRectAndRadius(
-        ui.Rect.fromLTWH(0, 0, s, s), ui.Radius.circular(s * 34 / 150)),
+      ui.Rect.fromLTWH(0, 0, s, s),
+      ui.Radius.circular(s * 34 / 150),
+    ),
     ui.Paint()..shader = gradient,
   );
 
@@ -135,8 +141,7 @@ Uint8List _buildIco(List<int> sizes, List<Uint8List> pngs) {
   const headerSize = 6;
   const entrySize = 16;
   final dataOffset = headerSize + entrySize * sizes.length;
-  final total =
-      dataOffset + pngs.fold<int>(0, (sum, p) => sum + p.length);
+  final total = dataOffset + pngs.fold<int>(0, (sum, p) => sum + p.length);
   final out = ByteData(total);
 
   out.setUint16(0, 0, Endian.little); // reserved

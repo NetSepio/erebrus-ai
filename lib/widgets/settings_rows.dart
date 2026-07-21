@@ -23,7 +23,12 @@ class SettingsCard extends StatelessWidget {
       child: Column(
         children: [
           for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) const Divider(height: 1, thickness: 1, color: AppColors.strokeSoft),
+            if (i > 0)
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: AppColors.strokeSoft,
+              ),
             children[i],
           ],
         ],
@@ -60,7 +65,10 @@ class SettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final row = Padding(
-      padding: EdgeInsets.symmetric(horizontal: dense ? 14 : 15, vertical: dense ? 13 : 14),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 14 : 15,
+        vertical: dense ? 13 : 14,
+      ),
       child: Row(
         children: [
           Icon(icon, size: dense ? 19 : 20, color: iconColor),
@@ -69,17 +77,27 @@ class SettingsRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: AppText.grotesk(dense ? 14 : 14.5,
-                        weight: FontWeight.w500, color: titleColor)),
+                Text(
+                  title,
+                  style: AppText.grotesk(
+                    dense ? 14 : 14.5,
+                    weight: FontWeight.w500,
+                    color: titleColor,
+                  ),
+                ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
                     style: subtitleMono
-                        ? AppText.mono(dense ? 10.5 : 11.5, color: AppColors.textMuted)
-                        : AppText.grotesk(dense ? 11 : 11.5,
-                            color: AppColors.textMuted),
+                        ? AppText.mono(
+                            dense ? 10.5 : 11.5,
+                            color: AppColors.textMuted,
+                          )
+                        : AppText.grotesk(
+                            dense ? 11 : 11.5,
+                            color: AppColors.textMuted,
+                          ),
                   ),
                 ],
               ],
@@ -90,7 +108,11 @@ class SettingsRow extends StatelessWidget {
       ),
     );
     if (onTap == null) return row;
-    return GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: row);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: row,
+    );
   }
 }
 
@@ -109,7 +131,11 @@ class RowValue extends StatelessWidget {
         Text(value, style: AppText.mono(12, color: AppColors.textTertiary)),
         if (chevron) ...[
           const SizedBox(width: 10),
-          const Icon(Symbols.chevron_right, size: 18, color: AppColors.textSecondary),
+          const Icon(
+            Symbols.chevron_right,
+            size: 18,
+            color: AppColors.textSecondary,
+          ),
         ],
       ],
     );

@@ -12,6 +12,7 @@ class EntitlementState {
   final bool entitled;
   final String status;
   final String? planId;
+
   /// `trial` | `nft` | `crypto` | `admin` | null
   final String? source;
   final DateTime? periodEnd;
@@ -26,7 +27,10 @@ class EntitlementState {
     if (endRaw is String && endRaw.isNotEmpty) {
       periodEnd = DateTime.tryParse(endRaw);
     } else if (endRaw is int) {
-      periodEnd = DateTime.fromMillisecondsSinceEpoch(endRaw * 1000, isUtc: true);
+      periodEnd = DateTime.fromMillisecondsSinceEpoch(
+        endRaw * 1000,
+        isUtc: true,
+      );
     }
     return EntitlementState(
       entitled: entitled,

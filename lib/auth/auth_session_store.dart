@@ -6,7 +6,7 @@ import '../platform/secure_storage.dart';
 /// Persisted gateway session + optional Solana Mobile Wallet Adapter state.
 class AuthSessionStore {
   AuthSessionStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? ErebrusSecureStorage.instance;
+    : _storage = storage ?? ErebrusSecureStorage.instance;
 
   final FlutterSecureStorage _storage;
 
@@ -57,7 +57,14 @@ class AuthSessionStore {
   }
 
   Future<void> clear() async {
-    for (final key in [kToken, kWallet, kUserId, kRole, kAuthMethod, kMwaToken]) {
+    for (final key in [
+      kToken,
+      kWallet,
+      kUserId,
+      kRole,
+      kAuthMethod,
+      kMwaToken,
+    ]) {
       await _storage.delete(key: key);
     }
   }

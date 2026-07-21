@@ -20,14 +20,22 @@ class ModelDownloadService extends ChangeNotifier {
 
   final Map<String, double> _progress = {};
   final Set<String> _completed = {};
+  final Set<String> _downloading = {};
+  final Map<String, int> _receivedBytes = {};
+  final Map<String, int> _totalBytes = {};
   final Map<String, int> _lastNotifiedPercent = {};
+  int _downloadedBytes = 0;
 
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
   bool _notificationsReady = false;
 
-  UnmodifiableMapView<String, double> get progress => UnmodifiableMapView(_progress);
+  UnmodifiableMapView<String, double> get progress =>
+      UnmodifiableMapView(_progress);
   UnmodifiableSetView<String> get completed => UnmodifiableSetView(_completed);
+  UnmodifiableSetView<String> get downloading =>
+      UnmodifiableSetView(_downloading);
+  int get downloadedBytes => _downloadedBytes;
 
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
@@ -50,12 +58,33 @@ class ModelDownloadService extends ChangeNotifier {
         // Ignore corrupt manifest files.
       }
     }
+    await _refreshDownloadedBytes(dir);
     notifyListeners();
   }
 
   bool isDownloaded(String id) => _completed.contains(id);
 
+  /// Absolute path to a downloaded GGUF model, or `null` when the download is
+  /// incomplete/missing. Native llama.cpp bindings require a real filesystem
+  /// path (asset URLs and model ids are not sufficient).
+  Future<String?> modelPath(String id) async {
+    if (id.isEmpty || !_completed.contains(id)) return null;
+    final dir = await StorageService.instance.modelsDir();
+    final file = File(p.join(dir.path, '${_safeName(id)}.gguf'));
+    return await file.exists() ? file.path : null;
+  }
+
+  Future<String?> mmprojPath(String id) async {
+    if (id.isEmpty || !_completed.contains(id)) return null;
+    final dir = await StorageService.instance.modelsDir();
+    final file = File(p.join(dir.path, '${_safeName(id)}_mmproj.gguf'));
+    return await file.exists() ? file.path : null;
+  }
+
   double progressOf(String id) => _progress[id] ?? 0.0;
+  bool isDownloading(String id) => _downloading.contains(id);
+  int receivedBytesOf(String id) => _receivedBytes[id] ?? 0;
+  int totalBytesOf(String id) => _totalBytes[id] ?? 0;
 
   /// Downloads the recommended model artifact (and optional mmproj) for [entry].
   Future<bool> download(CatalogEntry entry) async {
@@ -72,7 +101,14 @@ class ModelDownloadService extends ChangeNotifier {
     final modelFile = File(p.join(dir.path, '$baseName.gguf'));
     final manifestFile = File(p.join(dir.path, '$baseName.json'));
 
+    final mmprojBytes = entry.artifacts
+        .where((artifact) => artifact.role == 'mmproj')
+        .fold<int>(0, (sum, artifact) => sum + (artifact.sizeBytes ?? 0));
+    final totalBytes = entry.sizeBytes + mmprojBytes;
+    _downloading.add(entry.id);
     _progress[entry.id] = 0.0;
+    _receivedBytes[entry.id] = 0;
+    _totalBytes[entry.id] = totalBytes;
     _lastNotifiedPercent.remove(entry.id);
     notifyListeners();
 
@@ -80,8 +116,14 @@ class ModelDownloadService extends ChangeNotifier {
     await PowerService.instance.startDownload(entry.name);
 
     final ok = await _downloadUrl(
-        entry.downloadUrl, modelFile, entry.id, entry.name);
+      entry.downloadUrl,
+      modelFile,
+      entry.id,
+      entry.name,
+      overallTotal: totalBytes,
+    );
     if (!ok) {
+      _downloading.remove(entry.id);
       await _showNotification('Download failed', 0.0, failed: true);
       await PowerService.instance.stopDownload();
       return false;
@@ -93,8 +135,15 @@ class ModelDownloadService extends ChangeNotifier {
       await _showNotification('Downloading $mmprojTitle', 0.0);
       await PowerService.instance.updateDownload(mmprojTitle, 0.0);
       final ok2 = await _downloadUrl(
-          entry.mmprojDownloadUrl, mmprojFile, '${entry.id}_mmproj', mmprojTitle);
+        entry.mmprojDownloadUrl,
+        mmprojFile,
+        entry.id,
+        mmprojTitle,
+        receivedOffset: entry.sizeBytes,
+        overallTotal: totalBytes,
+      );
       if (!ok2) {
+        _downloading.remove(entry.id);
         _progress.remove(entry.id);
         notifyListeners();
         await _showNotification('Download failed', 0.0, failed: true);
@@ -116,7 +165,9 @@ class ModelDownloadService extends ChangeNotifier {
     await manifestFile.writeAsString(json.encode(manifest));
 
     _completed.add(entry.id);
+    _downloading.remove(entry.id);
     _progress[entry.id] = 1.0;
+    await _refreshDownloadedBytes(dir);
     notifyListeners();
     await _showNotification('${entry.name} is ready', 1.0, complete: true);
     await PowerService.instance.stopDownload();
@@ -124,7 +175,13 @@ class ModelDownloadService extends ChangeNotifier {
   }
 
   Future<bool> _downloadUrl(
-      String url, File file, String progressId, String title) async {
+    String url,
+    File file,
+    String progressId,
+    String title, {
+    int receivedOffset = 0,
+    int overallTotal = 0,
+  }) async {
     if (url.isEmpty) return false;
     HttpClient? client;
     IOSink? sink;
@@ -144,13 +201,21 @@ class ModelDownloadService extends ChangeNotifier {
       await for (final chunk in response) {
         sink.add(chunk);
         received += chunk.length;
+        final overallReceived = receivedOffset + received;
+        final knownOverallTotal = overallTotal > 0
+            ? overallTotal
+            : receivedOffset + total;
         double progress;
-        if (total > 0) {
-          progress = received / total;
+        if (knownOverallTotal > 0) {
+          progress = overallReceived / knownOverallTotal;
         } else {
           progress = 0.5;
         }
         _progress[progressId] = progress;
+        _receivedBytes[progressId] = overallReceived;
+        if (knownOverallTotal > 0) {
+          _totalBytes[progressId] = knownOverallTotal;
+        }
         notifyListeners();
         await _showNotification(title, progress);
         await PowerService.instance.updateDownload(title, progress);
@@ -159,7 +224,9 @@ class ModelDownloadService extends ChangeNotifier {
       sink = null;
       client.close();
       client = null;
-      _progress[progressId] = 1.0;
+      if (overallTotal <= 0 || receivedOffset + received >= overallTotal) {
+        _progress[progressId] = 1.0;
+      }
       notifyListeners();
       return true;
     } catch (e) {
@@ -176,6 +243,17 @@ class ModelDownloadService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<void> _refreshDownloadedBytes(Directory dir) async {
+    var total = 0;
+    await for (final entity in dir.list()) {
+      if (entity is! File || !entity.path.endsWith('.gguf')) continue;
+      try {
+        total += await entity.length();
+      } catch (_) {}
+    }
+    _downloadedBytes = total;
   }
 
   Future<void> _ensureNotifications() async {
@@ -195,13 +273,15 @@ class ModelDownloadService extends ChangeNotifier {
       );
       await _notifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(channel);
 
       // Android 13+ notification permission.
       await _notifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.requestNotificationsPermission();
 
       _notificationsReady = true;
@@ -215,8 +295,12 @@ class ModelDownloadService extends ChangeNotifier {
     }
   }
 
-  Future<void> _showNotification(String title, double progress,
-      {bool complete = false, bool failed = false}) async {
+  Future<void> _showNotification(
+    String title,
+    double progress, {
+    bool complete = false,
+    bool failed = false,
+  }) async {
     if (_inTest) return;
     await _ensureNotifications();
 
@@ -230,8 +314,8 @@ class ModelDownloadService extends ChangeNotifier {
     final body = complete
         ? 'Download complete and ready to chat'
         : failed
-            ? 'Tap to retry from the app'
-            : '$percent%';
+        ? 'Tap to retry from the app'
+        : '$percent%';
 
     final details = AndroidNotificationDetails(
       'model_download_channel',

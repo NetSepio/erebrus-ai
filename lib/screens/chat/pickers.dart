@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_data.dart';
+import '../../data/catalog_entry.dart';
+import '../../data/catalog_service.dart';
+import '../../services/model_download_service.dart';
+import '../../services/node_discovery_service.dart';
+import '../../services/persona_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -12,38 +16,56 @@ import '../../widgets/ere_controls.dart';
 
 void showModelPicker(BuildContext context) {
   final app = AppScope.of(context);
+  final byId = {for (final entry in CatalogService.entries) entry.id: entry};
+  final local = ModelDownloadService.instance.completed
+      .map((id) => byId[id])
+      .whereType<CatalogEntry>()
+      .toList();
+  final nodes = NodeDiscoveryService.instance.nodes;
   _showPicker(
     context,
     title: 'SWITCH MODEL',
     children: [
       _PickerGroupLabel('ON THIS DEVICE'),
-      for (final m in mockLocalModels.where(
-          (m) => m.status == ModelStatus.loaded || m.status == ModelStatus.idle))
-        _PickerRow(
-          leading: LetterTile(m.letter, accent: m.accent),
-          title: m.name,
-          meta: m.spec,
-          trailing: m.status == ModelStatus.loaded
-              ? const StatusBadge('LOADED', dot: true)
-              : null,
-          selected: m.name == app.selectedModel,
-          onTap: () {
-            app.selectModel(m.name, m.spec.split(' · ').first);
-            Navigator.of(context).pop();
-          },
-        ),
-      for (final node in mockNodes) ...[
-        _PickerGroupLabel(node.name.toUpperCase()),
-        for (final m in node.models)
+      if (local.isEmpty)
+        _PickerEmpty('No downloaded models')
+      else
+        for (final model in local)
           _PickerRow(
-            leading: LetterTile(m.letter),
-            title: m.name,
-            meta: m.spec,
-            trailing:
-                const Icon(Symbols.wifi, size: 15, color: AppColors.success),
-            selected: m.name == app.selectedModel,
+            leading: LetterTile(
+              model.letter,
+              accent: model.id == app.selectedModelId,
+            ),
+            title: model.name,
+            meta: model.spec,
+            trailing: const StatusBadge('LOADED', dot: true),
+            selected: model.id == app.selectedModelId,
             onTap: () {
-              app.selectModel(m.name, m.spec.split(' · ').first);
+              app.selectModel(model.name, model.quant, id: model.id);
+              Navigator.of(context).pop();
+            },
+          ),
+      for (final node in nodes) ...[
+        _PickerGroupLabel(node.name.toUpperCase()),
+        if (node.models.isEmpty)
+          _PickerEmpty(
+            node.isLoadingModels ? 'Loading models…' : 'No models advertised',
+          ),
+        for (final model in node.models)
+          _PickerRow(
+            leading: LetterTile(
+              model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+            ),
+            title: model.name,
+            meta: '${node.host}:${node.port}',
+            trailing: const Icon(
+              Symbols.wifi,
+              size: 15,
+              color: AppColors.success,
+            ),
+            selected: model.id == app.selectedModelId,
+            onTap: () {
+              app.selectModel(model.name, 'REMOTE', id: model.id);
               Navigator.of(context).pop();
             },
           ),
@@ -54,42 +76,64 @@ void showModelPicker(BuildContext context) {
 
 void showPersonaPicker(BuildContext context) {
   final app = AppScope.of(context);
+  final service = PersonaService.instance;
   _showPicker(
     context,
     title: 'SWITCH PERSONA',
     children: [
       _PickerGroupLabel('BUILT-IN'),
-      for (final p in mockBuiltInPersonas)
+      for (final p in service.builtIns)
         _PickerRow(
-          leading: LetterTile(p.initials,
-              size: 28, radius: 9, fontSize: 11,
-              accent: p.name == app.selectedPersona),
+          leading: LetterTile(
+            p.initials,
+            size: 28,
+            radius: 9,
+            fontSize: 11,
+            accent: p.effectiveId == app.selectedPersonaId,
+          ),
           title: p.name,
           meta: p.meta,
-          selected: p.name == app.selectedPersona,
+          selected: p.effectiveId == app.selectedPersonaId,
           onTap: () {
-            app.selectPersona(p.name);
+            app.selectPersona(p.name, id: p.effectiveId);
             Navigator.of(context).pop();
           },
         ),
       _PickerGroupLabel('YOURS'),
-      for (final p in mockYourPersonas)
-        _PickerRow(
-          leading: LetterTile(p.initials, size: 28, radius: 9, fontSize: 11),
-          title: p.name,
-          meta: p.meta,
-          selected: p.name == app.selectedPersona,
-          onTap: () {
-            app.selectPersona(p.name);
-            Navigator.of(context).pop();
-          },
-        ),
+      if (service.userPersonas.isEmpty)
+        _PickerEmpty('No saved personas')
+      else
+        for (final p in service.userPersonas)
+          _PickerRow(
+            leading: LetterTile(p.initials, size: 28, radius: 9, fontSize: 11),
+            title: p.name,
+            meta: p.meta,
+            selected: p.effectiveId == app.selectedPersonaId,
+            onTap: () {
+              app.selectPersona(p.name, id: p.effectiveId);
+              Navigator.of(context).pop();
+            },
+          ),
     ],
   );
 }
 
-void _showPicker(BuildContext context,
-    {required String title, required List<Widget> children}) {
+class _PickerEmpty extends StatelessWidget {
+  const _PickerEmpty(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+    child: Text(text, style: AppText.grotesk(12, color: AppColors.textMuted)),
+  );
+}
+
+void _showPicker(
+  BuildContext context, {
+  required String title,
+  required List<Widget> children,
+}) {
   final wide = MediaQuery.sizeOf(context).width >= 900;
   final content = _PickerContent(title: title, children: children);
   if (wide) {
@@ -116,8 +160,9 @@ void _showPicker(BuildContext context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
-      constraints:
-          BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.72),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+      ),
       builder: (_) => content,
     );
   }
@@ -142,9 +187,7 @@ class _PickerContent extends StatelessWidget {
             child: Text(title, style: AppText.sectionHeader()),
           ),
           const SizedBox(height: 8),
-          Flexible(
-            child: ListView(shrinkWrap: true, children: children),
-          ),
+          Flexible(child: ListView(shrinkWrap: true, children: children)),
         ],
       ),
     );
@@ -160,9 +203,15 @@ class _PickerGroupLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 14, 6, 7),
-      child: Text(label,
-          style: AppText.mono(10,
-              weight: FontWeight.w500, color: AppColors.textFaint, lsEm: 0.12)),
+      child: Text(
+        label,
+        style: AppText.mono(
+          10,
+          weight: FontWeight.w500,
+          color: AppColors.textFaint,
+          lsEm: 0.12,
+        ),
+      ),
     );
   }
 }
@@ -203,19 +252,26 @@ class _PickerRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: AppText.grotesk(13,
-                          weight:
-                              selected ? FontWeight.w600 : FontWeight.w500,
-                          color: selected
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary)),
+                  Text(
+                    title,
+                    style: AppText.grotesk(
+                      13,
+                      weight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: selected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(meta,
-                      style: AppText.mono(9.5,
-                          color: selected
-                              ? AppColors.textTertiary
-                              : AppColors.textFaint)),
+                  Text(
+                    meta,
+                    style: AppText.mono(
+                      9.5,
+                      color: selected
+                          ? AppColors.textTertiary
+                          : AppColors.textFaint,
+                    ),
+                  ),
                 ],
               ),
             ),

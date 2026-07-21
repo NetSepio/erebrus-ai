@@ -72,7 +72,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _advance() {
     if (_page < _pages.length - 1) {
       _controller.nextPage(
-          duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
     } else {
       setState(() => _pickingModel = true);
     }
@@ -102,11 +104,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     const LogoLockup(tileSize: 22, fontSize: 11),
                     GestureDetector(
                       onTap: _skipToModels,
-                      child: Text('SKIP',
-                          style: AppText.mono(11,
-                              weight: FontWeight.w500,
-                              color: AppColors.textMuted,
-                              lsEm: 0.1)),
+                      child: Text(
+                        'SKIP',
+                        style: AppText.mono(
+                          11,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                          lsEm: 0.1,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -121,29 +127,43 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     return Column(
                       children: [
                         Expanded(
-                            child: Center(
-                                child: OnboardingIllustration(page.art))),
+                          child: Center(
+                            child: OnboardingIllustration(page.art),
+                          ),
+                        ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(page.kicker,
-                                  style: AppText.mono(12,
-                                      weight: FontWeight.w600,
-                                      color: AppColors.accent,
-                                      lsEm: 0.18)),
+                              Text(
+                                page.kicker,
+                                style: AppText.mono(
+                                  12,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.accent,
+                                  lsEm: 0.18,
+                                ),
+                              ),
                               const SizedBox(height: 14),
-                              Text(page.headline,
-                                  style: AppText.grotesk(30,
-                                      weight: FontWeight.w600,
-                                      lsEm: -0.02,
-                                      height: 1.12)),
+                              Text(
+                                page.headline,
+                                style: AppText.grotesk(
+                                  30,
+                                  weight: FontWeight.w600,
+                                  lsEm: -0.02,
+                                  height: 1.12,
+                                ),
+                              ),
                               const SizedBox(height: 12),
-                              Text(page.body,
-                                  style: AppText.grotesk(15,
-                                      color: AppColors.textSecondary,
-                                      height: 1.55)),
+                              Text(
+                                page.body,
+                                style: AppText.grotesk(
+                                  15,
+                                  color: AppColors.textSecondary,
+                                  height: 1.55,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -180,7 +200,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       onTap: _advance,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 14),
+                          horizontal: 24,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.accent,
                           borderRadius: BorderRadius.circular(30),
@@ -195,13 +217,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                         ),
                         child: Row(
                           children: [
-                            Text(_pages[_page].cta,
-                                style: AppText.grotesk(15,
-                                    weight: FontWeight.w600,
-                                    color: AppColors.onAccent)),
+                            Text(
+                              _pages[_page].cta,
+                              style: AppText.grotesk(
+                                15,
+                                weight: FontWeight.w600,
+                                color: AppColors.onAccent,
+                              ),
+                            ),
                             const SizedBox(width: 9),
-                            const Icon(Symbols.arrow_forward,
-                                size: 18, color: AppColors.onAccent),
+                            const Icon(
+                              Symbols.arrow_forward,
+                              size: 18,
+                              color: AppColors.onAccent,
+                            ),
                           ],
                         ),
                       ),
@@ -252,8 +281,9 @@ class _FirstModelPageState extends State<FirstModelPage> {
     });
     final selected = _selected;
     if (selected != null) {
-      AppScope.of(context)
-          .selectModel(selected.name, selected.quant, id: selected.id);
+      AppScope.of(
+        context,
+      ).selectModel(selected.name, selected.quant, id: selected.id);
     }
   }
 
@@ -269,7 +299,9 @@ class _FirstModelPageState extends State<FirstModelPage> {
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Download could not start. Check storage permission and network.'),
+          content: const Text(
+            'Download could not start. Check storage permission and network.',
+          ),
           action: SnackBarAction(
             label: 'SETTINGS',
             onPressed: () => StorageService.instance.openSettings(),
@@ -295,7 +327,8 @@ class _FirstModelPageState extends State<FirstModelPage> {
   }
 
   bool _isReady(CatalogEntry entry) =>
-      entry.id.isNotEmpty && ModelDownloadService.instance.isDownloaded(entry.id);
+      entry.id.isNotEmpty &&
+      ModelDownloadService.instance.isDownloaded(entry.id);
 
   bool _isDownloading(CatalogEntry entry) {
     final p = ModelDownloadService.instance.progressOf(entry.id);
@@ -325,32 +358,46 @@ class _FirstModelPageState extends State<FirstModelPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('04 / PICK YOUR FIRST MODEL',
-                          style: AppText.mono(12,
-                              weight: FontWeight.w600,
-                              color: AppColors.accent,
-                              lsEm: 0.18)),
+                      Text(
+                        '04 / PICK YOUR FIRST MODEL',
+                        style: AppText.mono(
+                          12,
+                          weight: FontWeight.w600,
+                          color: AppColors.accent,
+                          lsEm: 0.18,
+                        ),
+                      ),
                       const SizedBox(height: 12),
-                      Text('Start with one that fits this device',
-                          style: AppText.grotesk(26,
-                              weight: FontWeight.w600,
-                              lsEm: -0.02,
-                              height: 1.15)),
+                      Text(
+                        'Start with one that fits this device',
+                        style: AppText.grotesk(
+                          26,
+                          weight: FontWeight.w600,
+                          lsEm: -0.02,
+                          height: 1.15,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       if (profile != null)
                         _DeviceInfoChip(profile: profile)
                       else
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.surface,
                             border: Border.all(color: AppColors.stroke),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Text('Detecting your device…',
-                              style: AppText.grotesk(13.5,
-                                  color: AppColors.textSecondary)),
+                          child: Text(
+                            'Detecting your device…',
+                            style: AppText.grotesk(
+                              13.5,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -364,19 +411,23 @@ class _FirstModelPageState extends State<FirstModelPage> {
                           child: Padding(
                             padding: EdgeInsets.only(top: 40),
                             child: CircularProgressIndicator(
-                                color: AppColors.accent),
+                              color: AppColors.accent,
+                            ),
                           ),
                         ),
                       ] else if (rec != null &&
                           rec.recommended.id.isNotEmpty) ...[
                         Padding(
-                          padding:
-                              const EdgeInsets.only(left: 4, bottom: 10),
-                          child: Text('AVAILABLE MODELS',
-                              style: AppText.mono(10,
-                                  weight: FontWeight.w500,
-                                  color: AppColors.textFaint,
-                                  lsEm: 0.12)),
+                          padding: const EdgeInsets.only(left: 4, bottom: 10),
+                          child: Text(
+                            'AVAILABLE MODELS',
+                            style: AppText.mono(
+                              10,
+                              weight: FontWeight.w500,
+                              color: AppColors.textFaint,
+                              lsEm: 0.12,
+                            ),
+                          ),
                         ),
                         _RecommendedModelCard(
                           entry: rec.recommended,
@@ -405,13 +456,19 @@ class _FirstModelPageState extends State<FirstModelPage> {
                         Center(
                           child: Padding(
                             padding: const EdgeInsets.only(
-                                top: 40, left: 24, right: 24),
+                              top: 40,
+                              left: 24,
+                              right: 24,
+                            ),
                             child: Text(
                               _error ??
                                   'No models match this device. You can still use a network model.',
                               textAlign: TextAlign.center,
-                              style: AppText.grotesk(14,
-                                  color: AppColors.textSecondary, height: 1.5),
+                              style: AppText.grotesk(
+                                14,
+                                color: AppColors.textSecondary,
+                                height: 1.5,
+                              ),
                             ),
                           ),
                         ),
@@ -424,21 +481,27 @@ class _FirstModelPageState extends State<FirstModelPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      PrimaryCta('START CHATTING',
-                          radius: 14,
-                          padding: const EdgeInsets.all(14),
-                          glow: false,
-                          enabled: ready,
-                          onTap: ready ? _startChatting : null),
+                      PrimaryCta(
+                        'START CHATTING',
+                        radius: 14,
+                        padding: const EdgeInsets.all(14),
+                        glow: false,
+                        enabled: ready,
+                        onTap: ready ? _startChatting : null,
+                      ),
                       const SizedBox(height: 16),
                       GestureDetector(
                         onTap: _skipToNetwork,
                         child: Center(
-                          child: Text('SKIP — USE A NETWORK MODEL',
-                              style: AppText.mono(11,
-                                  weight: FontWeight.w500,
-                                  color: AppColors.textMuted,
-                                  lsEm: 0.08)),
+                          child: Text(
+                            'SKIP — USE A NETWORK MODEL',
+                            style: AppText.mono(
+                              11,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted,
+                              lsEm: 0.08,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -481,9 +544,7 @@ class _RecommendedModelCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.accent.withA(0.06),
           border: Border.all(
-            color: selected
-                ? AppColors.accent
-                : AppColors.accent.withA(0.45),
+            color: selected ? AppColors.accent : AppColors.accent.withA(0.45),
             width: selected ? 1.5 : 1,
           ),
           borderRadius: BorderRadius.circular(16),
@@ -493,35 +554,51 @@ class _RecommendedModelCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                LetterTile(entry.letter,
-                    size: 38, radius: 10, fontSize: 14, accent: true),
+                LetterTile(
+                  entry.letter,
+                  size: 38,
+                  radius: 10,
+                  fontSize: 14,
+                  accent: true,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(entry.name,
-                          style: AppText.grotesk(15,
-                              weight: FontWeight.w600)),
+                      Text(
+                        entry.name,
+                        style: AppText.grotesk(15, weight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 2),
-                      Text(entry.spec,
-                          style: AppText.mono(10.5,
-                              color: AppColors.textTertiary)),
+                      Text(
+                        entry.spec,
+                        style: AppText.mono(
+                          10.5,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.accent.withA(0.16),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text('RECOMMENDED',
-                      style: AppText.mono(10,
-                          weight: FontWeight.w600,
-                          color: AppColors.accent,
-                          lsEm: 0.06)),
+                  child: Text(
+                    'RECOMMENDED',
+                    style: AppText.mono(
+                      10,
+                      weight: FontWeight.w600,
+                      color: AppColors.accent,
+                      lsEm: 0.06,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -529,24 +606,27 @@ class _RecommendedModelCard extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                    isReady ? Symbols.check_circle : Symbols.memory,
-                    size: 14,
-                    color: isReady ? AppColors.success : AppColors.accentHi),
+                  isReady ? Symbols.check_circle : Symbols.memory,
+                  size: 14,
+                  color: isReady ? AppColors.success : AppColors.accentHi,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                      isReady
-                          ? 'READY TO CHAT'
-                          : (isDownloading
+                    isReady
+                        ? 'READY TO CHAT'
+                        : (isDownloading
                               ? 'DOWNLOADING · ${(progress * 100).round()}%'
                               : 'REQUIRES ${formatGB(entry.ramGB)} RAM'),
-                      style: AppText.mono(10.5,
-                          color: isReady ? AppColors.success : AppColors.accentHi,
-                          lsEm: 0.05)),
+                    style: AppText.mono(
+                      10.5,
+                      color: isReady ? AppColors.success : AppColors.accentHi,
+                      lsEm: 0.05,
+                    ),
+                  ),
                 ),
                 if (!isReady && !isDownloading)
-                  AccentChip('GET',
-                      icon: Symbols.download, onTap: onDownload),
+                  AccentChip('GET', icon: Symbols.download, onTap: onDownload),
               ],
             ),
             if (isDownloading) ...[
@@ -557,14 +637,19 @@ class _RecommendedModelCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('${formatGB(entry.sizeGB)} DOWNLOAD',
-                    style: AppText.mono(10.5,
-                        weight: FontWeight.w600,
-                        color: AppColors.accentHi)),
+                Text(
+                  '${formatGB(entry.sizeGB)} DOWNLOAD',
+                  style: AppText.mono(
+                    10.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.accentHi,
+                  ),
+                ),
                 if (isReady || isDownloading)
-                  Text(isReady ? 'LOADED' : '${(progress * 100).round()}%',
-                      style: AppText.mono(10.5,
-                          color: AppColors.textMuted)),
+                  Text(
+                    isReady ? 'LOADED' : '${(progress * 100).round()}%',
+                    style: AppText.mono(10.5, color: AppColors.textMuted),
+                  ),
               ],
             ),
           ],
@@ -596,13 +681,17 @@ class _DeviceInfoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: AppColors.textSecondary),
           const SizedBox(width: 10),
-          Text(profile.name,
-              style: AppText.grotesk(13.5, weight: FontWeight.w600)),
+          Text(
+            profile.name,
+            style: AppText.grotesk(13.5, weight: FontWeight.w600),
+          ),
           const SizedBox(width: 10),
           Container(width: 1, height: 16, color: AppColors.stroke),
           const SizedBox(width: 10),
-          Text('${profile.ramGB.toStringAsFixed(1)} GB RAM',
-              style: AppText.mono(11, color: AppColors.textTertiary)),
+          Text(
+            '${profile.ramGB.toStringAsFixed(1)} GB RAM',
+            style: AppText.mono(11, color: AppColors.textTertiary),
+          ),
         ],
       ),
     );
@@ -646,27 +735,33 @@ class _AltModelCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                LetterTile(entry.letter,
-                    size: 38, radius: 10, fontSize: 14),
+                LetterTile(entry.letter, size: 38, radius: 10, fontSize: 14),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(entry.name,
-                          style: AppText.grotesk(15,
-                              weight: FontWeight.w600)),
+                      Text(
+                        entry.name,
+                        style: AppText.grotesk(15, weight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 2),
-                      Text(entry.spec,
-                          style: AppText.mono(10.5,
-                              color: AppColors.textTertiary)),
+                      Text(
+                        entry.spec,
+                        style: AppText.mono(
+                          10.5,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 if (isReady)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.success.withA(0.12),
                       borderRadius: BorderRadius.circular(8),
@@ -674,46 +769,60 @@ class _AltModelCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Symbols.check,
-                            size: 12, color: AppColors.success),
+                        const Icon(
+                          Symbols.check,
+                          size: 12,
+                          color: AppColors.success,
+                        ),
                         const SizedBox(width: 4),
-                        Text('READY',
-                            style: AppText.mono(9,
-                                weight: FontWeight.w600,
-                                color: AppColors.success)),
+                        Text(
+                          'READY',
+                          style: AppText.mono(
+                            9,
+                            weight: FontWeight.w600,
+                            color: AppColors.success,
+                          ),
+                        ),
                       ],
                     ),
                   )
                 else if (isDownloading)
                   SizedBox(
                     width: 42,
-                    child: Text('${(progress * 100).round()}%',
-                        textAlign: TextAlign.right,
-                        style: AppText.mono(10,
-                            weight: FontWeight.w600,
-                            color: AppColors.accent)),
+                    child: Text(
+                      '${(progress * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: AppText.mono(
+                        10,
+                        weight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
                   )
                 else
-                  AccentChip('GET',
-                      icon: Symbols.download, onTap: onDownload),
+                  AccentChip('GET', icon: Symbols.download, onTap: onDownload),
               ],
             ),
             if (selected && !isReady && !isDownloading) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Icon(Symbols.memory,
-                      size: 14, color: AppColors.accentHi),
+                  Icon(Symbols.memory, size: 14, color: AppColors.accentHi),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                        'REQUIRES ${formatGB(entry.ramGB)} RAM',
-                        style: AppText.mono(10.5,
-                            color: AppColors.accentHi, lsEm: 0.05)),
+                      'REQUIRES ${formatGB(entry.ramGB)} RAM',
+                      style: AppText.mono(
+                        10.5,
+                        color: AppColors.accentHi,
+                        lsEm: 0.05,
+                      ),
+                    ),
                   ),
-                  Text('${formatGB(entry.sizeGB)} DOWNLOAD',
-                      style: AppText.mono(10.5,
-                          color: AppColors.textMuted)),
+                  Text(
+                    '${formatGB(entry.sizeGB)} DOWNLOAD',
+                    style: AppText.mono(10.5, color: AppColors.textMuted),
+                  ),
                 ],
               ),
             ],

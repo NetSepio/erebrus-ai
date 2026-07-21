@@ -76,7 +76,11 @@ class DeviceInfoService {
     final platform = '$os-$arch';
 
     return DeviceProfile(
-        type: type, ramBytes: ramBytes, name: name, platform: platform);
+      type: type,
+      ramBytes: ramBytes,
+      name: name,
+      platform: platform,
+    );
   }
 
   static String _detectArchitecture() {

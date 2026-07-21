@@ -1,9 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../services/chat_service.dart';
+import '../../services/inference_service.dart';
+import '../../services/speech_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -76,13 +80,17 @@ class _SessionsList extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('SESSIONS', style: AppText.sectionHeader()),
-                    AccentChip('NEW',
-                        icon: Symbols.add,
-                        iconSize: 14,
-                        fontSize: 10,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 5),
-                        onTap: () => chat.newSession()),
+                    AccentChip(
+                      'NEW',
+                      icon: Symbols.add,
+                      iconSize: 14,
+                      fontSize: 10,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      onTap: () => chat.newSession(),
+                    ),
                   ],
                 ),
               ),
@@ -90,9 +98,14 @@ class _SessionsList extends StatelessWidget {
               Expanded(
                 child: sessions.isEmpty
                     ? Center(
-                        child: Text('No chats yet',
-                            style: AppText.grotesk(13,
-                                color: AppColors.textMuted)))
+                        child: Text(
+                          'No chats yet',
+                          style: AppText.grotesk(
+                            13,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      )
                     : ListView.separated(
                         itemCount: sessions.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 3),
@@ -104,7 +117,9 @@ class _SessionsList extends StatelessWidget {
                             behavior: HitTestBehavior.opaque,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 11, vertical: 10),
+                                horizontal: 11,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: active ? AppColors.surface3 : null,
                                 borderRadius: BorderRadius.circular(10),
@@ -116,21 +131,25 @@ class _SessionsList extends StatelessWidget {
                                     s.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: AppText.grotesk(13,
-                                        weight: active
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
-                                        color: active
-                                            ? AppColors.textPrimary
-                                            : AppColors.textSecondary),
+                                    style: AppText.grotesk(
+                                      13,
+                                      weight: active
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                      color: active
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
+                                    ),
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
                                     _sessionMeta(s),
-                                    style: AppText.mono(10,
-                                        color: active
-                                            ? AppColors.textTertiary
-                                            : AppColors.textFaint),
+                                    style: AppText.mono(
+                                      10,
+                                      color: active
+                                          ? AppColors.textTertiary
+                                          : AppColors.textFaint,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -181,18 +200,24 @@ class _ChatPane extends StatelessWidget {
               child: AnimatedBuilder(
                 animation: ChatService.instance,
                 builder: (context, _) {
-                  final messages = ChatService.instance
-                      .messagesFor(ChatService.instance.activeSessionId);
+                  final messages = ChatService.instance.messagesFor(
+                    ChatService.instance.activeSessionId,
+                  );
                   if (messages.isEmpty) {
                     return Center(
-                      child: Text('Start a conversation',
-                          style: AppText.grotesk(14,
-                              color: AppColors.textMuted)),
+                      child: Text(
+                        'Start a conversation',
+                        style: AppText.grotesk(14, color: AppColors.textMuted),
+                      ),
                     );
                   }
                   return ListView.separated(
-                    padding: EdgeInsets.fromLTRB(wide ? 28 : 16,
-                        wide ? 22 : 18, wide ? 28 : 16, 8),
+                    padding: EdgeInsets.fromLTRB(
+                      wide ? 28 : 16,
+                      wide ? 22 : 18,
+                      wide ? 28 : 16,
+                      8,
+                    ),
                     itemCount: messages.length,
                     separatorBuilder: (_, _) =>
                         SizedBox(height: wide ? 18 : 14),
@@ -230,17 +255,24 @@ class _DesktopHeader extends StatelessWidget {
                 const Icon(Symbols.memory, size: 16, color: AppColors.accent),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(app.selectedModel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.grotesk(13, weight: FontWeight.w600)),
+                  child: Text(
+                    app.selectedModel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.grotesk(13, weight: FontWeight.w600),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                Text(app.selectedModelQuant,
-                    style: AppText.mono(10, color: AppColors.textMuted)),
+                Text(
+                  app.selectedModelQuant,
+                  style: AppText.mono(10, color: AppColors.textMuted),
+                ),
                 const SizedBox(width: 8),
-                const Icon(Symbols.expand_more,
-                    size: 16, color: AppColors.textMuted),
+                const Icon(
+                  Symbols.expand_more,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
               ],
             ),
           ),
@@ -249,32 +281,62 @@ class _DesktopHeader extends StatelessWidget {
             child: _HeaderChip(
               onTap: () => showPersonaPicker(context),
               children: [
-                const Icon(Symbols.theater_comedy,
-                    size: 16, color: AppColors.textSecondary),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(app.selectedPersona,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.grotesk(13, weight: FontWeight.w600)),
+                const Icon(
+                  Symbols.theater_comedy,
+                  size: 16,
+                  color: AppColors.textSecondary,
                 ),
                 const SizedBox(width: 8),
-                const Icon(Symbols.expand_more,
-                    size: 16, color: AppColors.textMuted),
+                Flexible(
+                  child: Text(
+                    app.selectedPersona,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.grotesk(13, weight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Symbols.expand_more,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
               ],
             ),
           ),
           const Spacer(),
-          const SizedBox(width: 10),
-          const GlowDot(glow: false),
-          const SizedBox(width: 7),
-          Text('READY',
-              style: AppText.mono(11,
-                  weight: FontWeight.w500,
-                  color: AppColors.success,
-                  lsEm: 0.06)),
-          Text(' · 42 TOK/S',
-              style: AppText.mono(11, color: AppColors.textMuted)),
+          AnimatedBuilder(
+            animation: InferenceService.instance,
+            builder: (context, _) {
+              final inference = InferenceService.instance;
+              final rate = inference.isGenerating
+                  ? inference.currentTokensPerSecond
+                  : inference.lastTokensPerSecond;
+              return Row(
+                children: [
+                  const SizedBox(width: 10),
+                  GlowDot(glow: inference.isGenerating),
+                  const SizedBox(width: 7),
+                  Text(
+                    inference.isGenerating ? 'GENERATING' : 'READY',
+                    style: AppText.mono(
+                      11,
+                      weight: FontWeight.w500,
+                      color: inference.isGenerating
+                          ? AppColors.accent
+                          : AppColors.success,
+                      lsEm: 0.06,
+                    ),
+                  ),
+                  if (rate != null)
+                    Text(
+                      ' · ${_formatTokenRate(rate)} TOK/S',
+                      style: AppText.mono(11, color: AppColors.textMuted),
+                    ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -319,16 +381,21 @@ class _MobileHeader extends StatelessWidget {
         children: [
           GestureDetector(
             onTap: () => Scaffold.of(context).openDrawer(),
-            child: const Icon(Symbols.menu,
-                size: 20, color: AppColors.textSecondary),
+            child: const Icon(
+              Symbols.menu,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: GestureDetector(
               onTap: () => showModelPicker(context),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   border: Border.all(color: AppColors.stroke),
@@ -340,19 +407,23 @@ class _MobileHeader extends StatelessWidget {
                     const GlowDot(size: 6, glow: false),
                     const SizedBox(width: 7),
                     Flexible(
-                      child: Text(app.selectedModel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              AppText.grotesk(13, weight: FontWeight.w600)),
+                      child: Text(
+                        app.selectedModel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.grotesk(13, weight: FontWeight.w600),
+                      ),
                     ),
                     Text(
-                        ' · ${app.selectedPersona.split(' ').last.toUpperCase()}',
-                        style:
-                            AppText.mono(10, color: AppColors.textMuted)),
+                      ' · ${app.selectedPersona.split(' ').last.toUpperCase()}',
+                      style: AppText.mono(10, color: AppColors.textMuted),
+                    ),
                     const SizedBox(width: 4),
-                    const Icon(Symbols.expand_more,
-                        size: 15, color: AppColors.textMuted),
+                    const Icon(
+                      Symbols.expand_more,
+                      size: 15,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
               ),
@@ -361,8 +432,11 @@ class _MobileHeader extends StatelessWidget {
           const SizedBox(width: 10),
           GestureDetector(
             onTap: () => ChatService.instance.newSession(),
-            child: const Icon(Symbols.add,
-                size: 20, color: AppColors.textSecondary),
+            child: const Icon(
+              Symbols.add,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),
@@ -377,6 +451,49 @@ class _MessageTile extends StatelessWidget {
 
   final ChatMessage message;
   final bool wide;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: message.text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Response copied')));
+  }
+
+  Future<void> _share(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    await SharePlus.instance.share(
+      ShareParams(
+        text: message.text,
+        subject: 'Erebrus AI response',
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      ),
+    );
+  }
+
+  Future<void> _regenerate(BuildContext context) async {
+    await ChatService.instance.regenerate(
+      message.id,
+      persona: AppScope.of(context).effectivePersonaConfig,
+    );
+    if (!context.mounted) return;
+  }
+
+  Future<void> _speak(BuildContext context) async {
+    try {
+      await SpeechService.instance.toggle(
+        messageId: message.id,
+        text: message.text,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Speech unavailable: $error')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -398,8 +515,10 @@ class _MessageTile extends StatelessWidget {
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              child: Text(message.text,
-                  style: AppText.grotesk(14, height: 1.5)),
+              child: Text(
+                message.text,
+                style: AppText.grotesk(14, height: 1.5),
+              ),
             ),
           ),
         ),
@@ -414,32 +533,113 @@ class _MessageTile extends StatelessWidget {
         if (message.streaming)
           Row(
             children: [
-              Text('STREAMING',
-                  style: AppText.mono(10,
-                      weight: FontWeight.w500,
-                      color: AppColors.accent,
-                      lsEm: 0.08)),
-              Text(' · 42 TOK/S · TAP TO STOP',
-                  style: AppText.mono(10, color: AppColors.textFaint)),
+              Text(
+                'STREAMING',
+                style: AppText.mono(
+                  10,
+                  weight: FontWeight.w500,
+                  color: AppColors.accent,
+                  lsEm: 0.08,
+                ),
+              ),
+              Text(
+                message.tokensPerSecond == null
+                    ? ' · CALCULATING TOK/S'
+                    : ' · ${_formatTokenRate(message.tokensPerSecond!)} TOK/S',
+                style: AppText.mono(10, color: AppColors.textFaint),
+              ),
             ],
           )
         else
-          Row(
-            children: [
-              const Icon(Symbols.content_copy,
-                  size: 16, color: AppColors.textMuted),
-              const SizedBox(width: 12),
-              const Icon(Symbols.refresh, size: 16, color: AppColors.textMuted),
-              const SizedBox(width: 12),
-              const Icon(Symbols.share, size: 16, color: AppColors.textMuted),
-              const SizedBox(width: 12),
-              Text(message.meta ?? '',
-                  style: AppText.mono(10, color: AppColors.textFaint)),
-            ],
+          AnimatedBuilder(
+            animation: SpeechService.instance,
+            builder: (context, _) => Row(
+              children: [
+                _MessageAction(
+                  icon: Symbols.content_copy,
+                  label: 'Copy',
+                  onTap: () => _copy(context),
+                ),
+                const SizedBox(width: 12),
+                _MessageAction(
+                  icon: Symbols.refresh,
+                  label: 'Regenerate',
+                  onTap: () => _regenerate(context),
+                ),
+                const SizedBox(width: 12),
+                _MessageAction(
+                  icon: Symbols.share,
+                  label: 'Share',
+                  onTap: () => _share(context),
+                ),
+                const SizedBox(width: 12),
+                _MessageAction(
+                  icon: SpeechService.instance.isSpeakingMessage(message.id)
+                      ? Symbols.stop_circle
+                      : Symbols.volume_up,
+                  label: SpeechService.instance.isSpeakingMessage(message.id)
+                      ? 'Stop speaking'
+                      : 'Speak',
+                  active: SpeechService.instance.isSpeakingMessage(message.id),
+                  onTap: () => _speak(context),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    [
+                      message.meta ?? '',
+                      if (message.tokensPerSecond != null)
+                        '${_formatTokenRate(message.tokensPerSecond!)} TOK/S',
+                      if (message.truncated) 'MAX TOKENS REACHED',
+                    ].where((part) => part.isNotEmpty).join(' · '),
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.mono(10, color: AppColors.textFaint),
+                  ),
+                ),
+              ],
+            ),
           ),
       ],
     );
   }
+}
+
+class _MessageAction extends StatelessWidget {
+  const _MessageAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 20,
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: Icon(
+            icon,
+            size: 17,
+            color: active ? AppColors.accent : AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatTokenRate(double rate) {
+  if (!rate.isFinite || rate < 0) return '0.0';
+  return rate.toStringAsFixed(rate >= 10 ? 1 : 2);
 }
 
 /// Assistant prose — parses `code` spans and appends the blinking block cursor
@@ -457,30 +657,36 @@ class _AssistantBody extends StatelessWidget {
     for (var i = 0; i < parts.length; i++) {
       if (parts[i].isEmpty) continue;
       if (i.isOdd) {
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withA(0.1),
-              borderRadius: BorderRadius.circular(4),
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withA(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                parts[i],
+                style: AppText.mono(12.5, color: AppColors.accentHi),
+              ),
             ),
-            child: Text(parts[i],
-                style: AppText.mono(12.5, color: AppColors.accentHi)),
           ),
-        ));
+        );
       } else {
         spans.add(TextSpan(text: parts[i]));
       }
     }
     if (streaming) {
-      spans.add(const WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Padding(
-          padding: EdgeInsets.only(left: 3),
-          child: _BlinkCursor(),
+      spans.add(
+        const WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: EdgeInsets.only(left: 3),
+            child: _BlinkCursor(),
+          ),
         ),
-      ));
+      );
     }
     return Text.rich(
       TextSpan(children: spans),
@@ -561,7 +767,11 @@ class _ComposerState extends State<_Composer> {
     _controller.clear();
     _focusNode.unfocus();
     setState(() => _busy = true);
-    await ChatService.instance.send(text, modelId: app.selectedModelId);
+    await ChatService.instance.send(
+      text,
+      modelId: app.selectedModelId,
+      persona: app.effectivePersonaConfig,
+    );
     if (mounted) setState(() => _busy = false);
   }
 
@@ -569,8 +779,12 @@ class _ComposerState extends State<_Composer> {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(widget.wide ? 28 : 16, widget.wide ? 14 : 12,
-          widget.wide ? 28 : 16, widget.wide ? 16 : 8),
+      padding: EdgeInsets.fromLTRB(
+        widget.wide ? 28 : 16,
+        widget.wide ? 14 : 12,
+        widget.wide ? 28 : 16,
+        widget.wide ? 16 : 8,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
@@ -599,8 +813,10 @@ class _ComposerState extends State<_Composer> {
                           hintText: widget.wide
                               ? 'Message ${app.selectedModel.split(' ').take(2).join(' ')}…'
                               : 'Message…',
-                          hintStyle: AppText.grotesk(14,
-                              color: AppColors.textMuted),
+                          hintStyle: AppText.grotesk(
+                            14,
+                            color: AppColors.textMuted,
+                          ),
                         ),
                         onSubmitted: (_) => _send(),
                       ),
@@ -623,8 +839,11 @@ class _ComposerState extends State<_Composer> {
                             ),
                           ],
                         ),
-                        child: const Icon(Symbols.arrow_upward,
-                            size: 19, color: AppColors.onAccent),
+                        child: const Icon(
+                          Symbols.arrow_upward,
+                          size: 19,
+                          color: AppColors.onAccent,
+                        ),
                       ),
                     ),
                   ],
@@ -639,16 +858,26 @@ class _ComposerState extends State<_Composer> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Symbols.lock,
-                              size: 13, color: AppColors.success),
+                          const Icon(
+                            Symbols.lock,
+                            size: 13,
+                            color: AppColors.success,
+                          ),
                           const SizedBox(width: 6),
-                          Text('LOCAL · NOTHING LEAVES THIS DEVICE',
-                              style: AppText.mono(10,
-                                  color: AppColors.textMuted, lsEm: 0.08)),
+                          Text(
+                            'LOCAL · NOTHING LEAVES THIS DEVICE',
+                            style: AppText.mono(
+                              10,
+                              color: AppColors.textMuted,
+                              lsEm: 0.08,
+                            ),
+                          ),
                         ],
                       ),
-                      Text('CONTEXT 3.2K / 8K',
-                          style: AppText.mono(10, color: AppColors.textMuted)),
+                      Text(
+                        'CONTEXT 3.2K / 8K',
+                        style: AppText.mono(10, color: AppColors.textMuted),
+                      ),
                     ],
                   ),
                 )
@@ -656,12 +885,20 @@ class _ComposerState extends State<_Composer> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Symbols.lock,
-                        size: 12, color: AppColors.success),
+                    const Icon(
+                      Symbols.lock,
+                      size: 12,
+                      color: AppColors.success,
+                    ),
                     const SizedBox(width: 6),
-                    Text('ON-DEVICE · NOTHING LEAVES YOUR PHONE',
-                        style: AppText.mono(9.5,
-                            color: AppColors.textFaint, lsEm: 0.08)),
+                    Text(
+                      'ON-DEVICE · NOTHING LEAVES YOUR PHONE',
+                      style: AppText.mono(
+                        9.5,
+                        color: AppColors.textFaint,
+                        lsEm: 0.08,
+                      ),
+                    ),
                   ],
                 ),
             ],

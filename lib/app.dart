@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'auth/wallet_auth_controller.dart';
 import 'org/org_state.dart';
@@ -8,11 +9,7 @@ import 'state/app_state.dart';
 import 'theme/app_colors.dart';
 
 class ErebrusApp extends StatefulWidget {
-  const ErebrusApp({
-    super.key,
-    required this.auth,
-    required this.orgState,
-  });
+  const ErebrusApp({super.key, required this.auth, required this.orgState});
 
   final WalletAuthController auth;
   final OrgState orgState;
@@ -38,6 +35,16 @@ class _ErebrusAppState extends State<ErebrusApp> {
         title: 'Erebrus AI',
         debugShowCheckedModeBanner: false,
         theme: _buildTheme(),
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+            systemNavigationBarColor: AppColors.bg,
+            systemNavigationBarIconBrightness: Brightness.light,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: const _RootGate(),
       ),
     );
@@ -92,6 +99,9 @@ class _RootGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    if (!app.localSettingsLoaded) {
+      return const ColoredBox(color: AppColors.bg);
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= kDesktopBreakpoint;

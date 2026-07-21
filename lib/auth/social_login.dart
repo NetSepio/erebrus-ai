@@ -47,11 +47,12 @@ Future<String?> googleIdToken() async {
   return token;
 }
 
-/// Runs the Apple sign-in flow and returns the identity token, or null if
-/// cancelled.
-Future<String?> appleIdToken() async {
+/// Runs Apple sign-in and returns every value the gateway validates.
+Future<AppleLoginCredential?> appleCredential() async {
   final serviceId = RuntimeConfig.appleServiceId;
   final useWebRelay = !(Platform.isIOS || Platform.isMacOS);
+  final nonce = generateNonce();
+  final state = 'ai.${generateNonce()}';
   try {
     final cred = await SignInWithApple.getAppleIDCredential(
       scopes: const [
@@ -64,16 +65,46 @@ Future<String?> appleIdToken() async {
               redirectUri: Uri.parse(RuntimeConfig.appleRedirectUri),
             )
           : null,
+      nonce: nonce,
+      state: state,
     );
     final token = cred.identityToken;
     if (token == null || token.isEmpty) {
-      throw const SocialLoginException('Apple did not return an identity token');
+      throw const SocialLoginException(
+        'Apple did not return an identity token',
+      );
     }
-    return token;
+    if (cred.state != state) {
+      throw const SocialLoginException(
+        'Apple sign-in state mismatch — please try again',
+      );
+    }
+    return AppleLoginCredential(
+      identityToken: token,
+      authorizationCode: cred.authorizationCode,
+      nonce: nonce,
+      state: state,
+    );
   } on SignInWithAppleAuthorizationException catch (e) {
     if (e.code == AuthorizationErrorCode.canceled) return null;
-    throw SocialLoginException(e.message.isEmpty ? 'Apple sign-in failed' : e.message);
+    throw SocialLoginException(
+      e.message.isEmpty ? 'Apple sign-in failed' : e.message,
+    );
   }
+}
+
+class AppleLoginCredential {
+  const AppleLoginCredential({
+    required this.identityToken,
+    required this.authorizationCode,
+    required this.nonce,
+    required this.state,
+  });
+
+  final String identityToken;
+  final String authorizationCode;
+  final String nonce;
+  final String state;
 }
 
 /// Best-effort sign-out from the Google session.

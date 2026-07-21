@@ -8,19 +8,22 @@ import 'shared_model.dart';
 /// Thin HTTP client for Erebrus AI organization endpoints.
 class OrgClient {
   OrgClient({String? gatewayUrl})
-      : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
+    : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
 
-  /// `GET /api/v2/organizations` — requires bearer token.
+  /// `GET /api/v2/orgs` — requires bearer token.
   Future<List<AiOrg>> fetchOrganizations(String bearerToken) async {
     final decoded = await _getJson(
-      Uri.parse('$_base/api/v2/organizations'),
+      Uri.parse('$_base/api/v2/orgs'),
       bearerToken: bearerToken,
     );
     final list = decoded is List
         ? decoded
-        : (decoded is Map ? (decoded['organizations'] as List?) : null) ?? const [];
+        : (decoded is Map
+                  ? ((decoded['orgs'] ?? decoded['organizations']) as List?)
+                  : null) ??
+              const [];
     return list
         .map((e) => AiOrg.fromJson(Map<String, dynamic>.from(e as Map)))
         .where((o) => o.id.isNotEmpty)
@@ -28,7 +31,10 @@ class OrgClient {
   }
 
   /// `GET /api/v2/organizations/{id}/models` — shared/private models in this org.
-  Future<List<SharedModel>> fetchOrgModels(String orgId, String bearerToken) async {
+  Future<List<SharedModel>> fetchOrgModels(
+    String orgId,
+    String bearerToken,
+  ) async {
     final decoded = await _getJson(
       Uri.parse('$_base/api/v2/organizations/$orgId/models'),
       bearerToken: bearerToken,

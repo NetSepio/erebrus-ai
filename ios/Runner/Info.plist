@@ -68,7 +68,7 @@
 	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_erebrus-ai._tcp</string>
+		<string>_erebrusai._tcp</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

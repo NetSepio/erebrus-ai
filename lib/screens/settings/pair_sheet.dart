@@ -58,9 +58,7 @@ class _PairContent extends StatelessWidget {
           builder: (context, keySnapshot) {
             final key = keySnapshot.data ?? '';
             final ready = url != null && key.isNotEmpty;
-            final payload = ready
-                ? jsonEncode({'url': url, 'key': key})
-                : '';
+            final payload = ready ? jsonEncode({'url': url, 'key': key}) : '';
             return Padding(
               padding: const EdgeInsets.fromLTRB(24, 22, 24, 28),
               child: Column(
@@ -71,8 +69,11 @@ class _PairContent extends StatelessWidget {
                   Text(
                     'Scan from Erebrus AI on another device to connect to this node instantly.',
                     textAlign: TextAlign.center,
-                    style: AppText.grotesk(12.5,
-                        color: AppColors.textSecondary, height: 1.45),
+                    style: AppText.grotesk(
+                      12.5,
+                      color: AppColors.textSecondary,
+                      height: 1.45,
+                    ),
                   ),
                   const SizedBox(height: 18),
                   Container(
@@ -87,28 +88,38 @@ class _PairContent extends StatelessWidget {
                             size: 180,
                             backgroundColor: const Color(0xFFFCFBF9),
                             eyeStyle: const QrEyeStyle(
-                                eyeShape: QrEyeShape.square,
-                                color: Color(0xFF0A0A0C)),
+                              eyeShape: QrEyeShape.square,
+                              color: Color(0xFF0A0A0C),
+                            ),
                             dataModuleStyle: const QrDataModuleStyle(
-                                dataModuleShape: QrDataModuleShape.square,
-                                color: Color(0xFF0A0A0C)),
+                              dataModuleShape: QrDataModuleShape.square,
+                              color: Color(0xFF0A0A0C),
+                            ),
                           )
                         : const SizedBox(
                             width: 180,
                             height: 180,
                             child: Center(
-                                child: CircularProgressIndicator(
-                                    color: AppColors.accent)),
+                              child: CircularProgressIndicator(
+                                color: AppColors.accent,
+                              ),
+                            ),
                           ),
                   ),
                   const SizedBox(height: 16),
-                  Text(url?.toUpperCase() ?? 'NODE NOT SERVING',
-                      style: AppText.mono(12,
-                          weight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
+                  Text(
+                    url?.toUpperCase() ?? 'NODE NOT SERVING',
+                    style: AppText.mono(
+                      12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(key.isEmpty ? 'KEY UNAVAILABLE' : 'KEY ${_maskKey(key)}',
-                      style: AppText.mono(11, color: AppColors.textMuted)),
+                  Text(
+                    key.isEmpty ? 'KEY UNAVAILABLE' : 'KEY ${_maskKey(key)}',
+                    style: AppText.mono(11, color: AppColors.textMuted),
+                  ),
                 ],
               ),
             );

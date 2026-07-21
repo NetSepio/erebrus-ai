@@ -5,7 +5,12 @@ import '../theme/app_text.dart';
 
 /// Pill toggle — 46×27 track, 21px knob, on = accent, off = surface3.
 class EreToggle extends StatelessWidget {
-  const EreToggle({super.key, required this.value, this.onChanged, this.disabled = false});
+  const EreToggle({
+    super.key,
+    required this.value,
+    this.onChanged,
+    this.disabled = false,
+  });
 
   final bool value;
   final ValueChanged<bool>? onChanged;
@@ -82,12 +87,14 @@ class EreSegmented extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     items[i],
-                    style: AppText.mono(12,
-                        weight: FontWeight.w600,
-                        color: i == index
-                            ? AppColors.onAccent
-                            : AppColors.textSecondary,
-                        lsEm: 0.05),
+                    style: AppText.mono(
+                      12,
+                      weight: FontWeight.w600,
+                      color: i == index
+                          ? AppColors.onAccent
+                          : AppColors.textSecondary,
+                      lsEm: 0.05,
+                    ),
                   ),
                 ),
               ),
@@ -142,8 +149,12 @@ class PrimaryCta extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           label,
-          style: AppText.mono(fontSize,
-              weight: FontWeight.w600, color: AppColors.onAccent, lsEm: 0.05),
+          style: AppText.mono(
+            fontSize,
+            weight: FontWeight.w600,
+            color: AppColors.onAccent,
+            lsEm: 0.05,
+          ),
         ),
       ),
     );
@@ -188,9 +199,15 @@ class GhostButton extends StatelessWidget {
               Icon(icon, size: 15, color: color),
               const SizedBox(width: 6),
             ],
-            Text(label,
-                style: AppText.mono(11,
-                    weight: FontWeight.w500, color: color, lsEm: 0.05)),
+            Text(
+              label,
+              style: AppText.mono(
+                11,
+                weight: FontWeight.w500,
+                color: color,
+                lsEm: 0.05,
+              ),
+            ),
           ],
         ),
       ),
@@ -258,9 +275,15 @@ class AccentChip extends StatelessWidget {
               Icon(icon, size: iconSize, color: AppColors.accent),
               const SizedBox(width: 5),
             ],
-            Text(label,
-                style: AppText.mono(fontSize,
-                    weight: FontWeight.w600, color: AppColors.accent, lsEm: 0.05)),
+            Text(
+              label,
+              style: AppText.mono(
+                fontSize,
+                weight: FontWeight.w600,
+                color: AppColors.accent,
+                lsEm: 0.05,
+              ),
+            ),
           ],
         ),
       ),
@@ -270,8 +293,12 @@ class AccentChip extends StatelessWidget {
 
 /// Status badge with dot — e.g. ONLINE / LOADED (success 12% bg).
 class StatusBadge extends StatelessWidget {
-  const StatusBadge(this.label,
-      {super.key, this.color = AppColors.success, this.dot = true});
+  const StatusBadge(
+    this.label, {
+    super.key,
+    this.color = AppColors.success,
+    this.dot = true,
+  });
 
   final String label;
   final Color color;
@@ -296,9 +323,15 @@ class StatusBadge extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
-          Text(label,
-              style: AppText.mono(10,
-                  weight: FontWeight.w600, color: color, lsEm: 0.08)),
+          Text(
+            label,
+            style: AppText.mono(
+              10,
+              weight: FontWeight.w600,
+              color: color,
+              lsEm: 0.08,
+            ),
+          ),
         ],
       ),
     );
@@ -307,7 +340,12 @@ class StatusBadge extends StatelessWidget {
 
 /// Glowing status dot (e.g. next to "Serving on LAN").
 class GlowDot extends StatelessWidget {
-  const GlowDot({super.key, this.size = 7, this.color = AppColors.success, this.glow = true});
+  const GlowDot({
+    super.key,
+    this.size = 7,
+    this.color = AppColors.success,
+    this.glow = true,
+  });
 
   final double size;
   final Color color;
@@ -321,7 +359,9 @@ class GlowDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        boxShadow: glow ? [BoxShadow(color: color.withA(0.8), blurRadius: 8)] : null,
+        boxShadow: glow
+            ? [BoxShadow(color: color.withA(0.8), blurRadius: 8)]
+            : null,
       ),
     );
   }
@@ -356,9 +396,11 @@ class LetterTile extends StatelessWidget {
       alignment: Alignment.center,
       child: Text(
         letter,
-        style: AppText.mono(fontSize,
-            weight: FontWeight.w600,
-            color: accent ? AppColors.accent : AppColors.textSecondary),
+        style: AppText.mono(
+          fontSize,
+          weight: FontWeight.w600,
+          color: accent ? AppColors.accent : AppColors.textSecondary,
+        ),
       ),
     );
   }

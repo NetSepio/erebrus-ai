@@ -21,7 +21,10 @@ class DesktopAuthCallback {
   final String state;
 
   bool get isValid =>
-      token.isNotEmpty && userId.isNotEmpty && walletAddress.isNotEmpty && state.isNotEmpty;
+      token.isNotEmpty &&
+      userId.isNotEmpty &&
+      walletAddress.isNotEmpty &&
+      state.isNotEmpty;
 }
 
 /// Browser-based sign-in for macOS / Windows / Linux.
@@ -43,14 +46,18 @@ class DesktopWebAuth {
   static String buildLoginUrl() {
     final state = _newState();
     _pendingState = state;
-    return Uri.parse('${RuntimeConfig.erebrusWebOrigin}$kErebrusDesktopAuthPath').replace(
-      queryParameters: {
-        'redirect_uri': kErebrusAuthCallback,
-        'state': state,
-        'platform': PlatformCapabilities.platformLabel,
-        'client_id': kErebrusBundleId,
-      },
-    ).toString();
+    return Uri.parse(
+          '${RuntimeConfig.erebrusWebOrigin}$kErebrusDesktopAuthPath',
+        )
+        .replace(
+          queryParameters: {
+            'redirect_uri': kErebrusAuthCallback,
+            'state': state,
+            'platform': PlatformCapabilities.platformLabel,
+            'client_id': kErebrusBundleId,
+          },
+        )
+        .toString();
   }
 
   /// Parses pasted text: full `erebrusai://auth?…` URL, query string, or raw PASETO.
@@ -63,7 +70,8 @@ class DesktopWebAuth {
         trimmed.contains('paseto=')) {
       var url = trimmed;
       if (!trimmed.contains('://')) {
-        url = '$kErebrusAuthCallback${trimmed.startsWith('?') ? trimmed : '?$trimmed'}';
+        url =
+            '$kErebrusAuthCallback${trimmed.startsWith('?') ? trimmed : '?$trimmed'}';
       }
       final parsed = parseCallback(url);
       if (parsed != null && parsed.token.isNotEmpty) return parsed;
@@ -94,7 +102,11 @@ class DesktopWebAuth {
 
     final token = params['token'] ?? params['paseto'] ?? '';
     final userId = params['user_id'] ?? params['userId'] ?? '';
-    final wallet = params['wallet'] ?? params['wallet_address'] ?? params['public_key'] ?? '';
+    final wallet =
+        params['wallet'] ??
+        params['wallet_address'] ??
+        params['public_key'] ??
+        '';
     final role = params['role'] ?? 'user';
     final state = params['state'] ?? '';
 
@@ -125,7 +137,10 @@ class DesktopWebAuth {
 
   static String _newState() {
     final r = Random.secure();
-    return List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    return List.generate(
+      16,
+      (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
   }
 }
 

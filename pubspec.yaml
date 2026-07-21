@@ -34,6 +34,16 @@ dependencies:
   uuid: ^4.5.1
   qr_flutter: ^4.1.0
   bonsoir: ^7.1.4
+  lib_llama_cpp: ^0.7.3
+  lib_llama_cpp_platform_interface: ^0.7.3
+  share_plus: ^12.0.2
+  flutter_tts: ^4.2.5
+
+dependency_overrides:
+  # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8
+  # scalar spans token pieces. This local patch buffers incomplete sequences.
+  lib_llama_cpp:
+    path: third_party/lib_llama_cpp
 
 dev_dependencies:
   flutter_test:

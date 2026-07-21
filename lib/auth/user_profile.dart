@@ -21,15 +21,15 @@ class UserProfile {
   final DateTime? createdAt;
 
   factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
-        id: (j['id'] ?? '').toString(),
-        walletAddress: j['wallet_address']?.toString(),
-        chain: j['chain']?.toString(),
-        role: (j['role'] ?? 'user').toString(),
-        email: j['email']?.toString(),
-        emailVerified: j['email_verified'] == true,
-        name: j['name']?.toString(),
-        createdAt: _parseDateTime(j['created_at']),
-      );
+    id: (j['id'] ?? '').toString(),
+    walletAddress: j['wallet_address']?.toString(),
+    chain: j['chain']?.toString(),
+    role: (j['role'] ?? 'user').toString(),
+    email: j['email']?.toString(),
+    emailVerified: j['email_verified'] == true,
+    name: j['name']?.toString(),
+    createdAt: _parseDateTime(j['created_at']),
+  );
 
   static DateTime? _parseDateTime(dynamic v) {
     if (v == null) return null;

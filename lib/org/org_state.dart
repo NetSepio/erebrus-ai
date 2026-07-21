@@ -12,10 +12,8 @@ import 'shared_model.dart';
 
 /// Reactive org list, selected org, and shared models for the signed-in user.
 class OrgState extends ChangeNotifier {
-  OrgState({
-    required this._auth,
-    OrgClient? client,
-  }) : _client = client ?? OrgClient() {
+  OrgState({required this._auth, OrgClient? client})
+    : _client = client ?? OrgClient() {
     _auth.addListener(_onAuthChanged);
     _onAuthChanged();
   }
@@ -28,18 +26,22 @@ class OrgState extends ChangeNotifier {
   List<SharedModel> orgModels = [];
   bool isLoading = false;
   String? error;
+  String? _loadedForToken;
 
   bool get isAuthenticated => _auth.isAuthenticated;
   String? get _token => _auth.bearerToken;
 
   void _onAuthChanged() {
     if (!_auth.isAuthenticated) {
+      _loadedForToken = null;
       orgs = [];
       selectedOrg = null;
       orgModels = [];
       notifyListeners();
       return;
     }
+    if (_loadedForToken == _token) return;
+    _loadedForToken = _token;
     unawaited(_loadCache().then((_) => refreshOrgs()));
   }
 
@@ -51,8 +53,14 @@ class OrgState extends ChangeNotifier {
     notifyListeners();
     try {
       orgs = await _client.fetchOrganizations(token);
-      if (selectedOrg == null && orgs.isNotEmpty) {
-        selectedOrg = orgs.first;
+      final selectedId = selectedOrg?.id;
+      if (orgs.isEmpty) {
+        selectedOrg = null;
+      } else {
+        selectedOrg = orgs.firstWhere(
+          (org) => org.id == selectedId,
+          orElse: () => orgs.first,
+        );
       }
       await refreshOrgModels();
       await _persistCache();
@@ -76,6 +84,18 @@ class OrgState extends ChangeNotifier {
     selectedOrg = org;
     notifyListeners();
     await refreshOrgModels();
+  }
+
+  Future<void> createOrg({required String name, required String slug}) async {
+    await _auth.createOrg(name: name, slug: slug);
+    await refreshOrgs();
+    if (orgs.isNotEmpty) {
+      selectedOrg = orgs.firstWhere(
+        (org) => org.slug == slug.trim().toLowerCase(),
+        orElse: () => orgs.last,
+      );
+      await refreshOrgModels();
+    }
   }
 
   Future<void> refreshOrgModels() async {
@@ -109,7 +129,11 @@ class OrgState extends ChangeNotifier {
     final org = selectedOrg;
     if (token == null || token.isEmpty || org == null) return;
     try {
-      await _client.sharePersona(orgId: org.id, personaId: personaId, bearerToken: token);
+      await _client.sharePersona(
+        orgId: org.id,
+        personaId: personaId,
+        bearerToken: token,
+      );
     } on OrgException catch (e) {
       error = e.message;
       notifyListeners();
@@ -136,7 +160,8 @@ class OrgState extends ChangeNotifier {
       if (selectedId != null && selectedId.isNotEmpty) {
         selectedOrg = orgs.firstWhere(
           (o) => o.id == selectedId,
-          orElse: () => orgs.isNotEmpty ? orgs.first : const AiOrg(id: '', name: ''),
+          orElse: () =>
+              orgs.isNotEmpty ? orgs.first : const AiOrg(id: '', name: ''),
         );
         if (selectedOrg!.id.isEmpty) selectedOrg = null;
       } else if (orgs.isNotEmpty) {
@@ -145,7 +170,9 @@ class OrgState extends ChangeNotifier {
       final modelList = j['org_models'];
       if (modelList is List) {
         orgModels = modelList
-            .map((e) => SharedModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => SharedModel.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .where((m) => m.id.isNotEmpty)
             .toList();
       }

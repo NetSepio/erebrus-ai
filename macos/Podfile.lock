@@ -23,6 +23,8 @@ PODS:
   - flutter_secure_storage_darwin (10.0.0):
     - Flutter
     - FlutterMacOS
+  - flutter_tts (0.0.1):
+    - FlutterMacOS
   - FlutterMacOS (1.0.0)
   - google_sign_in_ios (0.0.1):
     - AppAuth (>= 1.7.4)
@@ -52,11 +54,15 @@ PODS:
   - GTMSessionFetcher/Core (3.5.0)
   - GTMSessionFetcher/Full (3.5.0):
     - GTMSessionFetcher/Core
+  - lib_llama_cpp_macos (0.7.3):
+    - FlutterMacOS
   - package_info_plus (0.0.1):
     - FlutterMacOS
   - PromisesObjC (2.4.1)
   - PromisesSwift (2.4.1):
     - PromisesObjC (= 2.4.1)
+  - share_plus (0.0.1):
+    - FlutterMacOS
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -79,9 +85,12 @@ DEPENDENCIES:
   - device_info_plus (from `Flutter/ephemeral/.symlinks/plugins/device_info_plus/macos`)
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
   - flutter_secure_storage_darwin (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - flutter_tts (from `Flutter/ephemeral/.symlinks/plugins/flutter_tts/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - google_sign_in_ios (from `Flutter/ephemeral/.symlinks/plugins/google_sign_in_ios/darwin`)
+  - lib_llama_cpp_macos (from `Flutter/ephemeral/.symlinks/plugins/lib_llama_cpp_macos/macos`)
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
+  - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sign_in_with_apple (from `Flutter/ephemeral/.symlinks/plugins/sign_in_with_apple/macos`)
   - sqflite_darwin (from `Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin`)
@@ -111,12 +120,18 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
   flutter_secure_storage_darwin:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin
+  flutter_tts:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_tts/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
   google_sign_in_ios:
     :path: Flutter/ephemeral/.symlinks/plugins/google_sign_in_ios/darwin
+  lib_llama_cpp_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/lib_llama_cpp_macos/macos
   package_info_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos
+  share_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/share_plus/macos
   shared_preferences_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
   sign_in_with_apple:
@@ -138,15 +153,18 @@ SPEC CHECKSUMS:
   device_info_plus: 1b14eed9bf95428983aed283a8d51cce3d8c4215
   flutter_local_notifications: 7062189aabf7f50938a7b8b6614ffa97656eb0bf
   flutter_secure_storage_darwin: 557817588b80e60213cbecb573c45c76b788018d
+  flutter_tts: 64651204e5d276ffea5a910f942d5e9785a96085
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   google_sign_in_ios: 7411fab6948df90490dc4620ecbcabdc3ca04017
   GoogleSignIn: ce8c89bb9b37fb624b92e7514cc67335d1e277e4
   GoogleUtilities: 766ace00c6b10d8148408f329d10c4f051931850
   GTMAppAuth: f69bd07d68cd3b766125f7e072c45d7340dea0de
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
+  lib_llama_cpp_macos: 6fad5d940e688b2673b8fa67a1b8d3ff9fc4fdb4
   package_info_plus: 12f1c5c2cfe8727ca46cbd0b26677728972d9a5b
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
   PromisesSwift: 217dea0fd5d2ad65222a109c48698add13cc1c5b
+  share_plus: 1fa619de8392a4398bfaf176d441853922614e89
   shared_preferences_foundation: 5086985c1d43c5ba4d5e69a4e8083a389e2909e6
   sign_in_with_apple: a9e97e744e8edc36aefc2723111f652102a7a727
   sqflite_darwin: 5a7236e3b501866c1c9befc6771dfd73ffb8702d

@@ -13,7 +13,7 @@ const kDefaultGatewayUrl = 'https://gateway.erebrus.io';
 /// Wallet auth + account data against the Erebrus gateway (v2).
 class GatewayAuthClient {
   GatewayAuthClient({String? gatewayUrl})
-      : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
+    : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
 
@@ -23,10 +23,7 @@ class GatewayAuthClient {
     String chain = kSolanaChain,
   }) async {
     final uri = Uri.parse('$_base/api/v2/auth').replace(
-      queryParameters: {
-        'wallet_address': walletAddress,
-        'chain': chain,
-      },
+      queryParameters: {'wallet_address': walletAddress, 'chain': chain},
     );
     final map = await _getJson(uri);
     return AuthChallenge(
@@ -41,14 +38,11 @@ class GatewayAuthClient {
     required String signature,
     required String publicKey,
   }) async {
-    final map = await _postJson(
-      Uri.parse('$_base/api/v2/auth'),
-      {
-        'flow_id': flowId,
-        'signature': signature,
-        'public_key': publicKey,
-      },
-    );
+    final map = await _postJson(Uri.parse('$_base/api/v2/auth'), {
+      'flow_id': flowId,
+      'signature': signature,
+      'public_key': publicKey,
+    });
     return AuthSession(
       token: (map['token'] ?? '').toString(),
       userId: (map['user_id'] ?? '').toString(),
@@ -106,7 +100,10 @@ class GatewayAuthClient {
   }
 
   /// `POST /api/v2/account/org-invites/{id}/accept`.
-  Future<void> acceptAccountOrgInvite(String inviteId, String bearerToken) async {
+  Future<void> acceptAccountOrgInvite(
+    String inviteId,
+    String bearerToken,
+  ) async {
     await _postJson(
       Uri.parse('$_base/api/v2/account/org-invites/$inviteId/accept'),
       const {},
@@ -115,7 +112,10 @@ class GatewayAuthClient {
   }
 
   /// `POST /api/v2/account/org-invites/{id}/decline`.
-  Future<void> declineAccountOrgInvite(String inviteId, String bearerToken) async {
+  Future<void> declineAccountOrgInvite(
+    String inviteId,
+    String bearerToken,
+  ) async {
     await _postJson(
       Uri.parse('$_base/api/v2/account/org-invites/$inviteId/decline'),
       const {},
@@ -129,12 +129,63 @@ class GatewayAuthClient {
     required String slug,
     required String bearerToken,
   }) async {
-    return await _postJson(
-      Uri.parse('$_base/api/v2/organizations'),
-      {'name': name, 'slug': slug},
-      bearerToken: bearerToken,
-    );
+    return await _postJson(Uri.parse('$_base/api/v2/orgs'), {
+      'name': name,
+      'slug': slug,
+    }, bearerToken: bearerToken);
   }
+
+  Future<void> emailLoginStart(String email) async {
+    await _postJson(Uri.parse('$_base/api/v2/auth/email/login/start'), {
+      'email': email.trim().toLowerCase(),
+      'app': 'Erebrus AI',
+    });
+  }
+
+  Future<AuthSession> emailLoginVerify({
+    required String email,
+    required String code,
+  }) async {
+    final map = await _postJson(
+      Uri.parse('$_base/api/v2/auth/email/login/verify'),
+      {
+        'email': email.trim().toLowerCase(),
+        'code': code.replaceAll(RegExp(r'\D'), ''),
+      },
+    );
+    return _identitySession(map);
+  }
+
+  Future<AuthSession> googleLogin(String idToken) async {
+    final map = await _postJson(Uri.parse('$_base/api/v2/auth/google'), {
+      'id_token': idToken,
+    });
+    return _identitySession(map);
+  }
+
+  Future<AuthSession> appleLogin({
+    required String idToken,
+    required String authorizationCode,
+    required String nonce,
+    required String state,
+  }) async {
+    final map = await _postJson(Uri.parse('$_base/api/v2/auth/apple'), {
+      'id_token': idToken,
+      'authorization_code': authorizationCode,
+      'nonce': nonce,
+      'state': state,
+    });
+    return _identitySession(map);
+  }
+
+  AuthSession _identitySession(Map<String, dynamic> map) => AuthSession(
+    token: (map['token'] ?? '').toString(),
+    userId: (map['user_id'] ?? '').toString(),
+    role: (map['role'] ?? 'user').toString(),
+    walletAddress:
+        (map['wallet_address'] ?? map['wallet'] ?? map['public_key'] ?? '')
+            .toString(),
+  );
 
   /// `GET /api/v2/auth/methods` — which login methods the gateway has configured.
   Future<AuthMethods> fetchAuthMethods() async {

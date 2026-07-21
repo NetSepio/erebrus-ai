@@ -48,18 +48,22 @@ bool _isSolanaMobileAndroid(AndroidDeviceInfo info) {
   final product = info.product.toLowerCase();
 
   if (brand == 'solanamobile' || brand.contains('solana')) return true;
-  if (manufacturer.contains('solana mobile') || manufacturer.contains('solanamobile')) {
+  if (manufacturer.contains('solana mobile') ||
+      manufacturer.contains('solanamobile')) {
     return true;
   }
   const markers = ['seeker', 'saga', 'solana mobile'];
   for (final m in markers) {
-    if (model.contains(m) || device.contains(m) || product.contains(m)) return true;
+    if (model.contains(m) || device.contains(m) || product.contains(m)) {
+      return true;
+    }
   }
   return false;
 }
 
 /// Opens MWA: wallet selector activity + local websocket in parallel.
-Future<({LocalAssociationScenario scenario, MobileWalletAdapterClient client})> _openMwaSession() async {
+Future<({LocalAssociationScenario scenario, MobileWalletAdapterClient client})>
+_openMwaSession() async {
   final scenario = await LocalAssociationScenario.create();
   // Must not await — start() must listen while the wallet activity is open.
   unawaited(scenario.startActivityForResult(null));
@@ -70,7 +74,8 @@ Future<({LocalAssociationScenario scenario, MobileWalletAdapterClient client})> 
 }
 
 /// Fetches the gateway login challenge for [address] mid-MWA-session.
-typedef MwaChallengeBuilder = Future<String> Function(String address, Uint8List publicKey);
+typedef MwaChallengeBuilder =
+    Future<String> Function(String address, Uint8List publicKey);
 
 /// Full Seed Vault / Mobile Wallet Adapter sign-in in a **single association**:
 /// authorize (or reauthorize) → fetch the login challenge → sign it → return the
@@ -80,7 +85,9 @@ Future<MwaSignInResult> mwaSignIn({
   required MwaChallengeBuilder challengeBuilder,
 }) async {
   if (!isSolanaMobileDevice) {
-    throw MwaException('Solana Mobile sign-in is only available on Seeker and Saga');
+    throw MwaException(
+      'Solana Mobile sign-in is only available on Seeker and Saga',
+    );
   }
 
   LocalAssociationScenario? scenario;
@@ -124,12 +131,15 @@ Future<MwaSignInResult> mwaSignIn({
       messages: [Uint8List.fromList(utf8.encode(message))],
       addresses: [auth.publicKey],
     );
-    if (signed.signedMessages.isEmpty || signed.signedMessages.first.signatures.isEmpty) {
+    if (signed.signedMessages.isEmpty ||
+        signed.signedMessages.first.signatures.isEmpty) {
       throw MwaException('Seed Vault did not sign the login challenge');
     }
 
     final sigBytes = signed.signedMessages.first.signatures.first;
-    final signature = sigBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final signature = sigBytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
     debugPrint('[MWA] signed challenge for $address');
 
     return MwaSignInResult(

@@ -6,7 +6,11 @@ import '../theme/app_text.dart';
 /// The "sliced spark" mark — a 4-point spark split by a horizontal gap at
 /// mid-height (family slice shared with the VPN shield / Drop arcs).
 class SparkGlyph extends StatelessWidget {
-  const SparkGlyph({super.key, required this.size, this.color = const Color(0xFFFCFBF9)});
+  const SparkGlyph({
+    super.key,
+    required this.size,
+    this.color = const Color(0xFFFCFBF9),
+  });
 
   final double size;
   final Color color;
@@ -53,7 +57,12 @@ class _SparkPainter extends CustomPainter {
 
 /// White spark glyph on an accent-gradient rounded tile.
 class LogoTile extends StatelessWidget {
-  const LogoTile({super.key, required this.size, required this.radius, this.glow = false});
+  const LogoTile({
+    super.key,
+    required this.size,
+    required this.radius,
+    this.glow = false,
+  });
 
   final double size;
   final double radius;
@@ -102,11 +111,18 @@ class LogoLockup extends StatelessWidget {
           TextSpan(
             text: 'EREBRUS ',
             children: const [
-              TextSpan(text: 'AI', style: TextStyle(color: AppColors.accent)),
+              TextSpan(
+                text: 'AI',
+                style: TextStyle(color: AppColors.accent),
+              ),
             ],
           ),
-          style: AppText.mono(fontSize,
-              weight: FontWeight.w600, color: AppColors.textPrimary, lsEm: 0.2),
+          style: AppText.mono(
+            fontSize,
+            weight: FontWeight.w600,
+            color: AppColors.textPrimary,
+            lsEm: 0.2,
+          ),
         ),
       ],
     );

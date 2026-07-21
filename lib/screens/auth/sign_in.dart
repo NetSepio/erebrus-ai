@@ -1,302 +1,732 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../auth/runtime_config.dart';
 import '../../auth/wallet_auth_controller.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/spark_logo.dart';
 
-/// Opens the sign-in as a full-screen page on every form factor.
-/// Every entry point keeps a visible "continue as guest" escape — login is
-/// only for private org models and workspace sharing.
 void openSignIn(BuildContext context) {
-  Navigator.of(context, rootNavigator: true)
-      .push(MaterialPageRoute(builder: (_) => const SignInPage()));
+  Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push(MaterialPageRoute<void>(builder: (_) => const SignInPage()));
 }
 
-Future<void> _doSignIn(BuildContext context, WalletAuthController auth, {String method = 'reown'}) async {
-  if (method == 'solana') {
-    await auth.openSignIn();
-  } else if (method == 'ethereum') {
-    await auth.openWalletModal();
-  } else if (method == 'google' || method == 'apple' || method == 'email') {
-    // Use Reown socials until native OIDC is fully wired; the social wrappers
-    // return id tokens the gateway can verify.
-    await auth.openWalletModal();
-  } else {
-    await auth.openSignIn();
-  }
-  if (auth.isAuthenticated && context.mounted) {
-    Navigator.of(context).pop();
-  }
+class SignInPage extends StatefulWidget {
+  const SignInPage({super.key});
+
+  @override
+  State<SignInPage> createState() => _SignInPageState();
 }
 
-// ─── Shared pieces ───────────────────────────────────────────────────────────
+class _SignInPageState extends State<SignInPage> {
+  WalletAuthController? _auth;
 
-class _AuthButton extends StatelessWidget {
-  const _AuthButton({required this.label, this.icon, this.monoGlyph, this.onTap, this.loading = false});
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = AppScope.of(context).auth;
+    if (identical(_auth, auth)) return;
+    _auth?.removeListener(_onAuthChanged);
+    _auth = auth..addListener(_onAuthChanged);
+    if (PlatformCapabilities.usesReown) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) await auth.initReown(context);
+      });
+    }
+  }
 
-  final String label;
-  final IconData? icon;
-  final String? monoGlyph;
-  final VoidCallback? onTap;
-  final bool loading;
+  @override
+  void dispose() {
+    _auth?.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (_auth?.isAuthenticated == true && mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: loading ? null : onTap,
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: AppColors.surface2,
-          border: Border.all(color: AppColors.strokeHi),
-          borderRadius: BorderRadius.circular(14),
+    final auth = _auth!;
+    return AnimatedBuilder(
+      animation: auth,
+      builder: (context, _) => Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(gradient: AppColors.warmRadial),
+          child: SafeArea(
+            child: Stack(
+              children: [
+                _body(auth),
+                if (auth.isAuthenticating || auth.awaitingWebCallback)
+                  _LoadingOverlay(auth: auth),
+              ],
+            ),
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (loading)
-              const SizedBox(
-                width: 19,
-                height: 19,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
-              )
-            else if (icon != null)
-              Icon(icon, size: 19, color: AppColors.accent)
-            else if (monoGlyph != null)
-              Text(monoGlyph!,
-                  style: AppText.mono(17,
-                      weight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                      height: 1)),
-            const SizedBox(width: 11),
-            Text(label,
-                style: AppText.grotesk(15, weight: FontWeight.w600)),
-          ],
+      ),
+    );
+  }
+
+  Widget _body(WalletAuthController auth) {
+    final desktop = PlatformCapabilities.isDesktop;
+    final solanaMobile = auth.isSolanaMobileDevice;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 36),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Symbols.arrow_back, size: 17),
+                  label: Text(
+                    'CONTINUE AS GUEST',
+                    style: AppText.mono(
+                      11,
+                      weight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                      lsEm: 0.08,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Center(child: LogoTile(size: 56, radius: 16, glow: true)),
+              const SizedBox(height: 18),
+              Text(
+                'Welcome to Erebrus AI',
+                textAlign: TextAlign.center,
+                style: AppText.grotesk(
+                  26,
+                  weight: FontWeight.w600,
+                  lsEm: -0.02,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Sign in or register to access private workspace models and share yours with your team.',
+                textAlign: TextAlign.center,
+                style: AppText.grotesk(
+                  14,
+                  color: AppColors.textTertiary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 28),
+              if (desktop) ...[
+                if (auth.appleLoginAvailable) ...[
+                  _AuthButton(
+                    label: 'Continue with Apple',
+                    icon: Symbols.ios,
+                    onTap: auth.signInWithApple,
+                  ),
+                  const SizedBox(height: 11),
+                ],
+                _AuthButton(
+                  label: 'Sign in with browser',
+                  icon: Symbols.open_in_browser,
+                  primary: true,
+                  onTap: auth.openWebSignIn,
+                ),
+                const SizedBox(height: 11),
+                _AuthButton(
+                  label: 'Paste sign-in token',
+                  icon: Symbols.content_paste,
+                  onTap: () => _showPasteSheet(auth),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Opens ${RuntimeConfig.erebrusWebOrigin}/auth in your browser.\nAfter sign-in, you’ll return here automatically.',
+                  textAlign: TextAlign.center,
+                  style: AppText.grotesk(
+                    11.5,
+                    color: AppColors.textFaint,
+                    height: 1.45,
+                  ),
+                ),
+              ] else if (solanaMobile) ...[
+                _AuthButton(
+                  label: 'Connect Solana Wallet',
+                  icon: Symbols.account_balance_wallet,
+                  primary: true,
+                  onTap: auth.signInWithSolanaMobile,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Your Seed Vault wallet signs you in — no password required.',
+                  textAlign: TextAlign.center,
+                  style: AppText.grotesk(11.5, color: AppColors.textFaint),
+                ),
+              ] else ...[
+                if (auth.emailLoginAvailable) ...[
+                  _AuthButton(
+                    label: 'Continue with Email',
+                    icon: Symbols.mail,
+                    onTap: () => _showEmailSheet(auth),
+                  ),
+                  const SizedBox(height: 11),
+                ],
+                if (auth.googleLoginAvailable || auth.appleLoginAvailable) ...[
+                  _SocialLoginButtons(
+                    googleAvailable: auth.googleLoginAvailable,
+                    appleAvailable: auth.appleLoginAvailable,
+                    onGooglePressed: auth.signInWithGoogle,
+                    onApplePressed: auth.signInWithApple,
+                  ),
+                  const SizedBox(height: 11),
+                ],
+                const _DividerLabel(label: 'CONNECT A WALLET'),
+                _WalletCard(
+                  enabled: auth.reownReady,
+                  label: auth.reownReady
+                      ? 'Connect Wallet'
+                      : 'Preparing Wallet…',
+                  onTap: auth.openWalletModal,
+                ),
+                if (!auth.reownReady &&
+                    !auth.emailLoginAvailable &&
+                    !auth.googleLoginAvailable &&
+                    !auth.appleLoginAvailable) ...[
+                  const SizedBox(height: 11),
+                  _AuthButton(
+                    label: 'Sign in with browser',
+                    icon: Symbols.open_in_browser,
+                    onTap: auth.openWebSignIn,
+                  ),
+                ],
+              ],
+              if (auth.authError case final error? when error.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                Text(
+                  error,
+                  textAlign: TextAlign.center,
+                  style: AppText.grotesk(
+                    12,
+                    color: AppColors.danger,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              Text(
+                'By continuing you agree to Erebrus’s Terms of Service & Privacy Policy.',
+                textAlign: TextAlign.center,
+                style: AppText.grotesk(
+                  11.5,
+                  color: AppColors.textFaint,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEmailSheet(WalletAuthController auth) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _EmailLoginSheet(auth: auth),
+    );
+  }
+
+  Future<void> _showPasteSheet(WalletAuthController auth) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _PasteTokenSheet(auth: auth),
+    );
+  }
+}
+
+class _AuthButton extends StatelessWidget {
+  const _AuthButton({
+    required this.label,
+    required this.onTap,
+    required this.icon,
+    this.primary = false,
+  });
+
+  final String label;
+  final FutureOr<void> Function() onTap;
+  final IconData icon;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: primary ? AppColors.accent : AppColors.surface2,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: primary ? AppColors.accent : AppColors.strokeHi,
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => onTap(),
+        child: SizedBox(
+          height: 52,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 19,
+                color: primary ? AppColors.onAccent : AppColors.accent,
+              ),
+              const SizedBox(width: 11),
+              Text(
+                label,
+                style: AppText.grotesk(
+                  15,
+                  weight: FontWeight.w600,
+                  color: primary ? AppColors.onAccent : AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _WalletDivider extends StatelessWidget {
-  const _WalletDivider();
+/// Matches Erebrus Drop: when both native providers are available they share
+/// one segmented row; a single available provider still fills the full width.
+class _SocialLoginButtons extends StatelessWidget {
+  const _SocialLoginButtons({
+    required this.googleAvailable,
+    required this.appleAvailable,
+    required this.onGooglePressed,
+    required this.onApplePressed,
+  });
+
+  final bool googleAvailable;
+  final bool appleAvailable;
+  final FutureOr<void> Function() onGooglePressed;
+  final FutureOr<void> Function() onApplePressed;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+    final bothAvailable = googleAvailable && appleAvailable;
+    return Material(
+      color: AppColors.surface2,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AppColors.strokeHi),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Row(
         children: [
-          const Expanded(child: Divider(height: 1, color: AppColors.stroke)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Text('CONNECT A WALLET',
-                style: AppText.mono(11,
-                    weight: FontWeight.w500,
-                    color: AppColors.textFaint,
-                    lsEm: 0.15)),
-          ),
-          const Expanded(child: Divider(height: 1, color: AppColors.stroke)),
+          if (googleAvailable)
+            Expanded(
+              child: _SocialLoginSegment(
+                semanticLabel: 'Continue with Google',
+                label: bothAvailable ? 'Google' : 'Continue with Google',
+                monoGlyph: 'G',
+                onTap: onGooglePressed,
+              ),
+            ),
+          if (bothAvailable)
+            Container(width: 1, height: 28, color: AppColors.strokeHi),
+          if (appleAvailable)
+            Expanded(
+              child: _SocialLoginSegment(
+                semanticLabel: 'Continue with Apple',
+                label: bothAvailable ? 'Apple' : 'Continue with Apple',
+                icon: Icons.apple,
+                onTap: onApplePressed,
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _WalletCard extends StatelessWidget {
-  const _WalletCard({
-    required this.name,
-    required this.wallets,
-    required this.gradient,
-    this.primary = false,
-    this.onTap,
+class _SocialLoginSegment extends StatelessWidget {
+  const _SocialLoginSegment({
+    required this.semanticLabel,
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.monoGlyph,
   });
 
-  final String name;
-  final String wallets;
-  final Gradient gradient;
-  final bool primary;
-  final VoidCallback? onTap;
+  final String semanticLabel;
+  final String label;
+  final FutureOr<void> Function() onTap;
+  final IconData? icon;
+  final String? monoGlyph;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: primary ? AppColors.accent.withA(0.07) : AppColors.surface,
-          border: Border.all(
-              color: primary ? AppColors.accent.withA(0.45) : Colors.white.withA(0.1)),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: gradient,
-                borderRadius: BorderRadius.circular(9),
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
-                      style: AppText.grotesk(15,
-                          weight: FontWeight.w600)),
-                  const SizedBox(height: 1),
-                  Text(wallets,
-                      style: AppText.mono(11,
-                          color: AppColors.textTertiary)),
-                ],
-              ),
-            ),
-            if (primary)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withA(0.14),
-                  borderRadius: BorderRadius.circular(6),
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: () => onTap(),
+        child: SizedBox(
+          height: 52,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null)
+                Icon(icon, size: 21, color: AppColors.textPrimary)
+              else
+                Text(
+                  monoGlyph ?? '',
+                  style: AppText.mono(17, weight: FontWeight.w600, height: 1),
                 ),
-                child: Text('PRIMARY',
-                    style: AppText.mono(10,
-                        weight: FontWeight.w600,
-                        color: AppColors.accent,
-                        lsEm: 0.08)),
+              const SizedBox(width: 9),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.grotesk(14, weight: FontWeight.w600),
+                ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ─── Desktop page ────────────────────────────────────────────────────────────
-
-class SignInPage extends StatelessWidget {
-  const SignInPage({super.key});
+class _DividerLabel extends StatelessWidget {
+  const _DividerLabel({required this.label});
+  final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final app = AppScope.of(context);
-    final auth = app.auth;
-    return AnimatedBuilder(
-      animation: auth,
-      builder: (context, _) => Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.warmRadial),
-        child: Stack(
-          children: [
-            SafeArea(
-              minimum: const EdgeInsets.only(top: 8, left: 8),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Symbols.arrow_back,
-                            size: 16, color: AppColors.textSecondary),
-                        const SizedBox(width: 8),
-                        Text('CONTINUE AS GUEST',
-                            style: AppText.mono(11,
-                                weight: FontWeight.w500,
-                                color: AppColors.textSecondary,
-                                lsEm: 0.08)),
-                      ],
-                    ),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 15),
+    child: Row(
+      children: [
+        const Expanded(child: Divider(color: AppColors.stroke)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            label,
+            style: AppText.mono(10.5, color: AppColors.textFaint, lsEm: 0.14),
+          ),
+        ),
+        const Expanded(child: Divider(color: AppColors.stroke)),
+      ],
+    ),
+  );
+}
+
+class _WalletCard extends StatelessWidget {
+  const _WalletCard({
+    required this.enabled,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool enabled;
+  final String label;
+  final Future<void> Function() onTap;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: enabled ? 1 : 0.55,
+    child: Material(
+      color: AppColors.accent.withA(0.07),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: AppColors.accent.withA(0.45)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          height: 58,
+          child: Row(
+            children: [
+              const SizedBox(width: 15),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.solanaA, AppColors.solanaB],
                   ),
+                  borderRadius: BorderRadius.circular(9),
                 ),
               ),
-            ),
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 48),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Center(
-                          child: LogoTile(size: 56, radius: 16, glow: true)),
-                      const SizedBox(height: 18),
-                      Center(
-                        child: Text('Welcome to Erebrus AI',
-                            style: AppText.grotesk(26,
-                                weight: FontWeight.w600, lsEm: -0.02)),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 300),
-                          child: Text(
-                            'Sign in to access private workspace models and share yours with your team.',
-                            textAlign: TextAlign.center,
-                            style: AppText.grotesk(14,
-                                color: AppColors.textTertiary, height: 1.45),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      _AuthButton(
-                          label: 'Continue with Email',
-                          icon: Symbols.mail,
-                          loading: auth.isAuthenticating || auth.awaitingWebCallback,
-                          onTap: () => _doSignIn(context, auth, method: 'email')),
-                      const SizedBox(height: 11),
-                      _AuthButton(
-                          label: 'Continue with Google',
-                          monoGlyph: 'G',
-                          loading: auth.isAuthenticating,
-                          onTap: () => _doSignIn(context, auth, method: 'google')),
-                      const _WalletDivider(),
-                      _WalletCard(
-                        name: 'Solana',
-                        wallets: 'Phantom · Solflare · Backpack',
-                        gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [AppColors.solanaA, AppColors.solanaB]),
-                        primary: true,
-                        onTap: () => _doSignIn(context, auth, method: 'solana'),
-                      ),
-                      const SizedBox(height: 11),
-                      _WalletCard(
-                        name: 'Ethereum',
-                        wallets: 'MetaMask · WalletConnect',
-                        gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [AppColors.ethereumA, AppColors.ethereumB]),
-                        onTap: () => _doSignIn(context, auth, method: 'ethereum'),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'By continuing you agree to Erebrus’s\nTerms of Service & Privacy Policy.',
-                        textAlign: TextAlign.center,
-                        style: AppText.grotesk(11.5,
-                            color: AppColors.textFaint, height: 1.5),
-                      ),
-                    ],
-                  ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppText.grotesk(15, weight: FontWeight.w600),
                 ),
               ),
-            ),
-          ],
+              Text(
+                'SOLANA',
+                style: AppText.mono(10, color: AppColors.accent, lsEm: 0.08),
+              ),
+              const SizedBox(width: 15),
+            ],
+          ),
         ),
       ),
-    ));
+    ),
+  );
+}
+
+class _EmailLoginSheet extends StatefulWidget {
+  const _EmailLoginSheet({required this.auth});
+  final WalletAuthController auth;
+
+  @override
+  State<_EmailLoginSheet> createState() => _EmailLoginSheetState();
+}
+
+class _EmailLoginSheetState extends State<_EmailLoginSheet> {
+  final _email = TextEditingController();
+  final _code = TextEditingController();
+  bool _sent = false;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: widget.auth,
+    builder: (context, _) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        22,
+        24,
+        MediaQuery.viewInsetsOf(context).bottom + 28,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _sent ? 'Enter your code' : 'Sign in with email',
+            style: AppText.grotesk(20, weight: FontWeight.w600),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            _sent
+                ? 'We sent a code to ${_email.text.trim()}.'
+                : 'We’ll email you a one-time sign-in code.',
+            style: AppText.grotesk(13, color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 18),
+          TextField(
+            controller: _sent ? _code : _email,
+            autofocus: true,
+            keyboardType: _sent
+                ? TextInputType.number
+                : TextInputType.emailAddress,
+            decoration: InputDecoration(
+              hintText: _sent ? '6-digit code' : 'you@example.com',
+              filled: true,
+              fillColor: AppColors.surface2,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _busy ? null : (_sent ? _verify : _send),
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
+            child: _busy
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(_sent ? 'Verify' : 'Send code'),
+          ),
+          if (_sent)
+            TextButton(
+              onPressed: _busy ? null : () => setState(() => _sent = false),
+              child: const Text('Use a different email'),
+            ),
+          if (widget.auth.authError case final error?
+              when error.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: AppText.grotesk(12, color: AppColors.danger),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _send() async {
+    if (_email.text.trim().isEmpty) return;
+    setState(() => _busy = true);
+    final sent = await widget.auth.requestEmailLoginCode(_email.text);
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _sent = sent;
+      });
+    }
+  }
+
+  Future<void> _verify() async {
+    setState(() => _busy = true);
+    await widget.auth.verifyEmailLoginCode(
+      email: _email.text,
+      code: _code.text,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (widget.auth.isAuthenticated) Navigator.of(context).pop();
   }
 }
 
+class _PasteTokenSheet extends StatefulWidget {
+  const _PasteTokenSheet({required this.auth});
+  final WalletAuthController auth;
+
+  @override
+  State<_PasteTokenSheet> createState() => _PasteTokenSheetState();
+}
+
+class _PasteTokenSheetState extends State<_PasteTokenSheet> {
+  final _controller = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      24,
+      22,
+      24,
+      MediaQuery.viewInsetsOf(context).bottom + 28,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Paste sign-in token',
+          style: AppText.grotesk(20, weight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Paste the PASETO or complete erebrusai:// callback URL.',
+          style: AppText.grotesk(13, color: AppColors.textTertiary),
+        ),
+        const SizedBox(height: 18),
+        TextField(controller: _controller, minLines: 2, maxLines: 4),
+        const SizedBox(height: 14),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
+          child: Text(_busy ? 'Signing in…' : 'Sign in'),
+        ),
+        TextButton(
+          onPressed: widget.auth.openWebSignIn,
+          child: const Text('Open Erebrus sign-in in browser'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    await widget.auth.signInWithPastedCredential(_controller.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (widget.auth.isAuthenticated) Navigator.of(context).pop();
+  }
+}
+
+class _LoadingOverlay extends StatefulWidget {
+  const _LoadingOverlay({required this.auth});
+  final WalletAuthController auth;
+
+  @override
+  State<_LoadingOverlay> createState() => _LoadingOverlayState();
+}
+
+class _LoadingOverlayState extends State<_LoadingOverlay> {
+  Timer? _timer;
+  bool _showCancel = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _showCancel = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Positioned.fill(
+    child: ColoredBox(
+      color: AppColors.bg.withA(0.88),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: AppColors.accent),
+            const SizedBox(height: 16),
+            Text(
+              widget.auth.awaitingWebCallback
+                  ? 'Waiting for browser sign-in…'
+                  : 'Signing in…',
+              style: AppText.grotesk(14, color: AppColors.textSecondary),
+            ),
+            if (_showCancel) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: widget.auth.cancelAuthentication,
+                child: const Text('Cancel'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}

@@ -9,6 +9,7 @@ import 'package:erebrus_ai/state/app_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Screens-only smoke tests: every screen builds at desktop (1280×800) and
 /// mobile (390×844) sizes, in guest and signed-in states, without exceptions.
@@ -37,16 +38,29 @@ void main() {
     CatalogService.setEntries(modelCatalog);
   });
 
-  Future<void> pumpApp(WidgetTester tester, Size size,
-      {WalletAuthController? auth, OrgState? orgState}) async {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  Future<void> pumpApp(
+    WidgetTester tester,
+    Size size, {
+    WalletAuthController? auth,
+    OrgState? orgState,
+    double topPadding = 0,
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+    tester.view.padding = FakeViewPadding(top: topPadding);
+    addTearDown(() {
+      tester.view.reset();
+      tester.view.resetPadding();
+    });
     final controller = auth ?? WalletAuthController();
-    await tester.pumpWidget(ErebrusApp(
-      auth: controller,
-      orgState: orgState ?? OrgState(auth: controller),
-    ));
+    await tester.pumpWidget(
+      ErebrusApp(
+        auth: controller,
+        orgState: orgState ?? OrgState(auth: controller),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 400));
   }
 
@@ -58,16 +72,15 @@ void main() {
       expect(find.text('SESSIONS'), findsOneWidget);
       expect(find.text('READY'), findsOneWidget);
       expect(find.text('GUEST MODE'), findsOneWidget);
-      expect(find.text('Serving on LAN'), findsOneWidget);
+      expect(find.text('Node paused'), findsOneWidget);
 
       // Models → NETWORK tab with guest gate.
       await tester.tap(find.text('MODELS'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Models'), findsOneWidget);
-      expect(find.text('LOADED'), findsOneWidget);
-      await tester.tap(find.text('NETWORK · 2'));
+      await tester.tap(find.text('NETWORK · 0'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Erebrus AI on MacBook-Pro'), findsOneWidget);
+      expect(find.text('Private workspace models'), findsOneWidget);
       expect(find.text('Private workspace models'), findsOneWidget);
 
       // Personas editor.
@@ -82,11 +95,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Unlock private models & workspaces'), findsOneWidget);
       expect(find.text('Serve on local network'), findsOneWidget);
-      expect(find.text('EREBRUS AI 0.1.0 · LLAMA.CPP B4432'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Assistant voice'),
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('Assistant voice'), findsOneWidget);
     });
 
-    testWidgets('sign-in page swaps guest → signed-in content',
-        (tester) async {
+    testWidgets('sign-in page swaps guest → signed-in content', (tester) async {
       await pumpApp(tester, const Size(1280, 800));
 
       await tester.tap(find.text('SETTINGS'));
@@ -96,10 +113,7 @@ void main() {
       expect(find.text('Welcome to Erebrus AI'), findsOneWidget);
       expect(find.text('CONTINUE AS GUEST'), findsOneWidget);
 
-      await tester.tap(find.text('Continue with Email'));
-      await tester.pumpAndSettle();
-
-      // Real Reown auth cannot run in widget tests, so toggle signed-in state
+      // Real browser/native auth cannot run in widget tests, so toggle signed-in state
       // through AppScope and close the sign-in surface to verify the signed-in
       // UI surfaces.
       final appContext = tester.element(find.text('Welcome to Erebrus AI'));
@@ -108,18 +122,15 @@ void main() {
       await tester.pumpAndSettle();
 
       // Back on settings, signed in now.
-      expect(find.text('shachi.eth'), findsOneWidget);
-      expect(find.text('NetSepio Workspace'), findsOneWidget);
-      expect(find.text('Pending invites'), findsOneWidget);
+      expect(find.text('Erebrus account'), findsOneWidget);
+      expect(find.text('Create an organization'), findsOneWidget);
 
       // Org node card appears in models network tab.
       await tester.tap(find.text('MODELS'));
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.text('NETWORK · 2'));
+      await tester.tap(find.text('NETWORK · 0'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.textContaining('Sec-Analyst 8B'), findsOneWidget);
-      expect(find.text('PRIVATE'), findsOneWidget);
-      expect(find.text('Private workspace models'), findsNothing);
+      expect(find.text('No models shared with this workspace'), findsOneWidget);
 
       // Sign out restores guest state.
       await tester.tap(find.text('SETTINGS'));
@@ -131,14 +142,38 @@ void main() {
 
     testWidgets('model picker opens as dialog', (tester) async {
       await pumpApp(tester, const Size(1280, 800));
-      await tester.tap(find.text('Qwen 3.5 0.8B'));
+      await tester.tap(find.text('Select model'));
       await tester.pumpAndSettle();
       expect(find.text('SWITCH MODEL'), findsOneWidget);
-      expect(find.text('Qwen 3.5 14B'), findsOneWidget);
+      expect(find.text('No downloaded models'), findsOneWidget);
     });
   });
 
   group('mobile 390x844', () {
+    testWidgets('onboarding completion survives app restart', (tester) async {
+      await pumpApp(tester, const Size(390, 844));
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
+
+      await tester.tap(find.text('SKIP'));
+      await tester.pumpAndSettle();
+      expect(find.text('01 / PRIVATE AI'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpApp(tester, const Size(390, 844));
+      expect(find.text('01 / PRIVATE AI'), findsNothing);
+      expect(find.text('CHAT'), findsOneWidget);
+    });
+
+    testWidgets('shell content clears the system status bar', (tester) async {
+      SharedPreferences.setMockInitialValues({'onboarding_complete': true});
+      await pumpApp(tester, const Size(390, 844), topPadding: 48);
+
+      expect(
+        tester.getTopLeft(find.text('Select model')).dy,
+        greaterThanOrEqualTo(48),
+      );
+    });
+
     testWidgets('onboarding pages → first model → shell', (tester) async {
       await pumpApp(tester, const Size(390, 844));
 
@@ -161,7 +196,7 @@ void main() {
 
       // Shell opens on the Models network tab.
       expect(find.text('CHAT'), findsOneWidget);
-      expect(find.text('Erebrus AI on MacBook-Pro'), findsOneWidget);
+      expect(find.text('Private workspace models'), findsOneWidget);
     });
 
     testWidgets('models tabs, settings, and sign-in page', (tester) async {
@@ -173,13 +208,13 @@ void main() {
       // Skip lands on the network tab; switch to local to verify local list.
       await tester.tap(find.textContaining('LOCAL ·'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('STORAGE · 1.9 GB OF 128 GB'), findsOneWidget);
-      expect(find.text('2 nodes on your network'), findsOneWidget);
+      expect(find.text('STORAGE · 0 MB USED'), findsOneWidget);
+      expect(find.text('No Erebrus nodes discovered'), findsOneWidget);
 
       await tester.tap(find.text('SETTINGS'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Serve while app is open'), findsOneWidget);
-      expect(find.text('Pause on low battery'), findsOneWidget);
+      expect(find.text('Maximum response length'), findsOneWidget);
 
       // Sign-in is a full-screen page with guest escape.
       await tester.tap(find.text('SIGN IN / REGISTER'));

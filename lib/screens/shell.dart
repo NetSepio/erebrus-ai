@@ -49,17 +49,14 @@ class _ShellState extends State<Shell> {
   void _setTab(int i) => setState(() => _tab = i);
 
   Widget _body(bool wide) => IndexedStack(
-        index: _tab,
-        children: [
-          ChatScreen(wide: wide),
-          ModelsScreen(
-            wide: wide,
-            initialSubTab: widget.initialTab == 1 ? 1 : 0,
-          ),
-          PersonasScreen(wide: wide),
-          SettingsScreen(wide: wide),
-        ],
-      );
+    index: _tab,
+    children: [
+      ChatScreen(wide: wide),
+      ModelsScreen(wide: wide, initialSubTab: widget.initialTab == 1 ? 1 : 0),
+      PersonasScreen(wide: wide),
+      SettingsScreen(wide: wide),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -78,17 +75,20 @@ class _ShellState extends State<Shell> {
           if (wide) {
             return Scaffold(
               backgroundColor: AppColors.bg,
-              body: Row(
-                children: [
-                  _Sidebar(tab: _tab, onTab: _setTab),
-                  Expanded(child: _body(true)),
-                ],
+              body: SafeArea(
+                bottom: false,
+                child: Row(
+                  children: [
+                    _Sidebar(tab: _tab, onTab: _setTab),
+                    Expanded(child: _body(true)),
+                  ],
+                ),
               ),
             );
           }
           return Scaffold(
             backgroundColor: AppColors.bg,
-            body: _body(false),
+            body: SafeArea(bottom: false, child: _body(false)),
             bottomNavigationBar: _BottomNav(tab: _tab, onTab: _setTab),
           );
         },
@@ -136,8 +136,10 @@ class _Sidebar extends StatelessWidget {
           if (tab == 3)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text('EREBRUS AI 0.1.0 · LLAMA.CPP B4432',
-                  style: AppText.mono(9.5, color: AppColors.textFaint)),
+              child: Text(
+                'EREBRUS AI 0.1.0 · LLAMA.CPP B4432',
+                style: AppText.mono(9.5, color: AppColors.textFaint),
+              ),
             )
           else ...[
             const _LocalNodeCard(),
@@ -153,8 +155,11 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _SidebarItem extends StatelessWidget {
-  const _SidebarItem(
-      {required this.item, required this.active, required this.onTap});
+  const _SidebarItem({
+    required this.item,
+    required this.active,
+    required this.onTap,
+  });
 
   final _NavItem item;
   final bool active;
@@ -173,16 +178,22 @@ class _SidebarItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(item.icon,
-                size: 19,
-                fill: active ? 1 : 0,
-                color: active ? AppColors.accent : AppColors.textSecondary),
+            Icon(
+              item.icon,
+              size: 19,
+              fill: active ? 1 : 0,
+              color: active ? AppColors.accent : AppColors.textSecondary,
+            ),
             const SizedBox(width: 11),
-            Text(item.label,
-                style: AppText.mono(11,
-                    weight: active ? FontWeight.w600 : FontWeight.w500,
-                    color: active ? AppColors.accent : AppColors.textSecondary,
-                    lsEm: 0.08)),
+            Text(
+              item.label,
+              style: AppText.mono(
+                11,
+                weight: active ? FontWeight.w600 : FontWeight.w500,
+                color: active ? AppColors.accent : AppColors.textSecondary,
+                lsEm: 0.08,
+              ),
+            ),
           ],
         ),
       ),
@@ -209,11 +220,15 @@ class _LocalNodeCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('LOCAL NODE',
-                  style: AppText.mono(10,
-                      weight: FontWeight.w600,
-                      color: AppColors.textMuted,
-                      lsEm: 0.12)),
+              Text(
+                'LOCAL NODE',
+                style: AppText.mono(
+                  10,
+                  weight: FontWeight.w600,
+                  color: AppColors.textMuted,
+                  lsEm: 0.12,
+                ),
+              ),
               EreToggle(value: app.serving, onChanged: app.setServing),
             ],
           ),
@@ -221,16 +236,21 @@ class _LocalNodeCard extends StatelessWidget {
           Row(
             children: [
               GlowDot(
-                  color: app.serving ? AppColors.success : AppColors.textMuted,
-                  glow: app.serving),
+                color: app.serving ? AppColors.success : AppColors.textMuted,
+                glow: app.serving,
+              ),
               const SizedBox(width: 7),
-              Text(app.serving ? 'Serving on LAN' : 'Node paused',
-                  style: AppText.grotesk(12.5, weight: FontWeight.w600)),
+              Text(
+                app.serving ? 'Serving on LAN' : 'Node paused',
+                style: AppText.grotesk(12.5, weight: FontWeight.w600),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          Text(app.serving ? 'PORT 11434 · MDNS ON' : 'PORT 11434 · MDNS OFF',
-              style: AppText.mono(10, color: AppColors.textMuted)),
+          Text(
+            app.serving ? 'PORT 11434 · MDNS ON' : 'PORT 11434 · MDNS OFF',
+            style: AppText.mono(10, color: AppColors.textMuted),
+          ),
         ],
       ),
     );
@@ -252,22 +272,33 @@ class _GuestModeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('GUEST MODE',
-              style: AppText.mono(10,
-                  weight: FontWeight.w600,
-                  color: AppColors.accent,
-                  lsEm: 0.12)),
+          Text(
+            'GUEST MODE',
+            style: AppText.mono(
+              10,
+              weight: FontWeight.w600,
+              color: AppColors.accent,
+              lsEm: 0.12,
+            ),
+          ),
           const SizedBox(height: 5),
-          Text('Sign in to use private workspace models.',
-              style: AppText.grotesk(11.5,
-                  color: AppColors.textSecondary, height: 1.4)),
+          Text(
+            'Sign in to use private workspace models.',
+            style: AppText.grotesk(
+              11.5,
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 9),
-          PrimaryCta('SIGN IN',
-              fontSize: 11,
-              radius: 9,
-              glow: false,
-              padding: const EdgeInsets.all(8),
-              onTap: () => openSignIn(context)),
+          PrimaryCta(
+            'SIGN IN',
+            fontSize: 11,
+            radius: 9,
+            glow: false,
+            padding: const EdgeInsets.all(8),
+            onTap: () => openSignIn(context),
+          ),
         ],
       ),
     );
@@ -290,7 +321,9 @@ class _BottomNav extends StatelessWidget {
         border: const Border(top: BorderSide(color: AppColors.stroke)),
       ),
       padding: EdgeInsets.only(
-          top: 11, bottom: MediaQuery.viewPaddingOf(context).bottom + 11),
+        top: 11,
+        bottom: MediaQuery.viewPaddingOf(context).bottom + 11,
+      ),
       child: Row(
         children: [
           for (var i = 0; i < _navItems.length; i++)
@@ -301,20 +334,26 @@ class _BottomNav extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(_navItems[i].icon,
-                        size: 22,
-                        fill: i == tab ? 1 : 0,
+                    Icon(
+                      _navItems[i].icon,
+                      size: 22,
+                      fill: i == tab ? 1 : 0,
+                      color: i == tab
+                          ? AppColors.accent
+                          : AppColors.textSecondary,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _navItems[i].label,
+                      style: AppText.mono(
+                        10,
+                        weight: FontWeight.w500,
                         color: i == tab
                             ? AppColors.accent
-                            : AppColors.textSecondary),
-                    const SizedBox(height: 5),
-                    Text(_navItems[i].label,
-                        style: AppText.mono(10,
-                            weight: FontWeight.w500,
-                            color: i == tab
-                                ? AppColors.accent
-                                : AppColors.textSecondary,
-                            lsEm: 0.05)),
+                            : AppColors.textSecondary,
+                        lsEm: 0.05,
+                      ),
+                    ),
                   ],
                 ),
               ),

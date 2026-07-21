@@ -40,19 +40,22 @@ class _PersonasScreenState extends State<PersonasScreen> {
     if (widget.wide) {
       setState(() => _selected = p);
     } else {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: AppColors.bg,
-          body: SafeArea(
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            backgroundColor: AppColors.bg,
+            body: SafeArea(
               child: PersonaEditor(
-                  persona: p,
-                  wide: false,
-                  showBack: true,
-                  onSaved: (persona) => setState(() => _selected = persona),
-                  onDeleted: () => setState(
-                      () => _selected = _defaultSelected()))),
+                persona: p,
+                wide: false,
+                showBack: true,
+                onSaved: (persona) => setState(() => _selected = persona),
+                onDeleted: () => setState(() => _selected = _defaultSelected()),
+              ),
+            ),
+          ),
         ),
-      ));
+      );
     }
   }
 
@@ -65,8 +68,9 @@ class _PersonasScreenState extends State<PersonasScreen> {
       animation: PersonaService.instance,
       builder: (context, _) {
         final all = PersonaService.instance.all;
-        final stillExists =
-            all.any((p) => p.effectiveId == _selected.effectiveId);
+        final stillExists = all.any(
+          (p) => p.effectiveId == _selected.effectiveId,
+        );
         final selected = stillExists ? _selected : _defaultSelected();
         if (widget.wide) {
           return Row(
@@ -77,8 +81,7 @@ class _PersonasScreenState extends State<PersonasScreen> {
                   color: AppColors.bgElevated,
                   border: Border(right: BorderSide(color: AppColors.stroke)),
                 ),
-                child: _PersonaList(
-                    selected: selected, onSelect: _select),
+                child: _PersonaList(selected: selected, onSelect: _select),
               ),
               Expanded(
                 child: PersonaEditor(
@@ -102,8 +105,7 @@ class _PersonasScreenState extends State<PersonasScreen> {
                 child: Text('Personas', style: AppText.screenTitle()),
               ),
               const SizedBox(height: 6),
-              Expanded(
-                  child: _PersonaList(selected: null, onSelect: _select)),
+              Expanded(child: _PersonaList(selected: null, onSelect: _select)),
             ],
           ),
         );
@@ -137,23 +139,28 @@ class _PersonaList extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('PERSONAS', style: AppText.sectionHeader()),
-                    AccentChip('NEW',
-                        icon: Symbols.add,
-                        iconSize: 14,
-                        fontSize: 10,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 5),
-                        onTap: () async {
-                          final blank = const MockPersona(
-                            'New persona',
-                            'NP',
-                            'TEMP 0.7 · 2048 MAX',
-                            builtIn: false,
-                            systemPrompt: '',
-                          );
-                          await PersonaService.instance.save(blank);
-                          onSelect(blank);
-                        }),
+                    AccentChip(
+                      'NEW',
+                      icon: Symbols.add,
+                      iconSize: 14,
+                      fontSize: 10,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      onTap: () async {
+                        final blank = const MockPersona(
+                          'New persona',
+                          'NP',
+                          'TEMP 0.7 · 768 MAX',
+                          builtIn: false,
+                          systemPrompt: '',
+                          maxTokens: 768,
+                        );
+                        final saved = await PersonaService.instance.save(blank);
+                        onSelect(saved);
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -162,30 +169,40 @@ class _PersonaList extends StatelessWidget {
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-                      child: Text('BUILT-IN',
-                          style: AppText.mono(10,
-                              weight: FontWeight.w500,
-                              color: AppColors.textFaint,
-                              lsEm: 0.12)),
+                      child: Text(
+                        'BUILT-IN',
+                        style: AppText.mono(
+                          10,
+                          weight: FontWeight.w500,
+                          color: AppColors.textFaint,
+                          lsEm: 0.12,
+                        ),
+                      ),
                     ),
                     for (final p in builtIns)
                       _PersonaRow(
-                          persona: p,
-                          active: p.effectiveId == selected?.effectiveId,
-                          onTap: () => onSelect(p)),
+                        persona: p,
+                        active: p.effectiveId == selected?.effectiveId,
+                        onTap: () => onSelect(p),
+                      ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
-                      child: Text('YOURS',
-                          style: AppText.mono(10,
-                              weight: FontWeight.w500,
-                              color: AppColors.textFaint,
-                              lsEm: 0.12)),
+                      child: Text(
+                        'YOURS',
+                        style: AppText.mono(
+                          10,
+                          weight: FontWeight.w500,
+                          color: AppColors.textFaint,
+                          lsEm: 0.12,
+                        ),
+                      ),
                     ),
                     for (final p in yours)
                       _PersonaRow(
-                          persona: p,
-                          active: p.effectiveId == selected?.effectiveId,
-                          onTap: () => onSelect(p)),
+                        persona: p,
+                        active: p.effectiveId == selected?.effectiveId,
+                        onTap: () => onSelect(p),
+                      ),
                   ],
                 ),
               ),
@@ -198,8 +215,11 @@ class _PersonaList extends StatelessWidget {
 }
 
 class _PersonaRow extends StatelessWidget {
-  const _PersonaRow(
-      {required this.persona, required this.active, required this.onTap});
+  const _PersonaRow({
+    required this.persona,
+    required this.active,
+    required this.onTap,
+  });
 
   final MockPersona persona;
   final bool active;
@@ -219,25 +239,38 @@ class _PersonaRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            LetterTile(persona.initials,
-                size: 28, radius: 9, fontSize: 11, accent: active),
+            LetterTile(
+              persona.initials,
+              size: 28,
+              radius: 9,
+              fontSize: 11,
+              accent: active,
+            ),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(persona.name,
-                      style: AppText.grotesk(13,
-                          weight: active ? FontWeight.w600 : FontWeight.w500,
-                          color: active
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary)),
+                  Text(
+                    persona.name,
+                    style: AppText.grotesk(
+                      13,
+                      weight: active ? FontWeight.w600 : FontWeight.w500,
+                      color: active
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(persona.meta,
-                      style: AppText.mono(9.5,
-                          color: active
-                              ? AppColors.textTertiary
-                              : AppColors.textFaint)),
+                  Text(
+                    persona.meta,
+                    style: AppText.mono(
+                      9.5,
+                      color: active
+                          ? AppColors.textTertiary
+                          : AppColors.textFaint,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -278,6 +311,7 @@ class _PersonaEditorState extends State<PersonaEditor> {
   late double _topP;
   late int _maxTokens;
   late double _repeatPenalty;
+  bool _shareToOrg = false;
 
   @override
   void initState() {
@@ -335,13 +369,22 @@ class _PersonaEditorState extends State<PersonaEditor> {
 
   Future<void> _save() async {
     final p = _buildPersona();
-    await PersonaService.instance.save(p);
+    final saved = await PersonaService.instance.save(p);
+    String message = 'Persona saved';
+    if (_shareToOrg && mounted) {
+      try {
+        await AppScope.of(context).sharePersonaToOrg(saved.effectiveId);
+        message = 'Persona saved and shared';
+      } catch (error) {
+        message = 'Persona saved locally. Sharing failed: $error';
+      }
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Persona saved'), duration: Duration(seconds: 2)),
+        SnackBar(content: Text(message), duration: Duration(seconds: 2)),
       );
     }
-    widget.onSaved?.call(p);
+    widget.onSaved?.call(saved);
   }
 
   Future<void> _duplicate() async {
@@ -352,13 +395,16 @@ class _PersonaEditorState extends State<PersonaEditor> {
       initials: base.initials,
       builtIn: false,
     );
-    await PersonaService.instance.save(p);
+    final saved = await PersonaService.instance.save(p);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Persona duplicated'), duration: Duration(seconds: 2)),
+        const SnackBar(
+          content: Text('Persona duplicated'),
+          duration: Duration(seconds: 2),
+        ),
       );
     }
-    widget.onSaved?.call(p);
+    widget.onSaved?.call(saved);
   }
 
   Future<void> _delete() async {
@@ -372,13 +418,16 @@ class _PersonaEditorState extends State<PersonaEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final header = Row(
+    final title = Row(
       children: [
         if (widget.showBack) ...[
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child: const Icon(Symbols.arrow_back,
-                size: 20, color: AppColors.textSecondary),
+            child: const Icon(
+              Symbols.arrow_back,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(width: 14),
         ],
@@ -389,22 +438,53 @@ class _PersonaEditorState extends State<PersonaEditor> {
               Text(widget.persona.name, style: AppText.screenTitle()),
               const SizedBox(height: 4),
               Text(
-                  widget.persona.builtIn
-                      ? 'BUILT-IN PRESET · EDITS SAVE AS A COPY'
-                      : 'YOUR PERSONA',
-                  style: AppText.mono(11, color: AppColors.textMuted)),
+                widget.persona.builtIn
+                    ? 'BUILT-IN PRESET · EDITS SAVE AS A COPY'
+                    : 'YOUR PERSONA',
+                style: AppText.mono(11, color: AppColors.textMuted),
+              ),
             ],
           ),
         ),
-        const SizedBox(width: 12),
+      ],
+    );
+    final actions = Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: [
+        AccentChip(
+          AppScope.of(context).selectedPersonaId == widget.persona.effectiveId
+              ? 'IN USE'
+              : 'USE IN CHAT',
+          icon: Symbols.chat,
+          onTap: () => AppScope.of(
+            context,
+          ).selectPersona(widget.persona.name, id: widget.persona.effectiveId),
+        ),
         GhostButton('DUPLICATE', icon: Symbols.content_copy, onTap: _duplicate),
-        const SizedBox(width: 12),
         if (!widget.persona.builtIn)
           DangerGhostButton('DELETE', icon: Symbols.delete, onTap: _delete)
         else
           const SizedBox.shrink(),
       ],
     );
+    final header = widget.wide
+        ? Row(
+            children: [
+              Expanded(child: title),
+              const SizedBox(width: 12),
+              actions,
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              title,
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerLeft, child: actions),
+            ],
+          );
 
     final fields = <Widget>[
       const _FieldLabel('NAME'),
@@ -435,41 +515,48 @@ class _PersonaEditorState extends State<PersonaEditor> {
         child: Column(
           children: [
             SamplerSlider(
-                label: 'Temperature',
-                min: 0,
-                max: 2,
-                value: _temperature,
-                format: (v) => v.toStringAsFixed(2),
-                onChanged: (v) => setState(() => _temperature = v)),
+              label: 'Temperature',
+              min: 0,
+              max: 2,
+              value: _temperature,
+              format: (v) => v.toStringAsFixed(2),
+              onChanged: (v) => setState(() => _temperature = v),
+            ),
             const SizedBox(height: 18),
             SamplerSlider(
-                label: 'Top P',
-                min: 0,
-                max: 1,
-                value: _topP,
-                format: (v) => v.toStringAsFixed(2),
-                onChanged: (v) => setState(() => _topP = v)),
+              label: 'Top P',
+              min: 0,
+              max: 1,
+              value: _topP,
+              format: (v) => v.toStringAsFixed(2),
+              onChanged: (v) => setState(() => _topP = v),
+            ),
             const SizedBox(height: 18),
             SamplerSlider(
-                label: 'Max tokens',
-                min: 0,
-                max: 4096,
-                value: _maxTokens.toDouble(),
-                format: (v) => v.round().toString(),
-                onChanged: (v) => setState(() => _maxTokens = v.round())),
+              label: 'Max tokens',
+              min: 64,
+              max: 4096,
+              value: _maxTokens.toDouble(),
+              format: (v) => v.round().toString(),
+              onChanged: (v) => setState(() => _maxTokens = v.round()),
+            ),
             const SizedBox(height: 18),
             SamplerSlider(
-                label: 'Repeat penalty',
-                min: 1,
-                max: 1.3,
-                value: _repeatPenalty,
-                format: (v) => v.toStringAsFixed(2),
-                onChanged: (v) => setState(() => _repeatPenalty = v)),
+              label: 'Repeat penalty',
+              min: 1,
+              max: 1.3,
+              value: _repeatPenalty,
+              format: (v) => v.toStringAsFixed(2),
+              onChanged: (v) => setState(() => _repeatPenalty = v),
+            ),
           ],
         ),
       ),
       const SizedBox(height: 14),
-      const _ShareCard(),
+      _ShareCard(
+        value: _shareToOrg,
+        onChanged: (value) => setState(() => _shareToOrg = value),
+      ),
       const SizedBox(height: 14),
       PrimaryCta('SAVE PERSONA', onTap: _save),
     ];
@@ -530,10 +617,11 @@ class _PersonaEditorState extends State<PersonaEditor> {
         const SizedBox(height: 20),
         ...fields,
         _TextFieldBox(
-            controller: _system,
-            mono: true,
-            minHeight: 150,
-            hint: 'No system prompt — the model answers as itself.'),
+          controller: _system,
+          mono: true,
+          minHeight: 150,
+          hint: 'No system prompt — the model answers as itself.',
+        ),
         ...tail,
         const SizedBox(height: 20),
         ...samplingColumn,
@@ -549,9 +637,15 @@ class _FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(label,
-        style: AppText.mono(10.5,
-            weight: FontWeight.w600, color: AppColors.textMuted, lsEm: 0.12));
+    return Text(
+      label,
+      style: AppText.mono(
+        10.5,
+        weight: FontWeight.w600,
+        color: AppColors.textMuted,
+        lsEm: 0.12,
+      ),
+    );
   }
 }
 
@@ -592,11 +686,12 @@ class _TextFieldBox extends StatelessWidget {
         expands: expand,
         maxLines: expand ? null : (minHeight != null ? null : 1),
         style: mono
-            ? AppText.mono(12.5,
-                color: AppColors.textTertiary, height: 1.65)
-            : AppText.grotesk(14,
+            ? AppText.mono(12.5, color: AppColors.textTertiary, height: 1.65)
+            : AppText.grotesk(
+                14,
                 weight: bold ? FontWeight.w500 : FontWeight.w400,
-                color: AppColors.textPrimary),
+                color: AppColors.textPrimary,
+              ),
         cursorColor: AppColors.accent,
         decoration: InputDecoration(
           isDense: true,
@@ -611,15 +706,11 @@ class _TextFieldBox extends StatelessWidget {
   }
 }
 
-class _ShareCard extends StatefulWidget {
-  const _ShareCard();
+class _ShareCard extends StatelessWidget {
+  const _ShareCard({required this.value, required this.onChanged});
 
-  @override
-  State<_ShareCard> createState() => _ShareCardState();
-}
-
-class _ShareCardState extends State<_ShareCard> {
-  bool _share = true;
+  final bool value;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -634,26 +725,35 @@ class _ShareCardState extends State<_ShareCard> {
       child: app.signedIn
           ? Row(
               children: [
-                const Icon(Symbols.apartment,
-                    size: 18, color: AppColors.orgPurple),
+                const Icon(
+                  Symbols.apartment,
+                  size: 18,
+                  color: AppColors.orgPurple,
+                ),
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Share to ${app.selectedOrg?.name ?? 'NetSepio Workspace'}',
-                          style:
-                              AppText.grotesk(13, weight: FontWeight.w500)),
+                      Text(
+                        app.selectedOrg == null
+                            ? 'Choose an organization to share'
+                            : 'Share to ${app.selectedOrg!.name}',
+                        style: AppText.grotesk(13, weight: FontWeight.w500),
+                      ),
                       const SizedBox(height: 2),
-                      Text('Members can use this persona on org nodes.',
-                          style: AppText.grotesk(11,
-                              color: AppColors.textMuted)),
+                      Text(
+                        'Members can use this persona on org nodes.',
+                        style: AppText.grotesk(11, color: AppColors.textMuted),
+                      ),
                     ],
                   ),
                 ),
                 EreToggle(
-                    value: _share,
-                    onChanged: (v) => setState(() => _share = v)),
+                  value: value,
+                  disabled: app.selectedOrg == null,
+                  onChanged: app.selectedOrg == null ? null : onChanged,
+                ),
               ],
             )
           : Row(
@@ -666,14 +766,22 @@ class _ShareCardState extends State<_ShareCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Share to workspace',
-                            style: AppText.grotesk(13,
-                                weight: FontWeight.w500,
-                                color: AppColors.textSecondary)),
+                        Text(
+                          'Share to workspace',
+                          style: AppText.grotesk(
+                            13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text('Sign in to share personas with your org.',
-                            style: AppText.grotesk(11,
-                                color: AppColors.textMuted)),
+                        Text(
+                          'Sign in to share personas with your org.',
+                          style: AppText.grotesk(
+                            11,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
                       ],
                     ),
                   ),
