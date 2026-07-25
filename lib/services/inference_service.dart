@@ -7,6 +7,7 @@ import '../data/installed_model.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'inference_coordinator.dart';
+import 'inference_memory_policy.dart';
 import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
@@ -73,7 +74,18 @@ class InferenceService extends ChangeNotifier {
     }
 
     final mobile = Platform.isAndroid || Platform.isIOS;
-    final contextSize = mobile ? 2048 : 8192;
+    const memoryPolicy = InferenceMemoryPolicy();
+    final primaryBackend =
+        installed.any(
+          (record) => record.backends.any(
+            (backend) => backend.toLowerCase() == BackendKind.mlx.catalogName,
+          ),
+        )
+        ? BackendKind.mlx
+        : BackendKind.llamaCpp;
+    final contextSize = memoryPolicy
+        .plan(device: profile, backend: primaryBackend)
+        .contextSize;
     final outputTokens = mobile
         ? maxOutputTokens.clamp(1, contextSize - 256)
         : maxOutputTokens;
@@ -101,14 +113,18 @@ class InferenceService extends ChangeNotifier {
         if (packagePath == null) continue;
         final variant = _variantFromInstalled(record, profile.platform);
         for (final backend in _orderedBackends(record)) {
+          final memoryPlan = memoryPolicy.plan(
+            device: profile,
+            backend: backend,
+          );
           plans.add(
             InferenceExecutionPlan(
               backend: backend,
               loadRequest: InferenceLoadRequest(
                 variant: variant,
                 packagePath: packagePath,
-                contextSize: contextSize,
-                gpuLayerCount: null,
+                contextSize: memoryPlan.contextSize,
+                gpuLayerCount: memoryPlan.gpuLayerCount,
               ),
             ),
           );
@@ -120,14 +136,18 @@ class InferenceService extends ChangeNotifier {
                 plan.backend == BackendKind.llamaCpp &&
                 plan.loadRequest.packagePath == legacyPath,
           )) {
+        final memoryPlan = memoryPolicy.plan(
+          device: profile,
+          backend: BackendKind.llamaCpp,
+        );
         plans.add(
           InferenceExecutionPlan(
             backend: BackendKind.llamaCpp,
             loadRequest: InferenceLoadRequest(
               variant: _legacyVariant(modelId, legacyPath, profile.platform),
               packagePath: legacyPath,
-              contextSize: contextSize,
-              gpuLayerCount: null,
+              contextSize: memoryPlan.contextSize,
+              gpuLayerCount: memoryPlan.gpuLayerCount,
             ),
           ),
         );
