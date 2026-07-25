@@ -13,6 +13,8 @@ typedef ModelDownloadProgress =
     void Function(String artifactId, int receivedBytes, int totalBytes);
 
 class ModelPackageService {
+  static final ModelPackageService instance = ModelPackageService();
+
   ModelPackageService({
     Future<Directory> Function()? modelsDirectoryProvider,
     HttpClient Function()? httpClientProvider,
@@ -28,6 +30,10 @@ class ModelPackageService {
       List.unmodifiable(_installed.values.toList());
 
   InstalledModel? byVariantId(String variantId) => _installed[variantId];
+
+  InstalledModel? runnableForModelId(String modelId) => _installed.values
+      .where((record) => record.modelId == modelId && record.runnable)
+      .firstOrNull;
 
   Future<void> loadIndex() async {
     _installed.clear();
@@ -122,6 +128,23 @@ class ModelPackageService {
       return await file.exists() ? file.path : null;
     }
     return directory.path;
+  }
+
+  Future<void> markUnrunnable(String variantId, String failureCode) async {
+    final record = _installed[variantId];
+    if (record == null) return;
+    _installed[variantId] = InstalledModel(
+      modelId: record.modelId,
+      variantId: record.variantId,
+      format: record.format,
+      backends: record.backends,
+      installedAt: record.installedAt,
+      verifiedAt: record.verifiedAt,
+      files: record.files,
+      runnable: false,
+      failureCode: failureCode,
+    );
+    await _saveIndex();
   }
 
   Future<InstalledModel> verify(ModelVariant variant) async {

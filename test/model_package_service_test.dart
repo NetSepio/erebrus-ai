@@ -76,6 +76,22 @@ void main() {
         (await restored.verify(variant)).files.single.sha256,
         sha256.convert(bytes).toString(),
       );
+
+      final secondBytes = utf8.encode('second quantization fixture');
+      payloads['/model-q4.gguf'] = secondBytes;
+      final secondVariant = _variant(
+        id: 'tiny-q4',
+        bytes: secondBytes,
+        url: url('/model-q4.gguf'),
+      );
+      await restored.downloadVariant(secondVariant);
+
+      expect(restored.installed.map((record) => record.variantId), {
+        'tiny-q8',
+        'tiny-q4',
+      });
+      expect(await restored.packagePath('tiny-q8'), isNotNull);
+      expect(await restored.packagePath('tiny-q4'), isNotNull);
     },
   );
 

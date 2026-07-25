@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/entitlement_state.dart';
 import '../services/model_download_service.dart';
+import '../services/model_package_service.dart';
 import '../services/storage_service.dart';
+import '../navigation/shell_tab.dart';
 import '../auth/user_org_invite.dart';
 import '../auth/user_profile.dart';
 import '../auth/wallet_auth_controller.dart';
@@ -38,13 +40,16 @@ class AppState extends ChangeNotifier {
   bool signedIn = false;
   bool localSettingsLoaded = false;
   bool onboarded = false;
-  int onboardingTargetTab = 0; // Tab the shell should open on after onboarding.
+  ShellTab onboardingTargetTab = ShellTab.chat;
 
   bool serving = LocalServerService.instance.isRunning;
 
   // Chat header selections.
   String selectedModel = 'Select model';
   String selectedModelId = '';
+  String selectedModelVariantId = '';
+  String defaultModelId = '';
+  String defaultModelVariantId = '';
   String selectedModelQuant = 'LOCAL';
   String selectedPersonaId = 'default';
   MockPersona get selectedPersonaConfig =>
@@ -62,8 +67,13 @@ class AppState extends ChangeNotifier {
   /// True when the currently selected model has been downloaded and is ready
   /// to chat with locally.
   bool get isSelectedModelReady =>
-      selectedModelId.isNotEmpty &&
-      ModelDownloadService.instance.isDownloaded(selectedModelId);
+      (selectedModelVariantId.isNotEmpty &&
+          ModelPackageService.instance
+                  .byVariantId(selectedModelVariantId)
+                  ?.runnable ==
+              true) ||
+      (selectedModelId.isNotEmpty &&
+          ModelDownloadService.instance.isDownloaded(selectedModelId));
 
   String? get walletAddress =>
       auth.walletAddress.isNotEmpty ? auth.walletAddress : null;
@@ -207,6 +217,21 @@ class AppState extends ChangeNotifier {
       if (saved != null) {
         responseTokenOverride = saved.clamp(128, responseTokenLimit);
       }
+      selectedModel =
+          preferences.getString('selected_model_name') ?? selectedModel;
+      selectedModelId =
+          preferences.getString('selected_model_id') ?? selectedModelId;
+      selectedModelVariantId =
+          preferences.getString('selected_model_variant_id') ?? '';
+      selectedModelQuant =
+          preferences.getString('selected_model_quant') ?? selectedModelQuant;
+      defaultModelId = preferences.getString('default_model_id') ?? '';
+      defaultModelVariantId =
+          preferences.getString('default_model_variant_id') ?? '';
+      if (selectedModelId.isEmpty && defaultModelId.isNotEmpty) {
+        selectedModelId = defaultModelId;
+        selectedModelVariantId = defaultModelVariantId;
+      }
     } catch (error) {
       debugPrint('[AppState] local settings load failed: $error');
     } finally {
@@ -217,11 +242,38 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void selectModel(String name, String quant, {String? id}) {
+  void selectModel(String name, String quant, {String? id, String? variantId}) {
     selectedModel = name;
     selectedModelQuant = quant;
     if (id != null) selectedModelId = id;
+    if (variantId != null) selectedModelVariantId = variantId;
     notifyListeners();
+    unawaited(_persistActiveModel());
+  }
+
+  Future<void> setDefaultModel({
+    required String modelId,
+    required String variantId,
+    required String name,
+    required String quant,
+  }) async {
+    defaultModelId = modelId;
+    defaultModelVariantId = variantId;
+    selectModel(name, quant, id: modelId, variantId: variantId);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString('default_model_id', modelId);
+    await preferences.setString('default_model_variant_id', variantId);
+  }
+
+  Future<void> _persistActiveModel() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString('selected_model_name', selectedModel);
+    await preferences.setString('selected_model_id', selectedModelId);
+    await preferences.setString(
+      'selected_model_variant_id',
+      selectedModelVariantId,
+    );
+    await preferences.setString('selected_model_quant', selectedModelQuant);
   }
 
   void selectPersona(String name, {String? id}) {

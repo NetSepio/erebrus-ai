@@ -5,6 +5,117 @@ import '../services/device_info_service.dart';
 /// Curated list of openly available GGUF models (Q4_K_M by default).
 /// Sizes are approximate file-size estimates for the quantized weights.
 const modelCatalog = <CatalogEntry>[
+  CatalogEntry(
+    id: 'smollm2-135m-instruct',
+    family: 'SmolLM2',
+    name: 'SmolLM2 135M Instruct',
+    quant: 'Q8_0',
+    sizeBytes: 144811072,
+    parameterB: 0.135,
+    mobileFriendly: true,
+    tags: ['chat', 'english', 'nano'],
+    description:
+        'Emergency Nano tier for devices that cannot safely run a 0.5B model.',
+    minRamGB: 0.35,
+    recRamGB: 0.5,
+    platforms: [
+      'android-arm64',
+      'ios-arm64',
+      'macos-arm64',
+      'windows-x64',
+      'linux-x64',
+    ],
+    tiers: ['mobile', 'tablet', 'laptop', 'desktop'],
+    mobileStatus: 'supported',
+    recommendedTier: 'mobile',
+    downloadUrl:
+        'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/8637628433dc3df4a2d363adc89e4c3917f299dc/SmolLM2-135M-Instruct-Q8_0.gguf',
+    fileSizeDisplay: '138.1 MB',
+    preferredVariantId: 'smollm2-135m-instruct-gguf-q8_0',
+    variants: [
+      ModelVariant(
+        id: 'smollm2-135m-instruct-gguf-q8_0',
+        modelId: 'smollm2-135m-instruct',
+        format: 'gguf',
+        quantization: 'Q8_0',
+        compatibleBackends: ['llama.cpp'],
+        minimumRamGB: 0.35,
+        recommendedRamGB: 0.5,
+        files: [
+          Artifact(
+            id: 'smollm2-135m-instruct-q8_0',
+            role: 'model',
+            format: 'gguf',
+            quantization: 'Q8_0',
+            filename: 'SmolLM2-135M-Instruct-Q8_0.gguf',
+            repositoryId: 'unsloth/SmolLM2-135M-Instruct-GGUF',
+            revision: '8637628433dc3df4a2d363adc89e4c3917f299dc',
+            downloadUrl:
+                'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/8637628433dc3df4a2d363adc89e4c3917f299dc/SmolLM2-135M-Instruct-Q8_0.gguf',
+            sizeBytes: 144811072,
+            sha256:
+                'c4a3dd037301b6ecea31d6da37f5cd793ead920dd5ddfe6d589294628d6ce66a',
+            backend: 'llama.cpp',
+          ),
+        ],
+      ),
+    ],
+  ),
+  CatalogEntry(
+    id: 'smollm2-360m-instruct',
+    family: 'SmolLM2',
+    name: 'SmolLM2 360M Instruct',
+    quant: 'Q8_0',
+    sizeBytes: 386404992,
+    parameterB: 0.36,
+    mobileFriendly: true,
+    tags: ['chat', 'english', 'nano'],
+    description: 'Nano tier with more capability while remaining below 0.5B.',
+    minRamGB: 0.6,
+    recRamGB: 0.8,
+    platforms: [
+      'android-arm64',
+      'ios-arm64',
+      'macos-arm64',
+      'windows-x64',
+      'linux-x64',
+    ],
+    tiers: ['mobile', 'tablet', 'laptop', 'desktop'],
+    mobileStatus: 'supported',
+    recommendedTier: 'mobile',
+    downloadUrl:
+        'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/593b5a2e04c8f3e4ee880263f93e0bd2901ad47f/smollm2-360m-instruct-q8_0.gguf',
+    fileSizeDisplay: '368.5 MB',
+    preferredVariantId: 'smollm2-360m-instruct-gguf-q8_0',
+    variants: [
+      ModelVariant(
+        id: 'smollm2-360m-instruct-gguf-q8_0',
+        modelId: 'smollm2-360m-instruct',
+        format: 'gguf',
+        quantization: 'Q8_0',
+        compatibleBackends: ['llama.cpp'],
+        minimumRamGB: 0.6,
+        recommendedRamGB: 0.8,
+        files: [
+          Artifact(
+            id: 'smollm2-360m-instruct-q8_0',
+            role: 'model',
+            format: 'gguf',
+            quantization: 'Q8_0',
+            filename: 'smollm2-360m-instruct-q8_0.gguf',
+            repositoryId: 'HuggingFaceTB/SmolLM2-360M-Instruct-GGUF',
+            revision: '593b5a2e04c8f3e4ee880263f93e0bd2901ad47f',
+            downloadUrl:
+                'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/593b5a2e04c8f3e4ee880263f93e0bd2901ad47f/smollm2-360m-instruct-q8_0.gguf',
+            sizeBytes: 386404992,
+            sha256:
+                '48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201',
+            backend: 'llama.cpp',
+          ),
+        ],
+      ),
+    ],
+  ),
   // Small / edge models (phone friendly)
   CatalogEntry(
     id: 'qwen2.5-0.5b-q4_k_m',

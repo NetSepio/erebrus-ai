@@ -8,6 +8,7 @@ import 'inference_contract.dart';
 import 'inference_coordinator.dart';
 import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
+import 'model_package_service.dart';
 
 /// Cross-platform GGUF inference backed by llama.cpp.
 ///
@@ -55,7 +56,14 @@ class InferenceService extends ChangeNotifier {
       );
     }
 
-    final modelPath = await ModelDownloadService.instance.modelPath(modelId);
+    final installed = ModelPackageService.instance.runnableForModelId(modelId);
+    final modelPath =
+        await ModelDownloadService.instance.modelPath(modelId) ??
+        (installed == null
+            ? null
+            : await ModelPackageService.instance.packagePath(
+                installed.variantId,
+              ));
     if (modelPath == null) {
       throw InferenceException(
         'Model "$modelId" is not downloaded. Download it from Models first.',
@@ -79,7 +87,7 @@ class InferenceService extends ChangeNotifier {
 
     try {
       final variant = ModelVariant(
-        id: modelId,
+        id: installed?.variantId ?? modelId,
         modelId: modelId,
         format: 'gguf',
         quantization: '',

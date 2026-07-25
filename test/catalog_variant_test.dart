@@ -1,4 +1,4 @@
-import 'package:erebrus_ai/data/catalog_entry.dart';
+import 'package:erebrus_ai/data/model_catalog.dart';
 import 'package:erebrus_ai/services/device_info_service.dart';
 import 'package:erebrus_ai/services/inference_planner.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -157,6 +157,24 @@ void main() {
 
       expect(results, isEmpty);
     });
+  });
+
+  test('Nano catalog gives a 1 GB phone a sub-0.5B option', () {
+    const constrainedPhone = DeviceProfile(
+      type: DeviceType.mobile,
+      ramBytes: 1024 * 1024 * 1024,
+      name: 'Constrained phone',
+      platform: 'android-arm64',
+    );
+
+    final recommendation = recommendModel(constrainedPhone);
+
+    expect(recommendation.recommended.id, 'smollm2-135m-instruct');
+    expect(recommendation.recommended.parameterB, lessThan(0.5));
+    expect(
+      recommendation.recommended.preferredVariant?.primaryArtifact?.sha256,
+      hasLength(64),
+    );
   });
 }
 

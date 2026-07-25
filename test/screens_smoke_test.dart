@@ -187,11 +187,11 @@ void main() {
       await tester.tap(find.text('Get started'));
       await tester.pumpAndSettle();
 
-      expect(find.text('04 / PICK YOUR FIRST MODEL'), findsOneWidget);
+      expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
       expect(find.text('RECOMMENDED'), findsOneWidget);
-      expect(find.text('START CHATTING'), findsOneWidget);
+      expect(find.text('START USING EREBRUS'), findsOneWidget);
 
-      await tester.tap(find.text('SKIP — USE A NETWORK MODEL'));
+      await tester.tap(find.text('CONTINUE WITHOUT LOCAL AI'));
       await tester.pump(const Duration(milliseconds: 400));
 
       // Shell opens on the Models network tab.

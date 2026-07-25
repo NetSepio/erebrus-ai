@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../state/app_state.dart';
+import '../navigation/shell_tab.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import '../widgets/ere_controls.dart';
@@ -16,29 +17,30 @@ import 'settings/settings_screen.dart';
 const kDesktopBreakpoint = 900.0;
 
 class _NavItem {
-  const _NavItem(this.label, this.icon);
+  const _NavItem(this.tab, this.label, this.icon);
+  final ShellTab tab;
   final String label;
   final IconData icon;
 }
 
 const _navItems = [
-  _NavItem('CHAT', Symbols.chat_bubble),
-  _NavItem('MODELS', Symbols.deployed_code),
-  _NavItem('PERSONAS', Symbols.theater_comedy),
-  _NavItem('SETTINGS', Symbols.tune),
+  _NavItem(ShellTab.chat, 'CHAT', Symbols.chat_bubble),
+  _NavItem(ShellTab.models, 'MODELS', Symbols.deployed_code),
+  _NavItem(ShellTab.personas, 'PERSONAS', Symbols.theater_comedy),
+  _NavItem(ShellTab.settings, 'SETTINGS', Symbols.tune),
 ];
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, this.initialTab = 0});
+  const Shell({super.key, this.initialTab = ShellTab.chat});
 
-  final int initialTab;
+  final ShellTab initialTab;
 
   @override
   State<Shell> createState() => _ShellState();
 }
 
 class _ShellState extends State<Shell> {
-  late int _tab;
+  late ShellTab _tab;
 
   @override
   void initState() {
@@ -46,13 +48,16 @@ class _ShellState extends State<Shell> {
     _tab = widget.initialTab;
   }
 
-  void _setTab(int i) => setState(() => _tab = i);
+  void _setTab(ShellTab tab) => setState(() => _tab = tab);
 
   Widget _body(bool wide) => IndexedStack(
-    index: _tab,
+    index: _tab.index,
     children: [
       ChatScreen(wide: wide),
-      ModelsScreen(wide: wide, initialSubTab: widget.initialTab == 1 ? 1 : 0),
+      ModelsScreen(
+        wide: wide,
+        initialSubTab: widget.initialTab == ShellTab.models ? 1 : 0,
+      ),
       PersonasScreen(wide: wide),
       SettingsScreen(wide: wide),
     ],
@@ -63,8 +68,8 @@ class _ShellState extends State<Shell> {
     // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
-        if (_tab != 0) {
-          _setTab(0);
+        if (_tab != ShellTab.chat) {
+          _setTab(ShellTab.chat);
           return false;
         }
         return true;
@@ -102,8 +107,8 @@ class _ShellState extends State<Shell> {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({required this.tab, required this.onTab});
 
-  final int tab;
-  final ValueChanged<int> onTab;
+  final ShellTab tab;
+  final ValueChanged<ShellTab> onTab;
 
   @override
   Widget build(BuildContext context) {
@@ -123,17 +128,17 @@ class _Sidebar extends StatelessWidget {
             child: LogoLockup(),
           ),
           const SizedBox(height: 26),
-          for (var i = 0; i < _navItems.length; i++)
+          for (final item in _navItems)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: _SidebarItem(
-                item: _navItems[i],
-                active: i == tab,
-                onTap: () => onTab(i),
+                item: item,
+                active: item.tab == tab,
+                onTap: () => onTab(item.tab),
               ),
             ),
           const Spacer(),
-          if (tab == 3)
+          if (tab == ShellTab.settings)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Text(
@@ -143,7 +148,7 @@ class _Sidebar extends StatelessWidget {
             )
           else ...[
             const _LocalNodeCard(),
-            if (!app.signedIn && tab == 0) ...[
+            if (!app.signedIn && tab == ShellTab.chat) ...[
               const SizedBox(height: 10),
               const _GuestModeCard(),
             ],
@@ -310,8 +315,8 @@ class _GuestModeCard extends StatelessWidget {
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.tab, required this.onTab});
 
-  final int tab;
-  final ValueChanged<int> onTab;
+  final ShellTab tab;
+  final ValueChanged<ShellTab> onTab;
 
   @override
   Widget build(BuildContext context) {
@@ -326,29 +331,29 @@ class _BottomNav extends StatelessWidget {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < _navItems.length; i++)
+          for (final item in _navItems)
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => onTab(i),
+                onTap: () => onTab(item.tab),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      _navItems[i].icon,
+                      item.icon,
                       size: 22,
-                      fill: i == tab ? 1 : 0,
-                      color: i == tab
+                      fill: item.tab == tab ? 1 : 0,
+                      color: item.tab == tab
                           ? AppColors.accent
                           : AppColors.textSecondary,
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      _navItems[i].label,
+                      item.label,
                       style: AppText.mono(
                         10,
                         weight: FontWeight.w500,
-                        color: i == tab
+                        color: item.tab == tab
                             ? AppColors.accent
                             : AppColors.textSecondary,
                         lsEm: 0.05,

@@ -10,6 +10,7 @@ import 'org/org_state.dart';
 import 'services/chat_service.dart';
 import 'services/backend_probe_service.dart';
 import 'services/model_download_service.dart';
+import 'services/model_package_service.dart';
 import 'services/node_discovery_service.dart';
 import 'services/storage_service.dart';
 import 'services/persona_service.dart';
@@ -29,6 +30,7 @@ Future<void> main() async {
   // Restore the user-selected models directory (with macOS security-scoped
   // bookmark) before scanning for downloaded models.
   await StorageService.instance.loadCustomModelsDirectory();
+  await ModelPackageService.instance.loadIndex();
 
   final auth = WalletAuthController();
   final orgState = OrgState(auth: auth);

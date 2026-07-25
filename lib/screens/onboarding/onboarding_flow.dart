@@ -3,8 +3,11 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/catalog_service.dart';
 import '../../data/model_catalog.dart';
+import '../../navigation/shell_tab.dart';
 import '../../services/device_info_service.dart';
+import '../../services/inference_readiness_service.dart';
 import '../../services/model_download_service.dart';
+import '../../services/model_package_service.dart';
 import '../../services/storage_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
@@ -82,7 +85,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _skipToModels() {
     final app = AppScope.of(context);
-    app.onboardingTargetTab = 1; // Models screen.
+    app.onboardingTargetTab = ShellTab.models;
     app.completeOnboarding();
   }
 
@@ -261,6 +264,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
   CatalogEntry? _selected;
   bool _loading = true;
   String? _error;
+  final Map<String, double> _variantProgress = {};
 
   @override
   void initState() {
@@ -272,7 +276,10 @@ class _FirstModelPageState extends State<FirstModelPage> {
     final profile = DeviceInfoService.detect();
     final entries = await CatalogService.fetch();
     if (!mounted) return;
-    final rec = recommendModel(profile, catalog: entries);
+    final rec = recommendModel(
+      profile,
+      catalog: entries.isEmpty ? modelCatalog : entries,
+    );
     setState(() {
       _profile = profile;
       _recommendation = rec;
@@ -281,9 +288,12 @@ class _FirstModelPageState extends State<FirstModelPage> {
     });
     final selected = _selected;
     if (selected != null) {
-      AppScope.of(
-        context,
-      ).selectModel(selected.name, selected.quant, id: selected.id);
+      AppScope.of(context).selectModel(
+        selected.name,
+        selected.quant,
+        id: selected.id,
+        variantId: _variantId(selected),
+      );
     }
   }
 
@@ -291,11 +301,75 @@ class _FirstModelPageState extends State<FirstModelPage> {
     if (!mounted) return;
     setState(() => _selected = entry);
     final app = AppScope.of(context);
-    app.selectModel(entry.name, entry.quant, id: entry.id);
+    app.selectModel(
+      entry.name,
+      entry.quant,
+      id: entry.id,
+      variantId: _variantId(entry),
+    );
   }
 
   Future<void> _onDownload(CatalogEntry entry) async {
-    final ok = await ModelDownloadService.instance.download(entry);
+    final variant = _variantFor(entry);
+    var ok = false;
+    if (variant != null &&
+        variant.files
+            .where((artifact) => artifact.required)
+            .every((artifact) => artifact.sha256.isNotEmpty)) {
+      try {
+        await ModelPackageService.instance.downloadVariant(
+          variant,
+          onProgress: (_, received, total) {
+            if (!mounted || total <= 0) return;
+            setState(() {
+              _variantProgress[variant.id] = received / total;
+            });
+          },
+        );
+        final packagePath = await ModelPackageService.instance.packagePath(
+          variant.id,
+        );
+        if (packagePath == null) {
+          throw StateError('Verified package path is unavailable');
+        }
+        final readiness = await InferenceReadinessService().verify(
+          variant: variant,
+          packagePath: packagePath,
+          contextSize: _profile?.type == DeviceType.mobile ? 2048 : 8192,
+        );
+        ok = readiness.runnable;
+        if (!ok) {
+          await ModelPackageService.instance.markUnrunnable(
+            variant.id,
+            readiness.failureCode,
+          );
+          throw StateError(readiness.reason);
+        }
+        if (mounted) setState(() => _variantProgress[variant.id] = 1);
+      } on Object catch (error) {
+        if (mounted) setState(() => _error = error.toString());
+      }
+    } else {
+      ok = await ModelDownloadService.instance.download(entry);
+      if (ok && variant != null) {
+        final modelPath = await ModelDownloadService.instance.modelPath(
+          entry.id,
+        );
+        if (modelPath == null) {
+          ok = false;
+        } else {
+          final readiness = await InferenceReadinessService().verify(
+            variant: variant,
+            packagePath: modelPath,
+            contextSize: _profile?.type == DeviceType.mobile ? 2048 : 8192,
+          );
+          ok = readiness.runnable;
+          if (!ok && mounted) {
+            setState(() => _error = readiness.reason);
+          }
+        }
+      }
+    }
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -311,32 +385,53 @@ class _FirstModelPageState extends State<FirstModelPage> {
     }
   }
 
-  void _startChatting() {
+  Future<void> _startChatting() async {
     final app = AppScope.of(context);
     final selected = _selected;
     if (selected == null) return;
-    app.selectModel(selected.name, selected.quant, id: selected.id);
-    app.onboardingTargetTab = 0;
+    await app.setDefaultModel(
+      modelId: selected.id,
+      variantId: _variantId(selected),
+      name: selected.name,
+      quant: selected.quant,
+    );
+    app.onboardingTargetTab = ShellTab.chat;
     app.completeOnboarding();
   }
 
   void _skipToNetwork() {
     final app = AppScope.of(context);
-    app.onboardingTargetTab = 1;
+    app.onboardingTargetTab = ShellTab.models;
     app.completeOnboarding();
   }
 
   bool _isReady(CatalogEntry entry) =>
       entry.id.isNotEmpty &&
-      ModelDownloadService.instance.isDownloaded(entry.id);
+      (ModelPackageService.instance.byVariantId(_variantId(entry))?.runnable ==
+              true ||
+          ModelDownloadService.instance.isDownloaded(entry.id));
 
   bool _isDownloading(CatalogEntry entry) {
+    final variantProgress = _variantProgress[_variantId(entry)];
+    if (variantProgress != null) {
+      return variantProgress > 0 && variantProgress < 1;
+    }
     final p = ModelDownloadService.instance.progressOf(entry.id);
     return p > 0 && p < 1;
   }
 
   double _progress(CatalogEntry entry) =>
+      _variantProgress[_variantId(entry)] ??
       ModelDownloadService.instance.progressOf(entry.id);
+
+  String _variantId(CatalogEntry entry) => entry.preferredVariantId.isNotEmpty
+      ? entry.preferredVariantId
+      : entry.variants.firstOrNull?.id ?? entry.id;
+
+  ModelVariant? _variantFor(CatalogEntry entry) {
+    final id = _variantId(entry);
+    return entry.variants.where((variant) => variant.id == id).firstOrNull;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +454,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '04 / PICK YOUR FIRST MODEL',
+                        '04 / INSTALL YOUR ON-DEVICE AI',
                         style: AppText.mono(
                           12,
                           weight: FontWeight.w600,
@@ -369,7 +464,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Start with one that fits this device',
+                        'Install a private default model',
                         style: AppText.grotesk(
                           26,
                           weight: FontWeight.w600,
@@ -482,7 +577,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       PrimaryCta(
-                        'START CHATTING',
+                        'START USING EREBRUS',
                         radius: 14,
                         padding: const EdgeInsets.all(14),
                         glow: false,
@@ -494,7 +589,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                         onTap: _skipToNetwork,
                         child: Center(
                           child: Text(
-                            'SKIP — USE A NETWORK MODEL',
+                            'CONTINUE WITHOUT LOCAL AI',
                             style: AppText.mono(
                               11,
                               weight: FontWeight.w500,
@@ -503,6 +598,12 @@ class _FirstModelPageState extends State<FirstModelPage> {
                             ),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        'Chat and transcript analysis will not be ready offline.',
+                        textAlign: TextAlign.center,
+                        style: AppText.grotesk(11, color: AppColors.textFaint),
                       ),
                     ],
                   ),
