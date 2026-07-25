@@ -5,6 +5,8 @@ import '../../data/catalog_service.dart';
 import '../../data/model_catalog.dart';
 import '../../navigation/shell_tab.dart';
 import '../../services/device_info_service.dart';
+import '../../services/backend_probe_service.dart';
+import '../../services/inference_planner.dart';
 import '../../services/inference_readiness_service.dart';
 import '../../services/model_download_service.dart';
 import '../../services/model_package_service.dart';
@@ -265,6 +267,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
   bool _loading = true;
   String? _error;
   final Map<String, double> _variantProgress = {};
+  final Map<String, ModelVariant> _preferredVariants = {};
 
   @override
   void initState() {
@@ -275,11 +278,23 @@ class _FirstModelPageState extends State<FirstModelPage> {
   Future<void> _load() async {
     final profile = DeviceInfoService.detect();
     final entries = await CatalogService.fetch();
-    if (!mounted) return;
-    final rec = recommendModel(
-      profile,
-      catalog: entries.isEmpty ? modelCatalog : entries,
+    final catalog = entries.isEmpty ? modelCatalog : entries;
+    final capabilities = await BackendProbeService.instance.probe(
+      device: profile,
     );
+    final resolved = const InferencePlanner().resolve(
+      models: catalog,
+      device: profile,
+      backends: capabilities,
+    );
+    for (final candidate in resolved) {
+      _preferredVariants.putIfAbsent(
+        candidate.model.id,
+        () => candidate.variant,
+      );
+    }
+    if (!mounted) return;
+    final rec = recommendModel(profile, catalog: catalog);
     setState(() {
       _profile = profile;
       _recommendation = rec;
@@ -424,9 +439,11 @@ class _FirstModelPageState extends State<FirstModelPage> {
       _variantProgress[_variantId(entry)] ??
       ModelDownloadService.instance.progressOf(entry.id);
 
-  String _variantId(CatalogEntry entry) => entry.preferredVariantId.isNotEmpty
-      ? entry.preferredVariantId
-      : entry.variants.firstOrNull?.id ?? entry.id;
+  String _variantId(CatalogEntry entry) =>
+      _preferredVariants[entry.id]?.id ??
+      (entry.preferredVariantId.isNotEmpty
+          ? entry.preferredVariantId
+          : entry.variants.firstOrNull?.id ?? entry.id);
 
   ModelVariant? _variantFor(CatalogEntry entry) {
     final id = _variantId(entry);

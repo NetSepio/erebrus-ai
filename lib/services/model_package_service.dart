@@ -86,12 +86,32 @@ class ModelPackageService {
     await staging.create(recursive: true);
     try {
       final files = <InstalledModelFile>[];
-      for (final artifact in variant.files.where((file) => file.required)) {
+      final requiredArtifacts = variant.files
+          .where((file) => file.required)
+          .toList(growable: false);
+      final packageBytes = requiredArtifacts.fold<int>(
+        0,
+        (sum, artifact) => sum + (artifact.sizeBytes ?? 0),
+      );
+      var completedBytes = 0;
+      for (final artifact in requiredArtifacts) {
         final destination = File(
           p.join(staging.path, _safeFilename(artifact.filename)),
         );
-        await _downloadArtifact(artifact, destination, onProgress: onProgress);
-        files.add(await _verifyArtifact(artifact, destination));
+        await _downloadArtifact(
+          artifact,
+          destination,
+          onProgress: onProgress == null
+              ? null
+              : (artifactId, received, total) => onProgress(
+                  artifactId,
+                  completedBytes + received,
+                  packageBytes > 0 ? packageBytes : completedBytes + total,
+                ),
+        );
+        final verified = await _verifyArtifact(artifact, destination);
+        files.add(verified);
+        completedBytes += verified.sizeBytes;
       }
       await _writePackageManifest(staging, variant, files);
 

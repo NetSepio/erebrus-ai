@@ -9,7 +9,9 @@ void main() {
     () async {
       final backend = _ReadinessBackend();
       final service = InferenceReadinessService(backends: [backend]);
-      final variant = modelCatalog.first.variants.single;
+      final variant = modelCatalog.first.variants.singleWhere(
+        (candidate) => candidate.format == 'gguf',
+      );
 
       final result = await service.verify(
         variant: variant,

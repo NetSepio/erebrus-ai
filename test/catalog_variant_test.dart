@@ -176,6 +176,34 @@ void main() {
       hasLength(64),
     );
   });
+
+  test('Nano catalog includes a complete verified Apple MLX package', () {
+    final entry = modelCatalog.first;
+    final mlx = entry.variants.singleWhere(
+      (variant) => variant.format == 'mlx',
+    );
+
+    expect(mlx.platforms, containsAll(['ios-arm64', 'macos-arm64']));
+    expect(mlx.compatibleBackends, ['mlx']);
+    expect(
+      mlx.files.map((file) => file.filename),
+      containsAll([
+        'config.json',
+        'model.safetensors',
+        'tokenizer.json',
+        'tokenizer_config.json',
+      ]),
+    );
+    expect(
+      mlx.files.every(
+        (file) =>
+            file.revision.length == 40 &&
+            file.sha256.length == 64 &&
+            file.sizeBytes != null,
+      ),
+      isTrue,
+    );
+  });
 }
 
 CatalogEntry _multiVariantEntry({double minimumRamGB = 1}) {

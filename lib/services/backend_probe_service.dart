@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:erebrus_mlx/erebrus_mlx.dart';
 
@@ -77,6 +79,15 @@ class BackendProbeService extends ChangeNotifier {
     DeviceProfile profile,
     MlxProbe nativeProbe,
   ) async {
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      return BackendCapabilities(
+        kind: BackendKind.mlx,
+        operational: false,
+        platforms: [profile.platform],
+        formats: const ['mlx'],
+        reason: 'Native MLX probing is disabled in Flutter unit tests',
+      );
+    }
     final isApple =
         profile.platform.startsWith('macos-') ||
         profile.platform.startsWith('ios-');

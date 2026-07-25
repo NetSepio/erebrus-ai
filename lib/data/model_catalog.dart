@@ -35,6 +35,78 @@ const modelCatalog = <CatalogEntry>[
     preferredVariantId: 'smollm2-135m-instruct-gguf-q8_0',
     variants: [
       ModelVariant(
+        id: 'smollm2-135m-instruct-mlx-bf16',
+        modelId: 'smollm2-135m-instruct',
+        format: 'mlx',
+        quantization: 'BF16',
+        platforms: ['ios-arm64', 'macos-arm64'],
+        compatibleBackends: ['mlx'],
+        minimumRamGB: 0.45,
+        recommendedRamGB: 0.7,
+        files: [
+          Artifact(
+            id: 'smollm2-135m-mlx-config',
+            role: 'config',
+            format: 'json',
+            quantization: 'BF16',
+            filename: 'config.json',
+            repositoryId: 'mlx-community/SmolLM2-135M-Instruct',
+            revision: '1adc2ffbe2b9840bf4f957846d03d5f95ad505c6',
+            downloadUrl:
+                'https://huggingface.co/mlx-community/SmolLM2-135M-Instruct/resolve/1adc2ffbe2b9840bf4f957846d03d5f95ad505c6/config.json?download=true',
+            sizeBytes: 944,
+            sha256:
+                'f5365fe3a752f61675ac4822e102cf34ab56ad92af8ed9c3ebc26b57a691a6e3',
+            backend: 'mlx',
+          ),
+          Artifact(
+            id: 'smollm2-135m-mlx-weights',
+            role: 'model',
+            format: 'safetensors',
+            quantization: 'BF16',
+            filename: 'model.safetensors',
+            repositoryId: 'mlx-community/SmolLM2-135M-Instruct',
+            revision: '1adc2ffbe2b9840bf4f957846d03d5f95ad505c6',
+            downloadUrl:
+                'https://huggingface.co/mlx-community/SmolLM2-135M-Instruct/resolve/1adc2ffbe2b9840bf4f957846d03d5f95ad505c6/model.safetensors?download=true',
+            sizeBytes: 269060381,
+            sha256:
+                '989e3ef746b41999ca096055a60c87057b8e842824253391bc0d9ed8dfc6936e',
+            backend: 'mlx',
+          ),
+          Artifact(
+            id: 'smollm2-135m-mlx-tokenizer',
+            role: 'tokenizer',
+            format: 'json',
+            quantization: '',
+            filename: 'tokenizer.json',
+            repositoryId: 'mlx-community/SmolLM2-135M-Instruct',
+            revision: '1adc2ffbe2b9840bf4f957846d03d5f95ad505c6',
+            downloadUrl:
+                'https://huggingface.co/mlx-community/SmolLM2-135M-Instruct/resolve/1adc2ffbe2b9840bf4f957846d03d5f95ad505c6/tokenizer.json?download=true',
+            sizeBytes: 3522656,
+            sha256:
+                '7d27c493c729a66ecefc837280b05d948b1ed50d130eebdbf911b1b36cf38ed7',
+            backend: 'mlx',
+          ),
+          Artifact(
+            id: 'smollm2-135m-mlx-tokenizer-config',
+            role: 'tokenizer_config',
+            format: 'json',
+            quantization: '',
+            filename: 'tokenizer_config.json',
+            repositoryId: 'mlx-community/SmolLM2-135M-Instruct',
+            revision: '1adc2ffbe2b9840bf4f957846d03d5f95ad505c6',
+            downloadUrl:
+                'https://huggingface.co/mlx-community/SmolLM2-135M-Instruct/resolve/1adc2ffbe2b9840bf4f957846d03d5f95ad505c6/tokenizer_config.json?download=true',
+            sizeBytes: 3764,
+            sha256:
+                'a27f638bd2831f5c3dea654a75838930f2b11fbe550c4d4e1d5d7bd07157b2ee',
+            backend: 'mlx',
+          ),
+        ],
+      ),
+      ModelVariant(
         id: 'smollm2-135m-instruct-gguf-q8_0',
         modelId: 'smollm2-135m-instruct',
         format: 'gguf',
