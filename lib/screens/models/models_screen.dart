@@ -6,7 +6,13 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../data/catalog_service.dart';
 import '../../data/mock_data.dart';
 import '../../data/model_catalog.dart';
+import '../../services/backend_probe_service.dart';
+import '../../services/device_info_service.dart';
+import '../../services/inference_memory_policy.dart';
+import '../../services/inference_planner.dart';
+import '../../services/inference_readiness_service.dart';
 import '../../services/model_download_service.dart';
+import '../../services/model_package_service.dart';
 import '../../services/node_discovery_service.dart';
 import '../../services/storage_service.dart';
 import '../../org/shared_model.dart';
@@ -62,9 +68,13 @@ class _ModelsScreenState extends State<ModelsScreen> {
       'BROWSING _EREBRUSAI._TCP · $_networkCount NODES FOUND';
 
   List<String> get _segmentItems => [
-    'LOCAL · ${ModelDownloadService.instance.completed.length}',
+    'LOCAL · ${{...ModelDownloadService.instance.completed, ...ModelPackageService.instance.installed.where((record) => record.runnable).map((record) => record.modelId)}.length}',
     'NETWORK · $_networkCount',
   ];
+
+  int get _downloadedBytes =>
+      ModelDownloadService.instance.downloadedBytes +
+      ModelPackageService.instance.downloadedBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +82,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
       animation: Listenable.merge([
         NodeDiscoveryService.instance,
         ModelDownloadService.instance,
+        ModelPackageService.instance,
       ]),
       builder: (context, _) {
         return widget.wide ? _buildWide(context) : _buildNarrow(context);
@@ -150,7 +161,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
               ] else
                 Expanded(
                   child: Text(
-                    'STORAGE · ${formatBytes(ModelDownloadService.instance.downloadedBytes)} USED',
+                    'STORAGE · ${formatBytes(_downloadedBytes)} USED',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.mono(
@@ -204,7 +215,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'STORAGE · ${formatBytes(ModelDownloadService.instance.downloadedBytes)} USED',
+                        'STORAGE · ${formatBytes(_downloadedBytes)} USED',
                         style: AppText.mono(
                           10,
                           color: AppColors.textMuted,
@@ -325,30 +336,74 @@ class _LocalList extends StatefulWidget {
 
 class _LocalListState extends State<_LocalList> {
   late Future<List<CatalogEntry>> _catalogFuture;
+  final Map<String, ModelVariant> _preferredVariants = {};
+  final Map<String, BackendKind> _preferredBackends = {};
+  late final DeviceProfile _device;
 
   @override
   void initState() {
     super.initState();
-    _catalogFuture = CatalogService.fetch();
+    _device = DeviceInfoService.detect();
+    _catalogFuture = _loadCatalog();
+  }
+
+  Future<List<CatalogEntry>> _loadCatalog() async {
+    final entries = await CatalogService.fetch();
+    final catalog = entries.isEmpty ? modelCatalog : entries;
+    final capabilities = await BackendProbeService.instance.probe(
+      device: _device,
+    );
+    final resolved = const InferencePlanner().resolve(
+      models: catalog,
+      device: _device,
+      backends: capabilities,
+    );
+    for (final candidate in resolved) {
+      _preferredVariants.putIfAbsent(
+        candidate.model.id,
+        () => candidate.variant,
+      );
+      _preferredBackends.putIfAbsent(
+        candidate.model.id,
+        () => candidate.backend,
+      );
+    }
+    return catalog;
   }
 
   ModelStatus _statusFor(CatalogEntry e) {
-    if (ModelDownloadService.instance.isDownloaded(e.id)) {
+    final variant = _preferredVariants[e.id];
+    if ((variant != null &&
+            ModelPackageService.instance.byVariantId(variant.id)?.runnable ==
+                true) ||
+        ModelPackageService.instance.isModelRunnable(e.id) ||
+        ModelDownloadService.instance.isDownloaded(e.id)) {
       return ModelStatus.loaded;
     }
-    if (ModelDownloadService.instance.isDownloading(e.id)) {
+    if ((variant != null &&
+            ModelPackageService.instance.isDownloading(variant.id)) ||
+        ModelDownloadService.instance.isDownloading(e.id)) {
       return ModelStatus.downloading;
     }
     return ModelStatus.catalog;
   }
 
   double? _progressFor(CatalogEntry e) {
+    final variant = _preferredVariants[e.id];
+    if (variant != null &&
+        ModelPackageService.instance.isDownloading(variant.id)) {
+      return ModelPackageService.instance.progressOf(variant.id);
+    }
     return ModelDownloadService.instance.isDownloading(e.id)
         ? ModelDownloadService.instance.progressOf(e.id)
         : null;
   }
 
   bool _isSelected(AppState app, MockModel m) {
+    final variant = m.id == null ? null : _preferredVariants[m.id];
+    if (variant != null && app.selectedModelVariantId.isNotEmpty) {
+      return app.selectedModelVariantId == variant.id;
+    }
     if (m.id != null && m.id!.isNotEmpty) return app.selectedModelId == m.id;
     return app.selectedModel == m.name;
   }
@@ -356,7 +411,10 @@ class _LocalListState extends State<_LocalList> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: ModelDownloadService.instance,
+      animation: Listenable.merge([
+        ModelDownloadService.instance,
+        ModelPackageService.instance,
+      ]),
       builder: (context, _) {
         return FutureBuilder<List<CatalogEntry>>(
           future: _catalogFuture,
@@ -367,7 +425,8 @@ class _LocalListState extends State<_LocalList> {
                 .where(
                   (entry) =>
                       entry.status != 'deprecated' &&
-                      entry.downloadUrl.isNotEmpty,
+                      (entry.variants.isNotEmpty ||
+                          entry.downloadUrl.isNotEmpty),
                 )
                 .toList();
             final filteredCatalog = catalog
@@ -376,6 +435,11 @@ class _LocalListState extends State<_LocalList> {
             final onDevice = filteredCatalog
                 .where(
                   (entry) =>
+                      ModelPackageService.instance.isModelRunnable(entry.id) ||
+                      (_preferredVariants[entry.id] != null &&
+                          ModelPackageService.instance.isDownloading(
+                            _preferredVariants[entry.id]!.id,
+                          )) ||
                       ModelDownloadService.instance.isDownloaded(entry.id) ||
                       ModelDownloadService.instance.isDownloading(entry.id),
                 )
@@ -383,6 +447,11 @@ class _LocalListState extends State<_LocalList> {
             final available = filteredCatalog
                 .where(
                   (entry) =>
+                      !ModelPackageService.instance.isModelRunnable(entry.id) &&
+                      !(_preferredVariants[entry.id] != null &&
+                          ModelPackageService.instance.isDownloading(
+                            _preferredVariants[entry.id]!.id,
+                          )) &&
                       !ModelDownloadService.instance.isDownloaded(entry.id) &&
                       !ModelDownloadService.instance.isDownloading(entry.id),
                 )
@@ -447,12 +516,25 @@ class _LocalListState extends State<_LocalList> {
 
   Widget _catalogCard(BuildContext context, AppState app, CatalogEntry entry) {
     final status = _statusFor(entry);
-    final received = ModelDownloadService.instance.receivedBytesOf(entry.id);
-    final total = ModelDownloadService.instance.totalBytesOf(entry.id);
+    final variant = _preferredVariants[entry.id];
+    final packagedDownload =
+        variant != null &&
+        ModelPackageService.instance.isDownloading(variant.id);
+    final received = packagedDownload
+        ? ModelPackageService.instance.receivedBytesOf(variant.id)
+        : ModelDownloadService.instance.receivedBytesOf(entry.id);
+    final total = packagedDownload
+        ? ModelPackageService.instance.totalBytesOf(variant.id)
+        : ModelDownloadService.instance.totalBytesOf(entry.id);
+    final quant = variant?.quantization.isNotEmpty == true
+        ? variant!.quantization
+        : entry.quant;
+    final backend = _preferredBackends[entry.id];
+    final backendLabel = backend?.catalogName ?? 'llama.cpp';
     final model = MockModel(
       entry.name,
       entry.letter,
-      entry.spec,
+      '${entry.spec} · ${variant?.format.toUpperCase() ?? 'GGUF'} · $backendLabel',
       id: entry.id,
       status: status,
       progress: _progressFor(entry),
@@ -467,30 +549,84 @@ class _LocalListState extends State<_LocalList> {
     return _LocalModelCard(
       model: model,
       onTap: status == ModelStatus.loaded
-          ? () => app.selectModel(entry.name, entry.quant, id: entry.id)
+          ? () => app.selectModel(
+              entry.name,
+              quant,
+              id: entry.id,
+              variantId: variant?.id,
+            )
           : null,
       onUse: status == ModelStatus.loaded
-          ? () => app.selectModel(entry.name, entry.quant, id: entry.id)
+          ? () => app.selectModel(
+              entry.name,
+              quant,
+              id: entry.id,
+              variantId: variant?.id,
+            )
           : null,
       onDownload: status == ModelStatus.catalog
-          ? () async {
-              final ok = await ModelDownloadService.instance.download(entry);
-              if (!ok && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text(
-                      'Download could not start. Check storage permission and network.',
-                    ),
-                    action: SnackBarAction(
-                      label: 'SETTINGS',
-                      onPressed: StorageService.instance.openSettings,
-                    ),
-                  ),
-                );
-              }
-            }
+          ? () => _download(context, app, entry, variant)
           : null,
     );
+  }
+
+  Future<void> _download(
+    BuildContext context,
+    AppState app,
+    CatalogEntry entry,
+    ModelVariant? variant,
+  ) async {
+    try {
+      if (variant == null ||
+          !variant.files
+              .where((artifact) => artifact.required)
+              .every((artifact) => artifact.sha256.isNotEmpty)) {
+        final ok = await ModelDownloadService.instance.download(entry);
+        if (!ok) throw StateError('Legacy model download failed');
+        return;
+      }
+      await ModelPackageService.instance.downloadVariant(variant);
+      final packagePath = await ModelPackageService.instance.packagePath(
+        variant.id,
+      );
+      if (packagePath == null) {
+        throw StateError('Verified package path is unavailable');
+      }
+      final backend = _preferredBackends[entry.id] ?? BackendKind.llamaCpp;
+      final memoryPlan = const InferenceMemoryPolicy().plan(
+        device: _device,
+        backend: backend,
+      );
+      final readiness = await InferenceReadinessService().verify(
+        variant: variant,
+        packagePath: packagePath,
+        contextSize: memoryPlan.contextSize,
+      );
+      if (!readiness.runnable) {
+        await ModelPackageService.instance.markUnrunnable(
+          variant.id,
+          readiness.failureCode,
+        );
+        throw StateError(readiness.reason);
+      }
+      app.selectModel(
+        entry.name,
+        variant.quantization,
+        id: entry.id,
+        variantId: variant.id,
+      );
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Model install failed: $error'),
+          action: SnackBarAction(
+            label: 'SETTINGS',
+            onPressed: StorageService.instance.openSettings,
+          ),
+        ),
+      );
+    }
   }
 }
 

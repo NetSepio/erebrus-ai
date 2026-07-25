@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
@@ -12,7 +13,7 @@ import 'storage_service.dart';
 typedef ModelDownloadProgress =
     void Function(String artifactId, int receivedBytes, int totalBytes);
 
-class ModelPackageService {
+class ModelPackageService extends ChangeNotifier {
   static final ModelPackageService instance = ModelPackageService();
 
   ModelPackageService({
@@ -25,9 +26,25 @@ class ModelPackageService {
   final Future<Directory> Function() _modelsDirectoryProvider;
   final HttpClient Function() _httpClientProvider;
   final Map<String, InstalledModel> _installed = {};
+  final Set<String> _downloading = {};
+  final Map<String, int> _receivedBytes = {};
+  final Map<String, int> _totalBytes = {};
 
   List<InstalledModel> get installed =>
       List.unmodifiable(_installed.values.toList());
+  int get downloadedBytes => _installed.values.fold(
+    0,
+    (sum, record) =>
+        sum + record.files.fold(0, (fileSum, file) => fileSum + file.sizeBytes),
+  );
+
+  bool isDownloading(String variantId) => _downloading.contains(variantId);
+  int receivedBytesOf(String variantId) => _receivedBytes[variantId] ?? 0;
+  int totalBytesOf(String variantId) => _totalBytes[variantId] ?? 0;
+  double progressOf(String variantId) {
+    final total = totalBytesOf(variantId);
+    return total <= 0 ? 0 : receivedBytesOf(variantId) / total;
+  }
 
   InstalledModel? byVariantId(String variantId) => _installed[variantId];
 
@@ -45,7 +62,10 @@ class ModelPackageService {
   Future<void> loadIndex() async {
     _installed.clear();
     final index = await _indexFile;
-    if (!await index.exists()) return;
+    if (!await index.exists()) {
+      notifyListeners();
+      return;
+    }
     try {
       final json =
           jsonDecode(await index.readAsString()) as Map<String, Object?>;
@@ -59,6 +79,8 @@ class ModelPackageService {
     } on Object {
       // A corrupt index never makes an unverified package runnable.
       _installed.clear();
+    } finally {
+      notifyListeners();
     }
   }
 
@@ -67,24 +89,35 @@ class ModelPackageService {
     ModelDownloadProgress? onProgress,
   }) async {
     _validateVariant(variant);
-    final models = await _modelsDirectoryProvider();
-    await models.create(recursive: true);
-    final finalDirectory = Directory(
-      p.join(models.path, _safeName(variant.id)),
-    );
-    final existing = _installed[variant.id];
-    if (existing?.runnable == true && await finalDirectory.exists()) {
-      return existing!;
+    if (_downloading.contains(variant.id)) {
+      throw ModelPackageException(
+        'download_in_progress',
+        '${variant.id} is already downloading',
+      );
     }
-
-    final staging = Directory(
-      p.join(
-        models.path,
-        '.${_safeName(variant.id)}.${const Uuid().v4()}.part',
-      ),
-    );
-    await staging.create(recursive: true);
+    _downloading.add(variant.id);
+    _receivedBytes[variant.id] = 0;
+    _totalBytes[variant.id] = variant.sizeBytes;
+    notifyListeners();
+    Directory? staging;
     try {
+      final models = await _modelsDirectoryProvider();
+      await models.create(recursive: true);
+      final finalDirectory = Directory(
+        p.join(models.path, _safeName(variant.id)),
+      );
+      final existing = _installed[variant.id];
+      if (existing?.runnable == true && await finalDirectory.exists()) {
+        return existing!;
+      }
+
+      staging = Directory(
+        p.join(
+          models.path,
+          '.${_safeName(variant.id)}.${const Uuid().v4()}.part',
+        ),
+      );
+      await staging.create(recursive: true);
       final files = <InstalledModelFile>[];
       final requiredArtifacts = variant.files
           .where((file) => file.required)
@@ -101,13 +134,16 @@ class ModelPackageService {
         await _downloadArtifact(
           artifact,
           destination,
-          onProgress: onProgress == null
-              ? null
-              : (artifactId, received, total) => onProgress(
-                  artifactId,
-                  completedBytes + received,
-                  packageBytes > 0 ? packageBytes : completedBytes + total,
-                ),
+          onProgress: (artifactId, received, total) {
+            final aggregateReceived = completedBytes + received;
+            final aggregateTotal = packageBytes > 0
+                ? packageBytes
+                : completedBytes + total;
+            _receivedBytes[variant.id] = aggregateReceived;
+            _totalBytes[variant.id] = aggregateTotal;
+            notifyListeners();
+            onProgress?.call(artifactId, aggregateReceived, aggregateTotal);
+          },
         );
         final verified = await _verifyArtifact(artifact, destination);
         files.add(verified);
@@ -135,10 +171,16 @@ class ModelPackageService {
       );
       _installed[variant.id] = installed;
       await _saveIndex();
+      notifyListeners();
       return installed;
     } on Object {
-      if (await staging.exists()) await staging.delete(recursive: true);
+      if (staging != null && await staging.exists()) {
+        await staging.delete(recursive: true);
+      }
       rethrow;
+    } finally {
+      _downloading.remove(variant.id);
+      notifyListeners();
     }
   }
 
@@ -172,6 +214,7 @@ class ModelPackageService {
       failureCode: failureCode,
     );
     await _saveIndex();
+    notifyListeners();
   }
 
   Future<InstalledModel> verify(ModelVariant variant) async {
@@ -203,6 +246,7 @@ class ModelPackageService {
     );
     _installed[variant.id] = verified;
     await _saveIndex();
+    notifyListeners();
     return verified;
   }
 
