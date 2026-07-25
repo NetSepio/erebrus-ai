@@ -6,6 +6,7 @@ import 'package:erebrus_mlx/erebrus_mlx.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'llama_cpp_backend.dart';
+import 'turbo_quant_backend.dart';
 
 /// Reports packaged inference engines separately from hardware availability.
 ///
@@ -61,35 +62,39 @@ class BackendProbeService extends ChangeNotifier {
           )
         : await _probeMlx(profile, mlxProbe ?? ErebrusMlx().probe);
     final llama = LlamaCppBackend(platform: profile.platform);
-    _capabilities = [
-      mlx,
-      if (kIsWeb)
-        BackendCapabilities(
-          kind: BackendKind.llamaCpp,
-          operational: false,
-          platforms: [profile.platform],
-          formats: const ['gguf'],
-          reason: 'Native llama.cpp is unavailable on web',
-        )
-      else if (inFlutterTest)
-        BackendCapabilities(
-          kind: BackendKind.llamaCpp,
-          operational: true,
-          platforms: [profile.platform],
-          formats: const ['gguf'],
-          accelerators: const ['CPU'],
-          reason: 'Native resolution is disabled in Flutter unit tests',
-        )
-      else
-        await llama.probe(),
-      BackendCapabilities(
-        kind: BackendKind.turboQuant,
-        operational: false,
-        platforms: [profile.platform],
-        formats: const ['gguf'],
-        reason: 'TurboQuant runtime is not packaged in this build',
-      ),
-    ];
+    final llamaCapabilities = kIsWeb
+        ? BackendCapabilities(
+            kind: BackendKind.llamaCpp,
+            operational: false,
+            platforms: [profile.platform],
+            formats: const ['gguf'],
+            reason: 'Native llama.cpp is unavailable on web',
+          )
+        : inFlutterTest
+        ? BackendCapabilities(
+            kind: BackendKind.llamaCpp,
+            operational: true,
+            platforms: [profile.platform],
+            formats: const ['gguf'],
+            accelerators: const ['CPU'],
+            reason: 'Native resolution is disabled in Flutter unit tests',
+          )
+        : await llama.probe();
+    final turboCapabilities = inFlutterTest
+        ? BackendCapabilities(
+            kind: BackendKind.turboQuant,
+            operational: false,
+            platforms: [profile.platform],
+            formats: const ['gguf'],
+            reason: 'TurboQuant process probing is disabled in unit tests',
+          )
+        : await TurboQuantBackend(platform: profile.platform).probe();
+    final apple =
+        profile.platform.startsWith('macos-') ||
+        profile.platform.startsWith('ios-');
+    _capabilities = apple
+        ? [mlx, llamaCapabilities, turboCapabilities]
+        : [turboCapabilities, llamaCapabilities, mlx];
     _probed = true;
     notifyListeners();
     return capabilities;

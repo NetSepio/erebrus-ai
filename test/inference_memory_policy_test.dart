@@ -56,4 +56,19 @@ void main() {
     expect(result.gpuLayerCount, isNull);
     expect(result.reservedSystemBytes, 4 * 1024 * 1024 * 1024);
   });
+
+  test('validated TurboQuant grows the desktop context cache', () {
+    final result = policy.plan(
+      device: const DeviceProfile(
+        type: DeviceType.desktop,
+        ramBytes: 32 * 1024 * 1024 * 1024,
+        name: 'CUDA workstation',
+        platform: 'linux-x64',
+      ),
+      backend: BackendKind.turboQuant,
+    );
+
+    expect(result.contextSize, 32768);
+    expect(result.reason, contains('compressed q8_0/turbo3 KV enabled'));
+  });
 }

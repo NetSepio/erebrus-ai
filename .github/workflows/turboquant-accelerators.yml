@@ -1,0 +1,52 @@
+name: TurboQuant accelerator certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      accelerator:
+        description: Native accelerator to package and certify
+        required: true
+        type: choice
+        options:
+          - CUDA
+          - HIP
+
+jobs:
+  package:
+    name: ${{ inputs.accelerator }} package
+    runs-on: [self-hosted, linux, x64, "${{ inputs.accelerator }}"]
+    env:
+      EREBRUS_TURBOQUANT_ACCELERATOR: ${{ inputs.accelerator }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create .env placeholder
+        run: cp env.example .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build accelerated Linux package
+        run: flutter build linux --release
+
+      - name: Verify accelerator provenance
+        run: |
+          runtime=build/linux/x64/release/bundle/lib/erebrus_turboquant/llama-server
+          manifest=build/linux/x64/release/bundle/lib/erebrus_turboquant/erebrus-turboquant-runtime.json
+          test -x "$runtime"
+          grep -q "\"accelerator\": \"${EREBRUS_TURBOQUANT_ACCELERATOR}\"" "$manifest"
+          grep -q '"value_cache": "turbo3"' "$manifest"
+          "$runtime" --version | grep -q c26cbdf
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: erebrus-linux-${{ inputs.accelerator }}
+          path: build/linux/x64/release/bundle

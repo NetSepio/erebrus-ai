@@ -423,6 +423,13 @@ packages:
       relative: true
     source: path
     version: "0.0.1"
+  erebrus_turboquant:
+    dependency: "direct main"
+    description:
+      path: "third_party/erebrus_turboquant"
+      relative: true
+    source: path
+    version: "0.1.0"
   event:
     dependency: transitive
     description:

@@ -10,6 +10,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  erebrus_turboquant
   jni
   lib_llama_cpp_linux
   whisper_ggml_plus

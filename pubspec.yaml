@@ -50,6 +50,8 @@ dependencies:
   # part of the trusted execution path.
   whisper_ggml_plus: 1.5.2
   record: ^7.1.1
+  erebrus_turboquant:
+    path: third_party/erebrus_turboquant
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8

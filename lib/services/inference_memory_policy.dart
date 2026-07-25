@@ -25,7 +25,7 @@ class InferenceMemoryPolicy {
   }) {
     final ramGB = device.ramGB;
     final mobile = device.type == DeviceType.mobile;
-    final contextSize = mobile
+    final baselineContextSize = mobile
         ? (ramGB < 6
               ? 1024
               : ramGB < 8
@@ -36,6 +36,15 @@ class InferenceMemoryPolicy {
               : ramGB < 24
               ? 8192
               : 16384);
+    final contextSize = backend == BackendKind.turboQuant && !mobile
+        ? (ramGB < 8
+              ? 4096
+              : ramGB < 16
+              ? 8192
+              : ramGB < 32
+              ? 16384
+              : 32768)
+        : baselineContextSize;
     final reserveGB = mobile
         ? (ramGB < 6 ? 1.5 : 2.0)
         : (ramGB < 12 ? 3.0 : 4.0);
@@ -51,7 +60,9 @@ class InferenceMemoryPolicy {
       reservedSystemBytes: (reserveGB * 1024 * 1024 * 1024).round(),
       reason:
           '$contextSize-token cache with ${reserveGB.toStringAsFixed(1)} GB '
-          'reserved for the OS${gpuLayerCount == null ? '' : '; Metal offload enabled'}',
+          'reserved for the OS'
+          '${backend == BackendKind.turboQuant ? '; compressed q8_0/turbo3 KV enabled' : ''}'
+          '${gpuLayerCount == null ? '' : '; Metal offload enabled'}',
     );
   }
 }

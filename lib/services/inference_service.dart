@@ -12,23 +12,26 @@ import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
 import 'mlx_backend.dart';
+import 'turbo_quant_backend.dart';
 
-/// Cross-platform GGUF inference backed by llama.cpp.
+/// Coordinates MLX, TurboQuant, and upstream llama.cpp local inference.
 ///
-/// The package runs native inference in its own worker isolate. Our vendored
-/// patch buffers UTF-8 sequences split across token pieces, which is required
-/// for multilingual models on mobile.
+/// TurboQuant and MLX are tried only on supported platforms. Upstream
+/// llama.cpp retains the portable GGUF fallback and runs in its worker isolate;
+/// its vendored UTF-8 patch preserves multilingual token boundaries.
 class InferenceService extends ChangeNotifier {
   InferenceService._() {
     final platform = DeviceInfoService.detect().platform;
     _mlx = MlxBackend(platform: platform);
+    _turboQuant = TurboQuantBackend(platform: platform);
     _llamaCpp = LlamaCppBackend(platform: platform);
-    _coordinator = InferenceCoordinator([_mlx, _llamaCpp]);
+    _coordinator = InferenceCoordinator([_mlx, _turboQuant, _llamaCpp]);
   }
 
   static final InferenceService instance = InferenceService._();
 
   late final MlxBackend _mlx;
+  late final TurboQuantBackend _turboQuant;
   late final LlamaCppBackend _llamaCpp;
   late final InferenceCoordinator _coordinator;
   String? _activeModelId;
@@ -112,7 +115,7 @@ class InferenceService extends ChangeNotifier {
         );
         if (packagePath == null) continue;
         final variant = _variantFromInstalled(record, profile.platform);
-        for (final backend in _orderedBackends(record)) {
+        for (final backend in _orderedBackends(record, profile.platform)) {
           final memoryPlan = memoryPolicy.plan(
             device: profile,
             backend: backend,
@@ -136,21 +139,28 @@ class InferenceService extends ChangeNotifier {
                 plan.backend == BackendKind.llamaCpp &&
                 plan.loadRequest.packagePath == legacyPath,
           )) {
-        final memoryPlan = memoryPolicy.plan(
-          device: profile,
-          backend: BackendKind.llamaCpp,
+        final legacyVariant = _legacyVariant(
+          modelId,
+          legacyPath,
+          profile.platform,
         );
-        plans.add(
-          InferenceExecutionPlan(
-            backend: BackendKind.llamaCpp,
-            loadRequest: InferenceLoadRequest(
-              variant: _legacyVariant(modelId, legacyPath, profile.platform),
-              packagePath: legacyPath,
-              contextSize: memoryPlan.contextSize,
-              gpuLayerCount: memoryPlan.gpuLayerCount,
+        for (final backend in _desktopGgufBackends(profile.platform)) {
+          final backendMemoryPlan = memoryPolicy.plan(
+            device: profile,
+            backend: backend,
+          );
+          plans.add(
+            InferenceExecutionPlan(
+              backend: backend,
+              loadRequest: InferenceLoadRequest(
+                variant: legacyVariant,
+                packagePath: legacyPath,
+                contextSize: backendMemoryPlan.contextSize,
+                gpuLayerCount: backendMemoryPlan.gpuLayerCount,
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
       final events = _coordinator.generate(
         plans: plans,
@@ -225,8 +235,15 @@ class InferenceService extends ChangeNotifier {
   static int _backendPriority(InstalledModel model) =>
       model.backends.any((backend) => backend.toLowerCase() == 'mlx') ? 0 : 1;
 
-  static List<BackendKind> _orderedBackends(InstalledModel model) {
+  static List<BackendKind> _orderedBackends(
+    InstalledModel model,
+    String platform,
+  ) {
     final result = <BackendKind>[];
+    if (model.format.toLowerCase() == 'gguf' &&
+        _supportsTurboQuantPlatform(platform)) {
+      result.add(BackendKind.turboQuant);
+    }
     for (final kind in const [BackendKind.mlx, BackendKind.llamaCpp]) {
       if (model.backends.any(
         (backend) => backend.toLowerCase() == kind.catalogName.toLowerCase(),
@@ -240,28 +257,36 @@ class InferenceService extends ChangeNotifier {
   static ModelVariant _variantFromInstalled(
     InstalledModel model,
     String platform,
-  ) => ModelVariant(
-    id: model.variantId,
-    modelId: model.modelId,
-    format: model.format,
-    quantization: '',
-    files: model.files
-        .map(
-          (file) => Artifact(
-            id: file.artifactId,
-            role: 'model',
-            format: model.format,
-            quantization: '',
-            filename: file.relativePath,
-            repositoryId: '',
-            downloadUrl: '',
-            backend: model.backends.firstOrNull ?? '',
-          ),
-        )
-        .toList(growable: false),
-    platforms: [platform],
-    compatibleBackends: model.backends,
-  );
+  ) {
+    final backends = [...model.backends];
+    if (model.format.toLowerCase() == 'gguf' &&
+        _supportsTurboQuantPlatform(platform) &&
+        !backends.contains(BackendKind.turboQuant.catalogName)) {
+      backends.add(BackendKind.turboQuant.catalogName);
+    }
+    return ModelVariant(
+      id: model.variantId,
+      modelId: model.modelId,
+      format: model.format,
+      quantization: '',
+      files: model.files
+          .map(
+            (file) => Artifact(
+              id: file.artifactId,
+              role: 'model',
+              format: model.format,
+              quantization: '',
+              filename: file.relativePath,
+              repositoryId: '',
+              downloadUrl: '',
+              backend: model.backends.firstOrNull ?? '',
+            ),
+          )
+          .toList(growable: false),
+      platforms: [platform],
+      compatibleBackends: backends,
+    );
+  }
 
   static ModelVariant _legacyVariant(
     String modelId,
@@ -285,8 +310,20 @@ class InferenceService extends ChangeNotifier {
       ),
     ],
     platforms: [platform],
-    compatibleBackends: [BackendKind.llamaCpp.catalogName],
+    compatibleBackends: [
+      if (_supportsTurboQuantPlatform(platform))
+        BackendKind.turboQuant.catalogName,
+      BackendKind.llamaCpp.catalogName,
+    ],
   );
+
+  static List<BackendKind> _desktopGgufBackends(String platform) => [
+    if (_supportsTurboQuantPlatform(platform)) BackendKind.turboQuant,
+    BackendKind.llamaCpp,
+  ];
+
+  static bool _supportsTurboQuantPlatform(String platform) =>
+      platform.startsWith('linux-') || platform.startsWith('windows-');
 }
 
 class InferenceException implements Exception {

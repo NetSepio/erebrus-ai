@@ -62,6 +62,19 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
+      - name: Verify pinned TurboQuant runtime
+        shell: pwsh
+        run: |
+          $runtime = "build/windows/x64/runner/Release/erebrus_turboquant/llama-server.exe"
+          $manifest = "build/windows/x64/runner/Release/erebrus_turboquant/erebrus-turboquant-runtime.json"
+          if (!(Test-Path $runtime) -or !(Test-Path $manifest)) { exit 1 }
+          $metadata = Get-Content $manifest | ConvertFrom-Json
+          if ($metadata.revision -ne "c26cbdffcf6fc9b7430cd6b117757e9a3f70b7ea") { exit 1 }
+          if ($metadata.source_archive_sha256 -ne "5a7221222d658ca93dbf62ba2ca0623712547e9640605c12ebdfa8963aeda239") { exit 1 }
+          if ($metadata.accelerator -ne "CPU") { exit 1 }
+          if ($metadata.key_cache -ne "q8_0" -or $metadata.value_cache -ne "turbo3") { exit 1 }
+          & $runtime --version | Select-String "c26cbdf"
+
       - name: Package Windows app
         run: |
           cd build/windows/x64/runner/Release
@@ -99,6 +112,18 @@ jobs:
 
       - name: Build Linux
         run: flutter build linux --release
+
+      - name: Verify pinned TurboQuant runtime
+        run: |
+          runtime=build/linux/x64/release/bundle/lib/erebrus_turboquant/llama-server
+          manifest=build/linux/x64/release/bundle/lib/erebrus_turboquant/erebrus-turboquant-runtime.json
+          test -x "$runtime"
+          grep -q '"revision": "c26cbdffcf6fc9b7430cd6b117757e9a3f70b7ea"' "$manifest"
+          grep -q '"source_archive_sha256": "5a7221222d658ca93dbf62ba2ca0623712547e9640605c12ebdfa8963aeda239"' "$manifest"
+          grep -q '"accelerator": "CPU"' "$manifest"
+          grep -q '"key_cache": "q8_0"' "$manifest"
+          grep -q '"value_cache": "turbo3"' "$manifest"
+          "$runtime" --version | grep -q c26cbdf
 
       - name: Package Linux app
         run: |
