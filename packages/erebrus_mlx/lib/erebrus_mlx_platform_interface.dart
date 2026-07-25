@@ -21,12 +21,15 @@ abstract class ErebrusMlxPlatform extends PlatformInterface {
   Future<void> loadModel(String modelDirectory);
 
   Stream<MlxGenerationEvent> generate({
-    required String prompt,
-    required String systemPrompt,
+    required List<Map<String, String>> messages,
     required int maxTokens,
     required int maxKvSize,
     required double temperature,
     required double topP,
+    required int topK,
+    required double minP,
+    required double repeatPenalty,
+    required int seed,
   });
 
   Future<void> cancel();

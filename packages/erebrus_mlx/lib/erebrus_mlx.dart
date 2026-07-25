@@ -29,6 +29,10 @@ class MlxGenerationEvent {
     required this.type,
     this.text = '',
     this.message = '',
+    this.generatedTokens,
+    this.promptTokensPerSecond,
+    this.decodeTokensPerSecond,
+    this.finishReason = '',
   });
 
   factory MlxGenerationEvent.fromMap(Map<Object?, Object?> map) =>
@@ -36,11 +40,21 @@ class MlxGenerationEvent {
         type: map['type']?.toString() ?? 'unknown',
         text: map['text']?.toString() ?? '',
         message: map['message']?.toString() ?? '',
+        generatedTokens: map['generated_tokens'] as int?,
+        promptTokensPerSecond: (map['prompt_tokens_per_second'] as num?)
+            ?.toDouble(),
+        decodeTokensPerSecond: (map['decode_tokens_per_second'] as num?)
+            ?.toDouble(),
+        finishReason: map['finish_reason']?.toString() ?? '',
       );
 
   final String type;
   final String text;
   final String message;
+  final int? generatedTokens;
+  final double? promptTokensPerSecond;
+  final double? decodeTokensPerSecond;
+  final String finishReason;
 }
 
 class ErebrusMlx {
@@ -50,19 +64,25 @@ class ErebrusMlx {
       ErebrusMlxPlatform.instance.loadModel(modelDirectory);
 
   Stream<MlxGenerationEvent> generate({
-    required String prompt,
-    String systemPrompt = '',
+    required List<Map<String, String>> messages,
     int maxTokens = 256,
     int maxKvSize = 2048,
     double temperature = 0.7,
     double topP = 0.9,
+    int topK = 40,
+    double minP = 0.05,
+    double repeatPenalty = 1.1,
+    int seed = -1,
   }) => ErebrusMlxPlatform.instance.generate(
-    prompt: prompt,
-    systemPrompt: systemPrompt,
+    messages: messages,
     maxTokens: maxTokens,
     maxKvSize: maxKvSize,
     temperature: temperature,
     topP: topP,
+    topK: topK,
+    minP: minP,
+    repeatPenalty: repeatPenalty,
+    seed: seed,
   );
 
   Future<void> cancel() => ErebrusMlxPlatform.instance.cancel();

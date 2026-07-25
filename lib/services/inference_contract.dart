@@ -170,3 +170,13 @@ abstract interface class InferenceBackend {
   Future<void> cancel();
   Future<void> unload();
 }
+
+class InferenceBackendException implements Exception {
+  const InferenceBackendException({required this.code, required this.message});
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => '$code: $message';
+}

@@ -2,6 +2,7 @@ import '../data/catalog_entry.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'llama_cpp_backend.dart';
+import 'mlx_backend.dart';
 
 class InferenceReadinessResult {
   const InferenceReadinessResult({
@@ -21,7 +22,10 @@ class InferenceReadinessService {
   InferenceReadinessService({List<InferenceBackend>? backends})
     : _backends =
           backends ??
-          [LlamaCppBackend(platform: DeviceInfoService.detect().platform)];
+          [
+            MlxBackend(platform: DeviceInfoService.detect().platform),
+            LlamaCppBackend(platform: DeviceInfoService.detect().platform),
+          ];
 
   final List<InferenceBackend> _backends;
 

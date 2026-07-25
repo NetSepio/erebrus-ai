@@ -13,6 +13,7 @@ import '../data/catalog_service.dart';
 import 'inference_service.dart';
 import 'mdns_config.dart';
 import 'model_download_service.dart';
+import 'model_package_service.dart';
 
 /// A real OpenAI-compatible HTTP server that runs on the device.
 ///
@@ -142,7 +143,8 @@ class LocalServerService extends ChangeNotifier {
     final modelId = payload['model'] as String? ?? '';
     final stream = payload['stream'] as bool? ?? true;
 
-    if (!ModelDownloadService.instance.isDownloaded(modelId)) {
+    if (!ModelDownloadService.instance.isDownloaded(modelId) &&
+        !ModelPackageService.instance.isModelRunnable(modelId)) {
       return Response(
         503,
         body: json.encode({

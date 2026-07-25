@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../data/catalog_entry.dart';
+import '../data/installed_model.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'inference_coordinator.dart';
 import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
+import 'mlx_backend.dart';
 
 /// Cross-platform GGUF inference backed by llama.cpp.
 ///
@@ -17,12 +19,15 @@ import 'model_package_service.dart';
 /// for multilingual models on mobile.
 class InferenceService extends ChangeNotifier {
   InferenceService._() {
-    _llamaCpp = LlamaCppBackend(platform: DeviceInfoService.detect().platform);
-    _coordinator = InferenceCoordinator([_llamaCpp]);
+    final platform = DeviceInfoService.detect().platform;
+    _mlx = MlxBackend(platform: platform);
+    _llamaCpp = LlamaCppBackend(platform: platform);
+    _coordinator = InferenceCoordinator([_mlx, _llamaCpp]);
   }
 
   static final InferenceService instance = InferenceService._();
 
+  late final MlxBackend _mlx;
   late final LlamaCppBackend _llamaCpp;
   late final InferenceCoordinator _coordinator;
   String? _activeModelId;
@@ -56,15 +61,12 @@ class InferenceService extends ChangeNotifier {
       );
     }
 
-    final installed = ModelPackageService.instance.runnableForModelId(modelId);
-    final modelPath =
-        await ModelDownloadService.instance.modelPath(modelId) ??
-        (installed == null
-            ? null
-            : await ModelPackageService.instance.packagePath(
-                installed.variantId,
-              ));
-    if (modelPath == null) {
+    final profile = DeviceInfoService.detect();
+    final installed = ModelPackageService.instance.runnableVariantsForModelId(
+      modelId,
+    );
+    final legacyPath = await ModelDownloadService.instance.modelPath(modelId);
+    if (installed.isEmpty && legacyPath == null) {
       throw InferenceException(
         'Model "$modelId" is not downloaded. Download it from Models first.',
       );
@@ -86,38 +88,52 @@ class InferenceService extends ChangeNotifier {
     );
 
     try {
-      final variant = ModelVariant(
-        id: installed?.variantId ?? modelId,
-        modelId: modelId,
-        format: 'gguf',
-        quantization: '',
-        files: [
-          Artifact(
-            id: '$modelId-model',
-            role: 'model',
-            format: 'gguf',
-            quantization: '',
-            filename: modelPath,
-            repositoryId: '',
-            downloadUrl: '',
-            backend: BackendKind.llamaCpp.catalogName,
-          ),
-        ],
-        platforms: [DeviceInfoService.detect().platform],
-        compatibleBackends: [BackendKind.llamaCpp.catalogName],
-      );
-      final events = _coordinator.generate(
-        plans: [
+      final plans = <InferenceExecutionPlan>[];
+      final ordered = [...installed]
+        ..sort(
+          (left, right) =>
+              _backendPriority(left).compareTo(_backendPriority(right)),
+        );
+      for (final record in ordered) {
+        final packagePath = await ModelPackageService.instance.packagePath(
+          record.variantId,
+        );
+        if (packagePath == null) continue;
+        final variant = _variantFromInstalled(record, profile.platform);
+        for (final backend in _orderedBackends(record)) {
+          plans.add(
+            InferenceExecutionPlan(
+              backend: backend,
+              loadRequest: InferenceLoadRequest(
+                variant: variant,
+                packagePath: packagePath,
+                contextSize: contextSize,
+                gpuLayerCount: 0,
+              ),
+            ),
+          );
+        }
+      }
+      if (legacyPath != null &&
+          !plans.any(
+            (plan) =>
+                plan.backend == BackendKind.llamaCpp &&
+                plan.loadRequest.packagePath == legacyPath,
+          )) {
+        plans.add(
           InferenceExecutionPlan(
             backend: BackendKind.llamaCpp,
             loadRequest: InferenceLoadRequest(
-              variant: variant,
-              packagePath: modelPath,
+              variant: _legacyVariant(modelId, legacyPath, profile.platform),
+              packagePath: legacyPath,
               contextSize: contextSize,
               gpuLayerCount: 0,
             ),
           ),
-        ],
+        );
+      }
+      final events = _coordinator.generate(
+        plans: plans,
         request: InferenceRequest(
           messages: [
             if (systemPrompt.trim().isNotEmpty)
@@ -185,6 +201,72 @@ class InferenceService extends ChangeNotifier {
     }
     return 'Generation failed: $message';
   }
+
+  static int _backendPriority(InstalledModel model) =>
+      model.backends.any((backend) => backend.toLowerCase() == 'mlx') ? 0 : 1;
+
+  static List<BackendKind> _orderedBackends(InstalledModel model) {
+    final result = <BackendKind>[];
+    for (final kind in const [BackendKind.mlx, BackendKind.llamaCpp]) {
+      if (model.backends.any(
+        (backend) => backend.toLowerCase() == kind.catalogName.toLowerCase(),
+      )) {
+        result.add(kind);
+      }
+    }
+    return result;
+  }
+
+  static ModelVariant _variantFromInstalled(
+    InstalledModel model,
+    String platform,
+  ) => ModelVariant(
+    id: model.variantId,
+    modelId: model.modelId,
+    format: model.format,
+    quantization: '',
+    files: model.files
+        .map(
+          (file) => Artifact(
+            id: file.artifactId,
+            role: 'model',
+            format: model.format,
+            quantization: '',
+            filename: file.relativePath,
+            repositoryId: '',
+            downloadUrl: '',
+            backend: model.backends.firstOrNull ?? '',
+          ),
+        )
+        .toList(growable: false),
+    platforms: [platform],
+    compatibleBackends: model.backends,
+  );
+
+  static ModelVariant _legacyVariant(
+    String modelId,
+    String path,
+    String platform,
+  ) => ModelVariant(
+    id: modelId,
+    modelId: modelId,
+    format: 'gguf',
+    quantization: '',
+    files: [
+      Artifact(
+        id: '$modelId-model',
+        role: 'model',
+        format: 'gguf',
+        quantization: '',
+        filename: path,
+        repositoryId: '',
+        downloadUrl: '',
+        backend: BackendKind.llamaCpp.catalogName,
+      ),
+    ],
+    platforms: [platform],
+    compatibleBackends: [BackendKind.llamaCpp.catalogName],
+  );
 }
 
 class InferenceException implements Exception {

@@ -30,12 +30,15 @@ class MethodChannelErebrusMlx extends ErebrusMlxPlatform {
 
   @override
   Stream<MlxGenerationEvent> generate({
-    required String prompt,
-    required String systemPrompt,
+    required List<Map<String, String>> messages,
     required int maxTokens,
     required int maxKvSize,
     required double temperature,
     required double topP,
+    required int topK,
+    required double minP,
+    required double repeatPenalty,
+    required int seed,
   }) async* {
     final events = eventChannel.receiveBroadcastStream().map(
       (event) =>
@@ -49,12 +52,15 @@ class MethodChannelErebrusMlx extends ErebrusMlxPlatform {
     );
     try {
       await methodChannel.invokeMethod<void>('generate', {
-        'prompt': prompt,
-        'system_prompt': systemPrompt,
+        'messages': messages,
         'max_tokens': maxTokens,
         'max_kv_size': maxKvSize,
         'temperature': temperature,
         'top_p': topP,
+        'top_k': topK,
+        'min_p': minP,
+        'repeat_penalty': repeatPenalty,
+        'seed': seed,
       });
       await for (final event in subscription.stream) {
         yield event;

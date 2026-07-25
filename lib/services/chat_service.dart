@@ -10,6 +10,7 @@ import '../data/catalog_service.dart';
 import '../data/mock_data.dart';
 import 'inference_service.dart';
 import 'model_download_service.dart';
+import 'model_package_service.dart';
 import 'storage_service.dart';
 
 /// A real chat session and message store.
@@ -223,7 +224,8 @@ class ChatService extends ChangeNotifier {
     }
 
     if (modelId.isEmpty ||
-        !ModelDownloadService.instance.isDownloaded(modelId)) {
+        (!ModelDownloadService.instance.isDownloaded(modelId) &&
+            !ModelPackageService.instance.isModelRunnable(modelId))) {
       final catalog = CatalogService.entries;
       final byId = {for (final e in catalog) e.id: e};
       final name = byId[modelId]?.name ?? modelId;

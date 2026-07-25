@@ -35,6 +35,13 @@ class ModelPackageService {
       .where((record) => record.modelId == modelId && record.runnable)
       .firstOrNull;
 
+  bool isModelRunnable(String modelId) => runnableForModelId(modelId) != null;
+
+  List<InstalledModel> runnableVariantsForModelId(String modelId) => _installed
+      .values
+      .where((record) => record.modelId == modelId && record.runnable)
+      .toList(growable: false);
+
   Future<void> loadIndex() async {
     _installed.clear();
     final index = await _indexFile;

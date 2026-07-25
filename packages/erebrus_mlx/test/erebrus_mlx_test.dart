@@ -20,12 +20,15 @@ class MockErebrusMlxPlatform
 
   @override
   Stream<MlxGenerationEvent> generate({
-    required String prompt,
-    required String systemPrompt,
+    required List<Map<String, String>> messages,
     required int maxTokens,
     required int maxKvSize,
     required double temperature,
     required double topP,
+    required int topK,
+    required double minP,
+    required double repeatPenalty,
+    required int seed,
   }) => Stream.value(const MlxGenerationEvent(type: 'token', text: 'hello'));
 
   @override
@@ -48,7 +51,13 @@ void main() {
 
     expect((await plugin.probe()).available, isTrue);
     expect(
-      await plugin.generate(prompt: 'test').single,
+      await plugin
+          .generate(
+            messages: const [
+              {'role': 'user', 'content': 'test'},
+            ],
+          )
+          .single,
       isA<MlxGenerationEvent>()
           .having((event) => event.type, 'type', 'token')
           .having((event) => event.text, 'text', 'hello'),

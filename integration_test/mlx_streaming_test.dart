@@ -26,8 +26,13 @@ void main() {
       await for (final event
           in mlx
               .generate(
-                prompt: 'Reply with exactly three words about local AI.',
-                systemPrompt: 'Be concise.',
+                messages: const [
+                  {'role': 'system', 'content': 'Be concise.'},
+                  {
+                    'role': 'user',
+                    'content': 'Reply with exactly three words about local AI.',
+                  },
+                ],
                 maxTokens: 24,
                 temperature: 0,
               )
