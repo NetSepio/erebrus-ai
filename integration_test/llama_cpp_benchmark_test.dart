@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:erebrus_ai/services/benchmark_record.dart';
 import 'package:erebrus_ai/services/inference_contract.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:lib_llama_cpp/lib_llama_cpp.dart';
 
 const _modelPath = String.fromEnvironment('BENCHMARK_MODEL');
@@ -32,9 +33,11 @@ const _iterations = int.fromEnvironment(
 const _gpuLayers = int.fromEnvironment('BENCHMARK_GPU_LAYERS', defaultValue: 0);
 
 void main() {
-  test(
-    'records the current llama.cpp baseline',
-    () async {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'records the packaged llama.cpp baseline',
+    (tester) async {
       expect(File(_modelPath).existsSync(), isTrue);
       final records = <InferenceBenchmarkRecord>[];
       for (var iteration = 1; iteration <= _iterations; iteration++) {
@@ -56,10 +59,22 @@ void main() {
         // ignore: avoid_print
         print('Wrote ${output.path}');
       }
+
+      expect(records, everyElement(isA<InferenceBenchmarkRecord>()));
+      expect(records.where((record) => record.error != null), isEmpty);
+      expect(
+        records,
+        everyElement(
+          predicate<InferenceBenchmarkRecord>(
+            (record) =>
+                record.generatedTokens > 0 &&
+                record.loadMilliseconds > 0 &&
+                record.timeToFirstTokenMilliseconds >= record.loadMilliseconds,
+          ),
+        ),
+      );
     },
-    skip: _modelPath.isEmpty
-        ? 'Set --dart-define=BENCHMARK_MODEL=/absolute/model.gguf'
-        : false,
+    skip: _modelPath.isEmpty,
     timeout: const Timeout(Duration(minutes: 30)),
   );
 }

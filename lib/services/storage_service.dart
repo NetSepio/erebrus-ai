@@ -227,6 +227,18 @@ class StorageService {
     return dir;
   }
 
+  Future<Directory> transcriptionsDir() async {
+    final dir = Directory(p.join((await baseDir()).path, 'transcriptions'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<Directory> telemetryDir() async {
+    final dir = Directory(p.join((await baseDir()).path, 'telemetry'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
   /// Returns the public external storage root on Android when permission has
   /// already been granted, or null if we should fall back to app-private
   /// storage. This does *not* request permission — that is done when the user

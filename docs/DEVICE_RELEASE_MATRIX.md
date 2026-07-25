@@ -31,10 +31,10 @@ Every backend/model/device result records:
 - deterministic correctness and task-quality results;
 - packaged backend, accelerator, build revision, and fallback reason.
 
-Run the current llama.cpp CPU baseline with:
+Run the packaged llama.cpp CPU baseline on macOS with:
 
 ```sh
-flutter test test/inference_benchmark_test.dart \
+flutter test integration_test/llama_cpp_benchmark_test.dart -d macos \
   --dart-define=BENCHMARK_MODEL=/absolute/path/model.gguf \
   --dart-define=BENCHMARK_VARIANT_ID=logical-variant-id \
   --dart-define=BENCHMARK_OUTPUT=/absolute/path/result.json
@@ -43,7 +43,23 @@ flutter test test/inference_benchmark_test.dart \
 Optional defines control `BENCHMARK_CONTEXT`, `BENCHMARK_MAX_TOKENS`,
 `BENCHMARK_ITERATIONS`, `BENCHMARK_GPU_LAYERS`, and `BENCHMARK_PROMPT`.
 Results are JSON and must not be committed when they contain device-identifying
-paths or user prompts.
+paths or user prompts. On sandboxed macOS builds, `BENCHMARK_MODEL` and
+`BENCHMARK_OUTPUT` must resolve inside the app container or another location
+the app has explicitly been granted access to.
+
+The first packaged-runtime CPU baseline on 25 July 2026 used
+SmolLM2-135M-Instruct Q8_0, a 2,048-token context, 64 generated tokens,
+`gpuLayerCount: 0`, and three debug-build runs on an Apple-silicon Mac running
+macOS 26.5. The averages were:
+
+- model load: 210 ms;
+- time to first token: 341 ms;
+- decode: 85.4 tokens/second.
+
+The cold first run was slower (369 ms load, 492 ms first token, 61.8 tok/s)
+than the two warm filesystem-cache runs. These figures establish the current
+CPU compatibility baseline; they are not release-build or sustained thermal
+results, and the current bridge does not yet report prompt speed or peak RSS.
 
 Run the native MLX bridge smoke test on macOS with a complete local MLX package:
 
