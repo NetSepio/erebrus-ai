@@ -11,3 +11,5 @@
 
 The archive checksum was verified before the macOS XCFramework was copied into
 this package. The unmodified pub.dev package metadata and license are retained.
+CI verifies the vendored framework digest in `FRAMEWORK.sha256`, its arm64 and
+x86-64 slices, and the exported Metal initialization symbol.

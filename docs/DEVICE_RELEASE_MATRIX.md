@@ -118,3 +118,8 @@ permissions remain mandatory; no audio or transcript leaves the device.
 Promotion from experimental to beta/stable requires release builds on the
 representative matrix, no corrupt output, bounded memory behavior, and a tested
 fallback before the first token is emitted.
+
+CI builds macOS release artifacts on both `macos-15` arm64 and
+`macos-15-intel`, tests the platform resolver, verifies both framework slices,
+and checks the exported Metal initialization symbol. Runtime performance and
+thermal certification still require the physical device classes listed above.

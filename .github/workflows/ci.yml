@@ -33,9 +33,17 @@ jobs:
         run: flutter test
 
   build-desktop-macos:
-    name: Build macOS
-    runs-on: macos-latest
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     needs: analyze-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,6 +59,16 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Verify packaged llama.cpp Metal framework
+        run: |
+          binary=third_party/lib_llama_cpp_macos/macos/lib_llama_cpp_macos/Frameworks/lib_llama_cpp_macos.xcframework/macos-arm64_x86_64/lib_llama_cpp_macos.framework/Versions/A/lib_llama_cpp_macos
+          shasum -a 256 -c third_party/lib_llama_cpp_macos/FRAMEWORK.sha256
+          lipo "$binary" -verify_arch arm64 x86_64
+          nm -gU "$binary" | grep -q _ggml_backend_metal_init
+
+      - name: Test macOS backend resolver
+        run: flutter test third_party/lib_llama_cpp_macos/test/lib_llama_cpp_macos_test.dart
 
       - name: Build macOS
         run: flutter build macos --release
