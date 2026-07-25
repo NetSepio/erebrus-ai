@@ -1,48 +1,8 @@
 import '../data/catalog_entry.dart';
 import 'device_info_service.dart';
+import 'inference_contract.dart';
 
-enum BackendKind {
-  mlx('mlx'),
-  turboQuant('turboquant'),
-  llamaCpp('llama.cpp');
-
-  const BackendKind(this.catalogName);
-
-  final String catalogName;
-}
-
-class BackendCapabilities {
-  const BackendCapabilities({
-    required this.kind,
-    required this.operational,
-    this.platforms = const [],
-    this.formats = const [],
-    this.reason = '',
-  });
-
-  final BackendKind kind;
-  final bool operational;
-  final List<String> platforms;
-  final List<String> formats;
-  final String reason;
-
-  bool supports(ModelVariant variant, String platform) {
-    if (!operational || !variant.supportsPlatform(platform)) return false;
-    if (platforms.isNotEmpty &&
-        !platforms.any(
-          (candidate) => candidate.toLowerCase() == platform.toLowerCase(),
-        )) {
-      return false;
-    }
-    if (formats.isNotEmpty &&
-        !formats.any(
-          (format) => format.toLowerCase() == variant.format.toLowerCase(),
-        )) {
-      return false;
-    }
-    return variant.supportsBackend(kind.catalogName);
-  }
-}
+export 'inference_contract.dart' show BackendCapabilities, BackendKind;
 
 class ResolvedModelVariant {
   const ResolvedModelVariant({

@@ -8,6 +8,7 @@ import 'auth/runtime_config.dart';
 import 'auth/wallet_auth_controller.dart';
 import 'org/org_state.dart';
 import 'services/chat_service.dart';
+import 'services/backend_probe_service.dart';
 import 'services/model_download_service.dart';
 import 'services/node_discovery_service.dart';
 import 'services/storage_service.dart';
@@ -41,6 +42,7 @@ Future<void> main() async {
   // Scan existing downloads and start LAN discovery after the first frame
   // so heavy file/network work does not block the initial UI paint.
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(BackendProbeService.instance.probe());
     unawaited(ModelDownloadService.instance.scanDownloads());
     unawaited(NodeDiscoveryService.instance.start());
   });

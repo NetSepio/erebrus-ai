@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../state/app_state.dart';
 import '../../services/speech_service.dart';
+import '../../services/backend_probe_service.dart';
 import '../../services/local_server_service.dart';
 import '../../services/storage_service.dart';
 import '../../org/ai_org.dart';
@@ -138,11 +139,17 @@ class SettingsScreen extends StatelessWidget {
               trailing: [RowValue('${app.maxResponseTokens}')],
               onTap: () => _showResponseLengthSheet(context),
             ),
-            const SettingsRow(
-              icon: Symbols.bolt,
-              title: 'GPU layers',
-              subtitle: '-ngl offload · Metal detected',
-              trailing: [RowValue('AUTO')],
+            AnimatedBuilder(
+              animation: BackendProbeService.instance,
+              builder: (context, _) {
+                final probe = BackendProbeService.instance;
+                return SettingsRow(
+                  icon: Symbols.bolt,
+                  title: 'Inference backend',
+                  subtitle: probe.activeDescription,
+                  trailing: [RowValue(probe.activeLabel)],
+                );
+              },
             ),
           ],
         )
