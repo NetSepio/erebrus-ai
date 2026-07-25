@@ -71,4 +71,19 @@ void main() {
     expect(result.contextSize, 32768);
     expect(result.reason, contains('compressed q8_0/turbo3 KV enabled'));
   });
+
+  test('TurboQuant mobile growth is limited to high-memory phones', () {
+    final result = policy.plan(
+      device: const DeviceProfile(
+        type: DeviceType.mobile,
+        ramBytes: 12 * 1024 * 1024 * 1024,
+        name: 'Android flagship',
+        platform: 'android-arm64',
+      ),
+      backend: BackendKind.turboQuant,
+    );
+
+    expect(result.contextSize, 8192);
+    expect(result.reason, contains('compressed q8_0/turbo3 KV enabled'));
+  });
 }

@@ -1,0 +1,93 @@
+diff --git a/ggml/src/ggml-turbo-quant.c b/ggml/src/ggml-turbo-quant.c
+index 54e6683..f0e59d3 100644
+--- a/ggml/src/ggml-turbo-quant.c
++++ b/ggml/src/ggml-turbo-quant.c
+@@ -18,2 +18,6 @@
+ 
++#if defined(__ARM_NEON) && defined(__aarch64__)
++#include <arm_neon.h>
++#endif
++
+ #ifndef M_PI
+@@ -219,2 +223,39 @@ static const float turbo_cpu_s2[128] = {
+ 
++static void turbo_cpu_apply_signs(float * x, const float * signs, float scale, int group_size) {
++    int i = 0;
++#if defined(__ARM_NEON) && defined(__aarch64__)
++    const float32x4_t scale_v = vdupq_n_f32(scale);
++    for (; i + 4 <= group_size; i += 4) {
++        const float32x4_t values_v = vld1q_f32(x + i);
++        const float32x4_t signs_v = vld1q_f32(signs + i);
++        vst1q_f32(x + i, vmulq_f32(values_v, vmulq_f32(signs_v, scale_v)));
++    }
++#endif
++    for (; i < group_size; i++) {
++        x[i] *= signs[i] * scale;
++    }
++}
++
++static void turbo_cpu_fwht_butterflies(float * x, int group_size) {
++    for (int h = 1; h < group_size; h *= 2) {
++        for (int i = 0; i < group_size; i += h * 2) {
++            int j = i;
++#if defined(__ARM_NEON) && defined(__aarch64__)
++            for (; j + 4 <= i + h; j += 4) {
++                const float32x4_t a = vld1q_f32(x + j);
++                const float32x4_t b = vld1q_f32(x + j + h);
++                vst1q_f32(x + j, vaddq_f32(a, b));
++                vst1q_f32(x + j + h, vsubq_f32(a, b));
++            }
++#endif
++            for (; j < i + h; j++) {
++                const float a = x[j];
++                const float b = x[j + h];
++                x[j] = a + b;
++                x[j + h] = a - b;
++            }
++        }
++    }
++}
++
+ static void turbo_cpu_fwht(float * x, int group_size) {
+@@ -225,17 +266,9 @@ static void turbo_cpu_fwht(float * x, int group_size) {
+     // signs1
+-    for (int i = 0; i < group_size; i++) x[i] *= s1[i];
++    turbo_cpu_apply_signs(x, s1, 1.0f, group_size);
+ 
+     // butterfly stages
+-    for (int h = 1; h < group_size; h *= 2) {
+-        for (int i = 0; i < group_size; i += h * 2) {
+-            for (int j = i; j < i + h; j++) {
+-                float a = x[j], b = x[j + h];
+-                x[j]     = a + b;
+-                x[j + h] = a - b;
+-            }
+-        }
+-    }
++    turbo_cpu_fwht_butterflies(x, group_size);
+ 
+     // normalize + signs2
+-    for (int i = 0; i < group_size; i++) x[i] *= inv_sqrt * s2[i];
++    turbo_cpu_apply_signs(x, s2, inv_sqrt, group_size);
+ }
+@@ -256,17 +289,9 @@ GGML_API void turbo_cpu_fwht_inverse(float * x, int group_size) {
+     // signs2 (undoes the s2 that was applied last in the forward pass)
+-    for (int i = 0; i < group_size; i++) x[i] *= s2[i];
++    turbo_cpu_apply_signs(x, s2, 1.0f, group_size);
+ 
+     // butterfly stages (same as forward — self-inverse up to the inv_sqrt scaling below)
+-    for (int h = 1; h < group_size; h *= 2) {
+-        for (int i = 0; i < group_size; i += h * 2) {
+-            for (int j = i; j < i + h; j++) {
+-                float a = x[j], b = x[j + h];
+-                x[j]     = a + b;
+-                x[j + h] = a - b;
+-            }
+-        }
+-    }
++    turbo_cpu_fwht_butterflies(x, group_size);
+ 
+     // normalize + signs1
+-    for (int i = 0; i < group_size; i++) x[i] *= inv_sqrt * s1[i];
++    turbo_cpu_apply_signs(x, s1, inv_sqrt, group_size);
+ }

@@ -154,3 +154,12 @@ provenance refusal, and memory-policy tests.
 The app automatically selects TurboQuant only when a packaged runtime passes
 its local provenance probe. CPU packages may now advertise it. CUDA and HIP
 artifacts must not be published until their physical-runner gates pass.
+
+## Android expansion
+
+Phase 6 adds a reproducible Android ARM64 CPU cross-build and a checksum-pinned
+NEON WHT patch, but does not package or advertise the fork on Android. The
+fork's context-parameter ABI differs from the current Dart binding, no Android
+device is attached for runtime/thermal certification, and the production
+device allowlist is therefore empty. Vulkan/OpenCL remain disabled. Full
+evidence and promotion criteria are in `docs/ANDROID_TURBOQUANT.md`.

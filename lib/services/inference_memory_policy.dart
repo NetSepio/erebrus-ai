@@ -36,14 +36,22 @@ class InferenceMemoryPolicy {
               : ramGB < 24
               ? 8192
               : 16384);
-    final contextSize = backend == BackendKind.turboQuant && !mobile
-        ? (ramGB < 8
-              ? 4096
-              : ramGB < 16
-              ? 8192
-              : ramGB < 32
-              ? 16384
-              : 32768)
+    final contextSize = backend == BackendKind.turboQuant
+        ? mobile
+              ? (ramGB < 6
+                    ? 1024
+                    : ramGB < 8
+                    ? 2048
+                    : ramGB < 12
+                    ? 4096
+                    : 8192)
+              : (ramGB < 8
+                    ? 4096
+                    : ramGB < 16
+                    ? 8192
+                    : ramGB < 32
+                    ? 16384
+                    : 32768)
         : baselineContextSize;
     final reserveGB = mobile
         ? (ramGB < 6 ? 1.5 : 2.0)

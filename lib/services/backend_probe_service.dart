@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:erebrus_mlx/erebrus_mlx.dart';
 
+import 'android_acceleration_service.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'llama_cpp_backend.dart';
@@ -88,6 +89,8 @@ class BackendProbeService extends ChangeNotifier {
             formats: const ['gguf'],
             reason: 'TurboQuant process probing is disabled in unit tests',
           )
+        : profile.platform.startsWith('android-')
+        ? await _probeAndroidTurboQuantCandidate(profile)
         : await TurboQuantBackend(platform: profile.platform).probe();
     final apple =
         profile.platform.startsWith('macos-') ||
@@ -143,6 +146,27 @@ class BackendProbeService extends ChangeNotifier {
         reason: 'MLX native probe did not respond: $error',
       );
     }
+  }
+
+  Future<BackendCapabilities> _probeAndroidTurboQuantCandidate(
+    DeviceProfile profile,
+  ) async {
+    const service = AndroidAccelerationService();
+    final hardware = await service.probeHardware();
+    final decision = hardware == null
+        ? null
+        : service.evaluate(hardware, ramGB: profile.ramGB);
+    return BackendCapabilities(
+      kind: BackendKind.turboQuant,
+      operational: false,
+      platforms: [profile.platform],
+      formats: const ['gguf'],
+      accelerators: const [],
+      reason:
+          decision?.reason ??
+          'Android TurboQuant ARM64 candidate is not runtime-certified; '
+              'using upstream llama.cpp',
+    );
   }
 
   @visibleForTesting
