@@ -162,6 +162,7 @@ class TranscriptionSession {
       : TranscriptEditState.edited;
 
   String get effectiveTranscript => editedTranscript ?? rawTranscript;
+  bool get hasTranscript => effectiveTranscript.trim().isNotEmpty;
 
   Map<String, Object?> toJson() => {
     'schema_version': schemaVersion,

@@ -4,7 +4,9 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/transcription_session.dart';
 import '../../services/chat_service.dart';
+import '../../services/transcription_contract.dart';
 import '../../services/transcription_service.dart';
+import '../../services/whisper_model_manager.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
@@ -159,7 +161,8 @@ class _RecorderPane extends StatelessWidget {
                     ),
                     const SizedBox(width: 9),
                     Text(
-                      _stateLabel(service.state),
+                      '${_stateLabel(service.state)}'
+                      '${recording ? ' · ${service.activeBackend == TranscriptionBackendKind.whisperCpp ? 'WHISPER.CPP' : 'SPEECHANALYZER'}' : ''}',
                       style: AppText.mono(
                         11,
                         weight: FontWeight.w600,
@@ -232,6 +235,8 @@ class _RecorderPane extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          const _WhisperFallbackCard(),
           if (!widgetIsWide(context) && service.sessions.isNotEmpty) ...[
             const SizedBox(height: 20),
             Text('RECENT SESSIONS', style: AppText.sectionHeader()),
@@ -242,6 +247,100 @@ class _RecorderPane extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _WhisperFallbackCard extends StatelessWidget {
+  const _WhisperFallbackCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final manager = WhisperModelManager.instance;
+    return AnimatedBuilder(
+      animation: manager,
+      builder: (context, _) => FutureBuilder<String?>(
+        future: manager.installedPath(),
+        builder: (context, snapshot) {
+          final installed = snapshot.data != null;
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.stroke),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Symbols.offline_bolt,
+                  color: AppColors.accentHi,
+                  size: 21,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Whisper Tiny fallback',
+                        style: AppText.grotesk(13, weight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        installed
+                            ? 'Verified · 74 MB · multilingual · on device'
+                            : manager.downloading
+                            ? '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}% · checksum verified after download'
+                            : 'Required on Android, Windows, Linux, and older Apple OS versions',
+                        style: AppText.grotesk(
+                          11.5,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (installed)
+                  const Icon(
+                    Symbols.check_circle,
+                    color: AppColors.success,
+                    size: 20,
+                  )
+                else if (manager.downloading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.accent,
+                    ),
+                  )
+                else
+                  GhostButton(
+                    'DOWNLOAD',
+                    icon: Symbols.download,
+                    onTap: () => _install(context, manager),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _install(
+    BuildContext context,
+    WhisperModelManager manager,
+  ) async {
+    try {
+      await manager.install();
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Whisper install failed: $error')));
+    }
   }
 }
 
@@ -291,6 +390,13 @@ class _StoredTranscript extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!session.hasTranscript) {
+      return Text(
+        'Transcript deleted. The session audio is still available for replay '
+        'or sharing.',
+        style: AppText.grotesk(14, color: AppColors.textMuted, height: 1.55),
+      );
+    }
     if (session.segments.isEmpty ||
         session.editState == TranscriptEditState.edited) {
       return SelectableText(
@@ -378,45 +484,51 @@ class _SessionActions extends StatelessWidget {
       spacing: 9,
       runSpacing: 9,
       children: [
-        AccentChip('ANALYZE', icon: Symbols.auto_awesome, onTap: onAnalyze),
+        if (session.hasTranscript)
+          AccentChip('ANALYZE', icon: Symbols.auto_awesome, onTap: onAnalyze),
         AccentChip(
           service.isPlaying ? 'PAUSE AUDIO' : 'PLAY AUDIO',
           icon: service.isPlaying ? Symbols.pause : Symbols.play_arrow,
           onTap: () => _guard(context, service.playCurrent),
         ),
-        AccentChip('EDIT', icon: Symbols.edit, onTap: () => _edit(context)),
-        if (session.editState == TranscriptEditState.edited)
+        if (session.hasTranscript)
+          AccentChip('EDIT', icon: Symbols.edit, onTap: () => _edit(context)),
+        if (session.hasTranscript &&
+            session.editState == TranscriptEditState.edited)
           AccentChip(
             'VIEW RAW',
             icon: Symbols.difference,
             onTap: () => _showRaw(context),
           ),
-        AccentChip(
-          'COPY',
-          icon: Symbols.content_copy,
-          onTap: () async {
-            await Clipboard.setData(
-              ClipboardData(text: session.effectiveTranscript),
-            );
-          },
-        ),
+        if (session.hasTranscript)
+          AccentChip(
+            'COPY',
+            icon: Symbols.content_copy,
+            onTap: () async {
+              await Clipboard.setData(
+                ClipboardData(text: session.effectiveTranscript),
+              );
+            },
+          ),
         PopupMenuButton<TranscriptionShareKind>(
           color: AppColors.surface,
           onSelected: (kind) =>
               _guard(context, () => service.shareCurrent(kind)),
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: TranscriptionShareKind.transcript,
-              child: Text('Transcript'),
-            ),
+          itemBuilder: (_) => [
+            if (session.hasTranscript)
+              const PopupMenuItem(
+                value: TranscriptionShareKind.transcript,
+                child: Text('Transcript'),
+              ),
             PopupMenuItem(
               value: TranscriptionShareKind.audio,
               child: Text('Audio'),
             ),
-            PopupMenuItem(
-              value: TranscriptionShareKind.both,
-              child: Text('Both'),
-            ),
+            if (session.hasTranscript)
+              const PopupMenuItem(
+                value: TranscriptionShareKind.both,
+                child: Text('Both'),
+              ),
           ],
           child: const AccentChip('SHARE', icon: Symbols.share),
         ),
@@ -571,7 +683,7 @@ class _SessionTile extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         title: Text(
           session.effectiveTranscript.isEmpty
-              ? 'Untitled transcription'
+              ? 'Audio-only session'
               : session.effectiveTranscript,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,

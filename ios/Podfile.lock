@@ -14,6 +14,8 @@ PODS:
     - Flutter
   - sign_in_with_apple (0.0.1):
     - Flutter
+  - whisper_ggml_plus (1.3.1):
+    - Flutter
 
 DEPENDENCIES:
   - coinbase_wallet_sdk (from `.symlinks/plugins/coinbase_wallet_sdk/ios`)
@@ -22,6 +24,7 @@ DEPENDENCIES:
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_tts (from `.symlinks/plugins/flutter_tts/ios`)
   - sign_in_with_apple (from `.symlinks/plugins/sign_in_with_apple/ios`)
+  - whisper_ggml_plus (from `.symlinks/plugins/whisper_ggml_plus/ios`)
 
 SPEC REPOS:
   trunk:
@@ -40,6 +43,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_tts/ios"
   sign_in_with_apple:
     :path: ".symlinks/plugins/sign_in_with_apple/ios"
+  whisper_ggml_plus:
+    :path: ".symlinks/plugins/whisper_ggml_plus/ios"
 
 SPEC CHECKSUMS:
   coinbase_wallet_sdk: 7ccd4e1a7940deba6ba9bd81beece999a2268c15
@@ -49,6 +54,7 @@ SPEC CHECKSUMS:
   flutter_local_notifications: df98d66e515e1ca797af436137b4459b160ad8c9
   flutter_tts: 91ad1884033cd95ef6e9338754adad54f01f090f
   sign_in_with_apple: f3bf75217ea4c2c8b91823f225d70230119b8440
+  whisper_ggml_plus: bc246e13d703b406453fe5fac6ceda7ae2217092
 
 PODFILE CHECKSUM: 04d97c35eee2f58be76ac97bfe2f9622f66611af
 

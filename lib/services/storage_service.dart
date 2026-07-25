@@ -233,6 +233,12 @@ class StorageService {
     return dir;
   }
 
+  Future<Directory> asrModelsDir() async {
+    final dir = Directory(p.join((await baseDir()).path, 'asr-models'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
   Future<Directory> telemetryDir() async {
     final dir = Directory(p.join((await baseDir()).path, 'telemetry'));
     if (!await dir.exists()) await dir.create(recursive: true);

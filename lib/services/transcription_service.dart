@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:erebrus_speech/erebrus_speech.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:record/record.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/transcription_session.dart';
+import 'inference_service.dart';
 import 'transcription_contract.dart';
 import 'transcription_session_repository.dart';
+import 'whisper_cpp_backend.dart';
+import 'whisper_model_manager.dart';
 
 enum TranscriptionUiState {
   ready,
@@ -29,13 +34,17 @@ class TranscriptionService extends ChangeNotifier {
     this.speech = const ErebrusSpeech(),
     TranscriptionSessionRepository? repository,
     AudioPlayer? audioPlayer,
+    AudioRecorder? recorder,
   }) : _repository = repository ?? TranscriptionSessionRepository.instance,
-       _audioPlayer = audioPlayer ?? AudioPlayer();
+       _audioPlayer = audioPlayer ?? AudioPlayer(),
+       _recorder = recorder ?? AudioRecorder();
 
   final ErebrusSpeech speech;
   final TranscriptionSessionRepository _repository;
   final AudioPlayer _audioPlayer;
+  final AudioRecorder _recorder;
   final List<TranscriptSegment> _segments = [];
+  final Stopwatch _recordingClock = Stopwatch();
 
   StreamSubscription<SpeechTranscriptionEvent>? _subscription;
   StreamSubscription<Duration>? _positionSubscription;
@@ -52,6 +61,7 @@ class TranscriptionService extends ChangeNotifier {
   Duration _playbackPosition = Duration.zero;
   bool _playing = false;
   bool _initialized = false;
+  bool _usingWhisper = false;
 
   TranscriptionUiState get state => _state;
   Duration get elapsed => _elapsed;
@@ -71,6 +81,9 @@ class TranscriptionService extends ChangeNotifier {
   TranscriptionSession? get current => _current;
   Duration get playbackPosition => _playbackPosition;
   bool get isPlaying => _playing;
+  TranscriptionBackendKind get activeBackend => _usingWhisper
+      ? TranscriptionBackendKind.whisperCpp
+      : TranscriptionBackendKind.speechAnalyzer;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -104,32 +117,57 @@ class TranscriptionService extends ChangeNotifier {
     _segments.clear();
     _partialText = '';
     _elapsed = Duration.zero;
+    _recordingClock
+      ..reset()
+      ..start();
     notifyListeners();
 
     try {
-      final probe = await speech.probe(locale: locale);
-      if (!probe.available || !probe.localeSupported) {
-        throw StateError(
-          probe.reason.isEmpty
-              ? 'SpeechAnalyzer is unavailable for $locale'
-              : probe.reason,
-        );
-      }
       final sessionId = const Uuid().v4();
       final directory = await _repository.createSessionDirectory(sessionId);
       _activeSessionId = sessionId;
       _startedAt = DateTime.now().toUtc();
-      await _subscription?.cancel();
-      _subscription = speech.events.listen(
-        _handleEvent,
-        onError: (Object error) => _fail(error.toString()),
-      );
-      await speech.start(sessionDirectory: directory.path, locale: locale);
+      SpeechAnalyzerProbe? speechProbe;
+      try {
+        speechProbe = await speech.probe(locale: locale);
+      } on Object {
+        speechProbe = null;
+      }
+      final useSpeechAnalyzer =
+          speechProbe?.available == true &&
+          speechProbe?.localeSupported == true;
+      _usingWhisper = !useSpeechAnalyzer;
+      if (useSpeechAnalyzer) {
+        await _subscription?.cancel();
+        _subscription = speech.events.listen(
+          _handleEvent,
+          onError: (Object error) => _fail(error.toString()),
+        );
+        await speech.start(sessionDirectory: directory.path, locale: locale);
+      } else {
+        final modelPath = await WhisperModelManager.instance.installedPath();
+        if (modelPath == null) {
+          throw StateError(
+            'Download the 74 MB Whisper Tiny fallback before recording on this device',
+          );
+        }
+        if (!await _recorder.hasPermission()) {
+          throw StateError('Microphone permission is required');
+        }
+        await InferenceService.instance.unload();
+        await _recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+          path: p.join(directory.path, 'audio.wav'),
+        );
+      }
       _state = TranscriptionUiState.recording;
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        final startedAt = _startedAt;
-        if (startedAt != null && _state == TranscriptionUiState.recording) {
-          _elapsed = DateTime.now().toUtc().difference(startedAt);
+        if (_state == TranscriptionUiState.recording) {
+          _elapsed = _recordingClock.elapsed;
           notifyListeners();
         }
       });
@@ -141,14 +179,25 @@ class TranscriptionService extends ChangeNotifier {
 
   Future<void> pause() async {
     if (_state != TranscriptionUiState.recording) return;
-    await speech.pause();
+    if (_usingWhisper) {
+      await _recorder.pause();
+    } else {
+      await speech.pause();
+    }
+    _recordingClock.stop();
+    _elapsed = _recordingClock.elapsed;
     _state = TranscriptionUiState.paused;
     notifyListeners();
   }
 
   Future<void> resume() async {
     if (_state != TranscriptionUiState.paused) return;
-    await speech.resume();
+    if (_usingWhisper) {
+      await _recorder.resume();
+    } else {
+      await speech.resume();
+    }
+    _recordingClock.start();
     _state = TranscriptionUiState.recording;
     notifyListeners();
   }
@@ -160,19 +209,58 @@ class TranscriptionService extends ChangeNotifier {
     }
     _state = TranscriptionUiState.finalizing;
     _ticker?.cancel();
+    _recordingClock.stop();
+    _elapsed = _recordingClock.elapsed;
     notifyListeners();
     try {
-      final result = await speech.stop();
-      await _subscription?.cancel();
-      _subscription = null;
       final sessionId = _activeSessionId;
       final createdAt = _startedAt;
       if (sessionId == null || createdAt == null) {
         throw StateError('The transcription session identity was lost');
       }
-      final raw = result.transcript.trim().isEmpty
-          ? finalizedText
-          : result.transcript.trim();
+      late final String raw;
+      late final String audioPath;
+      var backend = TranscriptionBackendKind.speechAnalyzer;
+      var backendVersion = 'SpeechAnalyzer';
+      if (_usingWhisper) {
+        final recordedPath = await _recorder.stop();
+        if (recordedPath == null) {
+          throw StateError('The recorder did not return an audio file');
+        }
+        audioPath = recordedPath;
+        await InferenceService.instance.unload();
+        final modelPath = await WhisperModelManager.instance.installedPath();
+        if (modelPath == null) {
+          throw StateError('The verified Whisper model is unavailable');
+        }
+        final whisperBackend = WhisperCppBackend(modelPath: modelPath);
+        await whisperBackend.prepare(TranscriptionConfig(locale: _locale));
+        await for (final event in whisperBackend.transcribe(
+          AudioInput.file(audioPath),
+        )) {
+          switch (event) {
+            case TranscriptionSegmentUpdated(:final segment):
+              _segments.add(segment);
+              notifyListeners();
+            case TranscriptionFailure(:final message):
+              throw StateError(message);
+            default:
+              break;
+          }
+        }
+        final result = await whisperBackend.finish();
+        raw = result.text;
+        backend = TranscriptionBackendKind.whisperCpp;
+        backendVersion = 'whisper.cpp 1.8.3';
+      } else {
+        final result = await speech.stop();
+        await _subscription?.cancel();
+        _subscription = null;
+        audioPath = result.audioPath;
+        raw = result.transcript.trim().isEmpty
+            ? finalizedText
+            : result.transcript.trim();
+      }
       _current = await _repository.finalize(
         sessionId: sessionId,
         createdAt: createdAt,
@@ -180,7 +268,11 @@ class TranscriptionService extends ChangeNotifier {
         locale: _locale,
         rawTranscript: raw,
         segments: _segments,
-        audioPath: result.audioPath,
+        audioPath: audioPath,
+        backend: backend,
+        backendVersion: backendVersion,
+        audioSampleRate: _usingWhisper ? 16000 : 0,
+        audioChannels: _usingWhisper ? 1 : 0,
       );
       _partialText = '';
       _state = TranscriptionUiState.complete;
@@ -196,7 +288,11 @@ class TranscriptionService extends ChangeNotifier {
     _ticker?.cancel();
     await _subscription?.cancel();
     _subscription = null;
-    await speech.cancel();
+    if (_usingWhisper) {
+      await _recorder.cancel();
+    } else {
+      await speech.cancel();
+    }
     _reset();
   }
 
@@ -283,6 +379,7 @@ class TranscriptionService extends ChangeNotifier {
 
   void _fail(String message) {
     _ticker?.cancel();
+    _recordingClock.stop();
     _error = message;
     _state = TranscriptionUiState.failed;
     notifyListeners();
@@ -290,6 +387,9 @@ class TranscriptionService extends ChangeNotifier {
 
   void _reset() {
     _ticker?.cancel();
+    _recordingClock
+      ..stop()
+      ..reset();
     _state = TranscriptionUiState.ready;
     _segments.clear();
     _partialText = '';
@@ -312,6 +412,7 @@ class TranscriptionService extends ChangeNotifier {
     unawaited(_positionSubscription?.cancel());
     unawaited(_playerStateSubscription?.cancel());
     unawaited(_audioPlayer.dispose());
+    unawaited(_recorder.dispose());
     super.dispose();
   }
 }

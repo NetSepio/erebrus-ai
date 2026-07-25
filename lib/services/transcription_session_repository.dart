@@ -58,6 +58,11 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     required String rawTranscript,
     required List<TranscriptSegment> segments,
     required String audioPath,
+    TranscriptionBackendKind backend = TranscriptionBackendKind.speechAnalyzer,
+    String backendVersion = 'SpeechAnalyzer',
+    String audioCodec = 'pcm',
+    int audioSampleRate = 0,
+    int audioChannels = 0,
   }) async {
     final directory = await createSessionDirectory(sessionId);
     final sourceAudio = File(audioPath);
@@ -69,6 +74,9 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     }
     final storedAudio = await _audioMetadata(
       await destinationAudio.exists() ? destinationAudio : sourceAudio,
+      codec: audioCodec,
+      sampleRate: audioSampleRate,
+      channels: audioChannels,
     );
     final now = DateTime.now().toUtc();
     final session = TranscriptionSession(
@@ -77,8 +85,8 @@ class TranscriptionSessionRepository extends ChangeNotifier {
       updatedAt: now,
       durationMilliseconds: duration.inMilliseconds,
       status: TranscriptionSessionStatus.complete,
-      backend: TranscriptionBackendKind.speechAnalyzer,
-      backendVersion: 'SpeechAnalyzer',
+      backend: backend,
+      backendVersion: backendVersion,
       locale: locale,
       assetVersion: 'system-managed',
       audio: storedAudio,
@@ -205,16 +213,21 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     }
   }
 
-  Future<TranscriptionAudioMetadata?> _audioMetadata(File file) async {
+  Future<TranscriptionAudioMetadata?> _audioMetadata(
+    File file, {
+    required String codec,
+    required int sampleRate,
+    required int channels,
+  }) async {
     if (!await file.exists()) return null;
     final size = await file.length();
     final digest = await sha256.bind(file.openRead()).first;
     return TranscriptionAudioMetadata(
       relativePath: p.basename(file.path),
       container: p.extension(file.path).replaceFirst('.', '').toLowerCase(),
-      codec: 'pcm',
-      sampleRate: 0,
-      channels: 0,
+      codec: codec,
+      sampleRate: sampleRate,
+      channels: channels,
       sizeBytes: size,
       sha256: digest.toString(),
     );

@@ -114,7 +114,7 @@ permissions remain mandatory; no audio or transcript leaves the device.
 | MLX Swift | Packaged on iOS 17+/macOS 14+; macOS runtime and unsigned iOS release build verified | `mlx · Metal` only after a successful runtime probe |
 | TurboQuant | Contract and selection policy only | unavailable |
 | SpeechAnalyzer | Native live-capture, streamed transcription, and session-audio prototype packaged; runtime-gated to iOS/macOS 26+ | `SpeechAnalyzer · on-device` only after a successful locale/asset probe |
-| whisper.cpp | Not packaged | unavailable |
+| whisper.cpp ASR | Exact-pinned 1.8.3 runtime packaged; Android, universal macOS, and unsigned iOS release builds verified; Windows/Linux build gates run in CI | `whisper.cpp · on-device` only after the verified Tiny model is installed |
 
 Promotion from experimental to beta/stable requires release builds on the
 representative matrix, no corrupt output, bounded memory behavior, and a tested
@@ -127,3 +127,10 @@ thermal certification still require the physical device classes listed above.
 The iOS CI job likewise verifies device/simulator Metal slices and builds an
 unsigned release app containing MLX Swift. A signed build on physical iPhones
 is still required before declaring any device tier certified.
+
+The offline ASR path records 16 kHz mono WAV before file-based transcription,
+keeps the chat LLM unloaded during constrained-device ASR, and verifies the
+revision-pinned Whisper Tiny model by exact size and SHA-256. See
+`docs/OFFLINE_TRANSCRIPTION.md` for provenance, session evidence, and current
+build coverage. Android, universal macOS, and unsigned iOS builds pass; Windows
+and Linux are implementation-complete but remain CI/physical-runtime gates.

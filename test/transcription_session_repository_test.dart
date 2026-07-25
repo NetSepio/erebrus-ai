@@ -43,12 +43,16 @@ void main() {
           ),
         ],
         audioPath: audio.path,
+        audioSampleRate: 16000,
+        audioChannels: 1,
       );
       final edited = await repository.saveEdit(session, 'corrected words');
 
       expect(edited.rawTranscript, 'raw words');
       expect(edited.effectiveTranscript, 'corrected words');
       expect(edited.audio?.sha256, isNotEmpty);
+      expect(edited.audio?.sampleRate, 16000);
+      expect(edited.audio?.channels, 1);
       expect(File('${directory.path}/session.json').existsSync(), isTrue);
       expect(
         File('${directory.path}/transcript.raw.json').existsSync(),

@@ -73,6 +73,11 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+      - name: Verify universal Whisper runtime
+        run: |
+          binary="build/macos/Build/Products/Release/Erebrus AI.app/Contents/Frameworks/whisper_ggml_plus.framework/Versions/A/whisper_ggml_plus"
+          lipo "$binary" -verify_arch arm64 x86_64
+
   build-ios:
     name: Build iOS (unsigned)
     runs-on: macos-15
@@ -187,6 +192,13 @@ jobs:
 
       - name: Build Android
         run: flutter build apk --release
+
+      - name: Verify packaged Whisper ABIs
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-release.apk > apk-contents.txt
+          grep -q 'lib/arm64-v8a/libwhisper.so' apk-contents.txt
+          grep -q 'lib/armeabi-v7a/libwhisper.so' apk-contents.txt
+          grep -q 'lib/x86_64/libwhisper.so' apk-contents.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

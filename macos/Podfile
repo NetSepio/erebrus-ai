@@ -38,5 +38,33 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
+
+    # whisper_ggml_plus 1.5.2 globally includes ARM kernels and excludes x86
+    # kernels even though macOS pods are universal. Correct the source set per
+    # architecture so both Apple-silicon and Intel releases link.
+    if target.name == 'whisper_ggml_plus'
+      x86_root = File.expand_path(
+        File.join(
+          'Flutter', 'ephemeral', '.symlinks', 'plugins',
+          'whisper_ggml_plus', 'macos', 'Classes', 'whisper', 'ggml',
+          'src', 'ggml-cpu', 'arch', 'x86'
+        ),
+        __dir__
+      )
+      ['quants.c', 'repack.cpp'].each do |filename|
+        reference = installer.pods_project.new_file(
+          File.join(x86_root, filename)
+        )
+        target.source_build_phase.add_file_reference(reference, true)
+      end
+      target.build_configurations.each do |configuration|
+        configuration.build_settings[
+          'EXCLUDED_SOURCE_FILE_NAMES[arch=x86_64]'
+        ] = '*/ggml-cpu/arch/arm/*'
+        configuration.build_settings[
+          'EXCLUDED_SOURCE_FILE_NAMES[arch=arm64]'
+        ] = '*/ggml-cpu/arch/x86/*'
+      end
+    end
   end
 end

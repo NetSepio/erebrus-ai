@@ -46,6 +46,10 @@ dependencies:
   erebrus_speech:
     path: packages/erebrus_speech
   audioplayers: ^6.8.1
+  # Native runtime is exact-pinned because its bundled whisper.cpp source is
+  # part of the trusted execution path.
+  whisper_ggml_plus: 1.5.2
+  record: ^7.1.1
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8
@@ -58,6 +62,10 @@ dependency_overrides:
     path: third_party/lib_llama_cpp_macos
   lib_llama_cpp_ios:
     path: third_party/lib_llama_cpp_ios
+  # whisper_ggml_plus uses the current annotations package while the Solana
+  # mobile client retains an unnecessarily narrow 2.x constraint. Both consume
+  # only the stable annotation API; app-wide builds and wallet tests gate this.
+  freezed_annotation: ^3.1.0
 
 dev_dependencies:
   flutter_test:
