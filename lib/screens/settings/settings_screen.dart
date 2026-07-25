@@ -10,7 +10,9 @@ import '../../state/app_state.dart';
 import '../../services/speech_service.dart';
 import '../../services/backend_probe_service.dart';
 import '../../services/local_server_service.dart';
+import '../../services/on_device_diagnostics_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/transcription_service.dart';
 import '../../org/ai_org.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -189,6 +191,14 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _openPersonas(context, wide),
           ),
         ],
+      ),
+      SizedBox(height: wide ? 20 : 18),
+      _SectionLabel('ON-DEVICE DATA', wide: wide),
+      SizedBox(height: wide ? 9 : 8),
+      _TranscriptionDataCard(
+        dense: !wide,
+        defaultModelId: app.defaultModelId,
+        defaultVariantId: app.defaultModelVariantId,
       ),
       SizedBox(height: wide ? 20 : 18),
       _SectionLabel('VOICE', wide: wide),
@@ -572,6 +582,190 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(label, style: AppText.sectionHeader(size: wide ? 11 : 10.5));
   }
+}
+
+class _TranscriptionDataCard extends StatelessWidget {
+  const _TranscriptionDataCard({
+    required this.dense,
+    required this.defaultModelId,
+    required this.defaultVariantId,
+  });
+
+  final bool dense;
+  final String defaultModelId;
+  final String defaultVariantId;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = TranscriptionService.instance;
+    return SettingsCard(
+      children: [
+        FutureBuilder<int>(
+          future: service.storageBytes(),
+          builder: (context, snapshot) => SettingsRow(
+            icon: Symbols.audio_file,
+            title: 'Transcriptions and session audio',
+            subtitle:
+                '${service.sessions.length} sessions · ${_formatBytes(snapshot.data ?? 0)} · stored only on this device',
+            dense: dense,
+          ),
+        ),
+        SettingsRow(
+          icon: Symbols.folder_copy,
+          title: 'Export transcription data',
+          subtitle:
+              'Copies transcripts, metadata, and session audio to a folder you choose',
+          dense: dense,
+          trailing: const [RowValue('EXPORT')],
+          onTap: () => _exportTranscriptions(context, service),
+        ),
+        SettingsRow(
+          icon: Symbols.delete_forever,
+          iconColor: AppColors.danger,
+          title: 'Delete all transcription data',
+          titleColor: AppColors.danger,
+          subtitle:
+              'Permanently removes transcripts, indexes, and session audio',
+          dense: dense,
+          onTap: () => _deleteTranscriptions(context, service),
+        ),
+        SettingsRow(
+          icon: Symbols.monitor_heart,
+          title: 'On-device diagnostics',
+          subtitle:
+              'Backend, model, ASR, RAM, and storage status—never transcript text or paths',
+          dense: dense,
+          trailing: const [RowValue('VIEW')],
+          onTap: () => _showDiagnostics(
+            context,
+            defaultModelId: defaultModelId,
+            defaultVariantId: defaultVariantId,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> _exportTranscriptions(
+  BuildContext context,
+  TranscriptionService service,
+) async {
+  final consent = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Export private transcription data?'),
+      content: const Text(
+        'The export includes transcript text and any saved session audio. '
+        'Choose a folder you control and protect the exported files.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('I UNDERSTAND'),
+        ),
+      ],
+    ),
+  );
+  if (consent != true || !context.mounted) return;
+  final path = await FilePicker.platform.getDirectoryPath(
+    dialogTitle: 'Choose export destination',
+  );
+  if (path == null || !context.mounted) return;
+  try {
+    final exported = await service.exportAll(
+      Directory(path),
+      userConsented: true,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Exported to ${exported.path}')));
+  } on Object catch (error) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Export failed: $error')));
+  }
+}
+
+Future<void> _deleteTranscriptions(
+  BuildContext context,
+  TranscriptionService service,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete every transcription?'),
+      content: const Text(
+        'This permanently deletes all transcript text, local search indexes, '
+        'metadata, and saved session audio. This cannot be undone.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('DELETE EVERYTHING'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await service.deleteAll();
+}
+
+Future<void> _showDiagnostics(
+  BuildContext context, {
+  required String defaultModelId,
+  required String defaultVariantId,
+}) async {
+  final report = await const OnDeviceDiagnosticsService().collectJson(
+    defaultModelId: defaultModelId,
+    defaultVariantId: defaultVariantId,
+  );
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('On-device diagnostics'),
+      content: SizedBox(
+        width: 620,
+        child: SingleChildScrollView(
+          child: SelectableText(report, style: AppText.mono(10.5)),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: report));
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: const Text('COPY'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CLOSE'),
+        ),
+      ],
+    ),
+  );
+}
+
+String _formatBytes(int bytes) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '$bytes B';
 }
 
 void _showResponseLengthSheet(BuildContext context) {

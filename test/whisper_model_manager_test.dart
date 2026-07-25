@@ -78,4 +78,51 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'keeps a verified previous revision and rolls back atomically',
+    () async {
+      final firstBytes = utf8.encode('first verified model');
+      final secondBytes = utf8.encode('second verified model');
+      server.listen((request) async {
+        final bytes = request.uri.path.endsWith('second')
+            ? secondBytes
+            : firstBytes;
+        request.response.contentLength = bytes.length;
+        request.response.add(bytes);
+        await request.response.close();
+      });
+      WhisperModelSpec fixture(
+        String revision,
+        String endpoint,
+        List<int> bytes,
+      ) => WhisperModelSpec(
+        id: 'fixture',
+        filename: 'ggml-fixture.bin',
+        downloadUrl: 'http://${server.address.host}:${server.port}/$endpoint',
+        revision: revision,
+        sizeBytes: bytes.length,
+        sha256: sha256.convert(bytes).toString(),
+        minimumRamGB: 0.1,
+      );
+
+      final first = WhisperModelManager(
+        directoryProvider: () async => directory,
+        spec: fixture('revision-1', 'first', firstBytes),
+      );
+      await first.install();
+      final second = WhisperModelManager(
+        directoryProvider: () async => directory,
+        spec: fixture('revision-2', 'second', secondBytes),
+      );
+      final path = await second.install();
+
+      expect(await File(path).readAsBytes(), secondBytes);
+      expect(File('$path.previous').existsSync(), isTrue);
+      expect(second.activeRevision, 'revision-2');
+      expect(await second.rollback(), isTrue);
+      expect(await File(path).readAsBytes(), firstBytes);
+      expect(second.activeRevision, 'revision-1');
+    },
+  );
 }

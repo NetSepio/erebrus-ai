@@ -29,6 +29,12 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-pub
 
+      - name: Validate benchmark regression gate
+        run: >-
+          dart tool/check_benchmark_regression.dart
+          tool/benchmark_baseline.fixture.json
+          tool/benchmark_candidate.fixture.json
+
       - name: Run tests
         run: flutter test
 

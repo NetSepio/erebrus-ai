@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:erebrus_speech/erebrus_speech.dart';
@@ -84,6 +85,21 @@ class TranscriptionService extends ChangeNotifier {
   TranscriptionBackendKind get activeBackend => _usingWhisper
       ? TranscriptionBackendKind.whisperCpp
       : TranscriptionBackendKind.speechAnalyzer;
+
+  List<TranscriptionSession> searchSessions(String query) =>
+      _repository.search(query);
+
+  Future<int> storageBytes() => _repository.storageBytes();
+
+  Future<Directory> exportAll(
+    Directory destination, {
+    required bool userConsented,
+  }) => _repository.exportTo(destination, userConsented: userConsented);
+
+  Future<void> deleteAll() async {
+    await _repository.deleteAll();
+    _reset();
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;

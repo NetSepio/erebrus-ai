@@ -128,32 +128,39 @@ class PrimaryCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cta = GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: AppColors.accent,
-          borderRadius: BorderRadius.circular(radius),
-          boxShadow: glow && enabled
-              ? [
-                  BoxShadow(
-                    color: AppColors.accent.withA(0.55),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10),
-                    spreadRadius: -10,
-                  ),
-                ]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: AppText.mono(
-            fontSize,
-            weight: FontWeight.w600,
-            color: AppColors.onAccent,
-            lsEm: 0.05,
+    final cta = Semantics(
+      button: true,
+      enabled: enabled && onTap != null,
+      label: label,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+              borderRadius: BorderRadius.circular(radius),
+              boxShadow: glow && enabled
+                  ? [
+                      BoxShadow(
+                        color: AppColors.accent.withA(0.55),
+                        blurRadius: 30,
+                        offset: const Offset(0, 10),
+                        spreadRadius: -10,
+                      ),
+                    ]
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: AppText.mono(
+                fontSize,
+                weight: FontWeight.w600,
+                color: AppColors.onAccent,
+                lsEm: 0.05,
+              ),
+            ),
           ),
         ),
       ),
@@ -183,32 +190,39 @@ class GhostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-        decoration: BoxDecoration(
-          color: background,
-          border: Border.all(color: borderColor),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 15, color: color),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              label,
-              style: AppText.mono(
-                11,
-                weight: FontWeight.w500,
-                color: color,
-                lsEm: 0.05,
-              ),
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+            decoration: BoxDecoration(
+              color: background,
+              border: Border.all(color: borderColor),
+              borderRadius: BorderRadius.circular(10),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 15, color: color),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: AppText.mono(
+                    11,
+                    weight: FontWeight.w500,
+                    color: color,
+                    lsEm: 0.05,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -259,32 +273,39 @@ class AccentChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: AppColors.accent.withA(0.14),
-          border: Border.all(color: AppColors.accent.withA(0.3)),
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: iconSize, color: AppColors.accent),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: AppText.mono(
-                fontSize,
-                weight: FontWeight.w600,
-                color: AppColors.accent,
-                lsEm: 0.05,
-              ),
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withA(0.14),
+              border: Border.all(color: AppColors.accent.withA(0.3)),
+              borderRadius: BorderRadius.circular(radius),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: iconSize, color: AppColors.accent),
+                  const SizedBox(width: 5),
+                ],
+                Text(
+                  label,
+                  style: AppText.mono(
+                    fontSize,
+                    weight: FontWeight.w600,
+                    color: AppColors.accent,
+                    lsEm: 0.05,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

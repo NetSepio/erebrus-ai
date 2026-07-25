@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'auth/wallet_auth_controller.dart';
 import 'org/org_state.dart';
@@ -34,6 +35,12 @@ class _ErebrusAppState extends State<ErebrusApp> {
       child: MaterialApp(
         title: 'Erebrus AI',
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('en')],
         theme: _buildTheme(),
         builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
           value: const SystemUiOverlayStyle(

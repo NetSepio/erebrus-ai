@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/transcription_session.dart';
 import '../../services/chat_service.dart';
+import '../../services/transcript_prompt_template_service.dart';
 import '../../services/transcription_contract.dart';
 import '../../services/transcription_service.dart';
 import '../../services/whisper_model_manager.dart';
@@ -32,6 +33,7 @@ class _TranscribeScreenState extends State<TranscribeScreen> {
   void initState() {
     super.initState();
     _service.initialize();
+    TranscriptPromptTemplateService.instance.load();
   }
 
   @override
@@ -43,7 +45,7 @@ class _TranscribeScreenState extends State<TranscribeScreen> {
         if (widget.wide) {
           return Row(
             children: [
-              SizedBox(width: 268, child: _SessionList(service: _service)),
+              SizedBox(width: 286, child: _SessionList(service: _service)),
               const VerticalDivider(width: 1, color: AppColors.stroke),
               Expanded(child: content),
             ],
@@ -55,47 +57,172 @@ class _TranscribeScreenState extends State<TranscribeScreen> {
   }
 
   Future<void> _analyze(TranscriptionSession session) async {
-    final controller = TextEditingController(
-      text:
-          'Analyze the following transcript. Identify the key ideas and answer '
-          'the question I add above it.\n\n--- TRANSCRIPT ---\n'
-          '${session.effectiveTranscript}',
-    );
-    final approved = await showDialog<bool>(
+    final prompt = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) =>
+          _AnalysisPromptDialog(transcript: session.effectiveTranscript),
+    );
+    if (prompt == null || prompt.isEmpty) return;
+    await ChatService.instance.prepareDraft(prompt);
+    widget.onOpenChat();
+  }
+}
+
+class _AnalysisPromptDialog extends StatefulWidget {
+  const _AnalysisPromptDialog({required this.transcript});
+
+  final String transcript;
+
+  @override
+  State<_AnalysisPromptDialog> createState() => _AnalysisPromptDialogState();
+}
+
+class _AnalysisPromptDialogState extends State<_AnalysisPromptDialog> {
+  late final TextEditingController _controller;
+  late TranscriptPromptTemplate _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = TranscriptPromptTemplateService.builtIns.first;
+    _controller = TextEditingController(
+      text: _selected.promptFor(widget.transcript),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final templateService = TranscriptPromptTemplateService.instance;
+    return AnimatedBuilder(
+      animation: templateService,
+      builder: (context, _) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Prepare analysis prompt'),
         content: SizedBox(
-          width: 560,
-          child: TextField(
-            controller: controller,
-            minLines: 8,
-            maxLines: 18,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Edit the prompt before opening Chat',
-              border: OutlineInputBorder(),
-            ),
+          width: 600,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Nothing is sent or analyzed until you open this editable draft in Chat.',
+                style: AppText.grotesk(12, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _selected.id,
+                decoration: const InputDecoration(
+                  labelText: 'Prompt template',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final template in templateService.templates)
+                    DropdownMenuItem(
+                      value: template.id,
+                      child: Text(template.name),
+                    ),
+                ],
+                onChanged: (id) {
+                  final template = templateService.templates.firstWhere(
+                    (candidate) => candidate.id == id,
+                  );
+                  setState(() {
+                    _selected = template;
+                    _controller.text = template.promptFor(widget.transcript);
+                  });
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _controller,
+                minLines: 8,
+                maxLines: 16,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Edit the prompt before opening Chat',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
+          if (!_selected.builtIn)
+            TextButton(
+              onPressed: () async {
+                await templateService.delete(_selected.id);
+                if (!mounted) return;
+                setState(() {
+                  _selected = TranscriptPromptTemplateService.builtIns.first;
+                  _controller.text = _selected.promptFor(widget.transcript);
+                });
+              },
+              child: const Text('DELETE TEMPLATE'),
+            ),
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: _saveTemplate,
+            child: const Text('SAVE TEMPLATE'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
             child: const Text('CANCEL'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              final prompt = _controller.text.trim();
+              if (prompt.isNotEmpty) Navigator.pop(context, prompt);
+            },
             child: const Text('OPEN IN CHAT'),
           ),
         ],
       ),
     );
-    final prompt = controller.text.trim();
-    controller.dispose();
-    if (approved != true || prompt.isEmpty) return;
-    await ChatService.instance.prepareDraft(prompt);
-    widget.onOpenChat();
+  }
+
+  Future<void> _saveTemplate() async {
+    final nameController = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save local template'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Template name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, nameController.text.trim()),
+            child: const Text('SAVE'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    final instruction = _controller.text
+        .split('\n\n--- TRANSCRIPT ---\n')
+        .first
+        .trim();
+    final created = await TranscriptPromptTemplateService.instance.add(
+      name: name,
+      instruction: instruction,
+    );
+    if (!mounted) return;
+    setState(() => _selected = created);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 }
 
@@ -241,8 +368,7 @@ class _RecorderPane extends StatelessWidget {
             const SizedBox(height: 20),
             Text('RECENT SESSIONS', style: AppText.sectionHeader()),
             const SizedBox(height: 8),
-            for (final session in service.sessions)
-              _SessionTile(service: service, session: session),
+            _MobileSessionSearch(service: service),
           ],
         ],
       ),
@@ -288,7 +414,9 @@ class _WhisperFallbackCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         installed
-                            ? 'Verified · 74 MB · multilingual · on device'
+                            ? manager.updateAvailable
+                                  ? 'Verified update available · previous revision stays rollback-ready'
+                                  : 'Verified · 74 MB · multilingual · on device'
                             : manager.downloading
                             ? '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}% · checksum verified after download'
                             : 'Required on Android, Windows, Linux, and older Apple OS versions',
@@ -300,7 +428,19 @@ class _WhisperFallbackCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (installed)
+                if (installed && manager.updateAvailable)
+                  GhostButton(
+                    'UPDATE',
+                    icon: Symbols.system_update_alt,
+                    onTap: () => _install(context, manager),
+                  )
+                else if (installed && manager.canRollback)
+                  GhostButton(
+                    'ROLLBACK',
+                    icon: Symbols.history,
+                    onTap: () => _rollback(context, manager),
+                  )
+                else if (installed)
                   const Icon(
                     Symbols.check_circle,
                     color: AppColors.success,
@@ -340,6 +480,21 @@ class _WhisperFallbackCard extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Whisper install failed: $error')));
+    }
+  }
+
+  Future<void> _rollback(
+    BuildContext context,
+    WhisperModelManager manager,
+  ) async {
+    try {
+      final rolledBack = await manager.rollback();
+      if (!rolledBack) throw StateError('No verified ASR revision to restore');
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ASR rollback failed: $error')));
     }
   }
 }
@@ -637,13 +792,21 @@ class _SessionActions extends StatelessWidget {
   }
 }
 
-class _SessionList extends StatelessWidget {
+class _SessionList extends StatefulWidget {
   const _SessionList({required this.service});
 
   final TranscriptionService service;
 
   @override
+  State<_SessionList> createState() => _SessionListState();
+}
+
+class _SessionListState extends State<_SessionList> {
+  String _query = '';
+
+  @override
   Widget build(BuildContext context) {
+    final sessions = widget.service.searchSessions(_query);
     return Container(
       color: AppColors.bgElevated,
       padding: const EdgeInsets.fromLTRB(12, 18, 12, 12),
@@ -651,17 +814,85 @@ class _SessionList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('TRANSCRIPTIONS', style: AppText.sectionHeader()),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          Semantics(
+            textField: true,
+            label: 'Search saved transcripts on this device',
+            child: TextField(
+              onChanged: (value) => setState(() => _query = value),
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'Search transcripts',
+                prefixIcon: Icon(Symbols.search, size: 18),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           Expanded(
             child: ListView(
               children: [
-                for (final session in service.sessions)
-                  _SessionTile(service: service, session: session),
+                if (sessions.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'No local matches',
+                      style: AppText.grotesk(12, color: AppColors.textMuted),
+                    ),
+                  ),
+                for (final session in sessions)
+                  _SessionTile(service: widget.service, session: session),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MobileSessionSearch extends StatefulWidget {
+  const _MobileSessionSearch({required this.service});
+
+  final TranscriptionService service;
+
+  @override
+  State<_MobileSessionSearch> createState() => _MobileSessionSearchState();
+}
+
+class _MobileSessionSearchState extends State<_MobileSessionSearch> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = widget.service.searchSessions(_query);
+    return Column(
+      children: [
+        Semantics(
+          textField: true,
+          label: 'Search saved transcripts on this device',
+          child: TextField(
+            onChanged: (value) => setState(() => _query = value),
+            decoration: const InputDecoration(
+              isDense: true,
+              hintText: 'Search on this device',
+              prefixIcon: Icon(Symbols.search, size: 18),
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final session in sessions)
+          _SessionTile(service: widget.service, session: session),
+        if (sessions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'No local matches',
+              style: AppText.grotesk(12, color: AppColors.textMuted),
+            ),
+          ),
+      ],
     );
   }
 }

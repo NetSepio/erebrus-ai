@@ -40,6 +40,7 @@ The executable schema is `TranscriptionSession` in
 
 ```text
 transcriptions/
+  search-index.json
   <session-id>/
     session.json
     audio.caf or audio.m4a
@@ -53,6 +54,27 @@ uses edited text when it exists and otherwise uses raw text.
 
 Audio paths are relative so a session can be moved, exported, restored, and
 migrated. Interim text is intentionally not persisted as final evidence.
+
+`search-index.json` is rebuilt atomically from immutable raw text, optional
+edited text, locale, and backend. It contains no audio metadata, hashes,
+filenames, or absolute paths. Search is performed in-process and never invokes
+a network service. Full export requires an explicit `userConsented: true`
+argument and copies the session evidence into a timestamped folder selected by
+the user. Delete-all removes sessions, audio, and the index.
+
+## Verified asset slots
+
+Whisper assets use active/previous slots. A staged update must match its exact
+declared byte count and SHA-256 before activation; the last verified revision is
+retained as `.previous` and can be swapped back atomically. The slot manifest
+stores only revision, byte count, and digest.
+
+Catalog model packages use the same active/previous policy when an immutable
+variant ID publishes changed artifact digests. The app discovers catalog
+metadata updates in the background but requires the user to approve large asset
+downloads. This avoids silent mobile-data, battery, and storage consumption.
+After checksum verification, runtime readiness is tested; a failed readiness
+probe restores the previous package.
 
 ## Local telemetry
 

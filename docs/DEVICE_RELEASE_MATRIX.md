@@ -31,6 +31,12 @@ Every backend/model/device result records:
 - deterministic correctness and task-quality results;
 - packaged backend, accelerator, build revision, and fallback reason.
 
+CI compares a candidate benchmark JSON with its approved device/variant
+baseline using `tool/check_benchmark_regression.dart`. The default release
+limits are +20% model load, +20% time to first token, -10% decode throughput,
+and +15% peak memory. Updating a baseline requires the corresponding physical
+device evidence; the synthetic fixture in CI only verifies gate behavior.
+
 Run the packaged llama.cpp CPU baseline on macOS with:
 
 ```sh
@@ -116,6 +122,14 @@ permissions remain mandatory; no audio or transcript leaves the device.
 | TurboQuant Android | Pinned ARM64 CPU candidate and NEON patch cross-compile; production allowlist empty; ABI-stable app runtime and physical certification pending | unavailable; diagnostic explains upstream llama.cpp fallback |
 | SpeechAnalyzer | Native live-capture, streamed transcription, and session-audio prototype packaged; runtime-gated to iOS/macOS 26+ | `SpeechAnalyzer · on-device` only after a successful locale/asset probe |
 | whisper.cpp ASR | Exact-pinned 1.8.3 runtime packaged; Android, universal macOS, and unsigned iOS release builds verified; Windows/Linux build gates run in CI | `whisper.cpp · on-device` only after the verified Tiny model is installed |
+
+Settings exposes the complete probe report, default-model package state, ASR
+revision, session count, and local storage use without transcript text,
+prompts, credentials, identifiers, or filesystem paths. English Material,
+Cupertino, and widget localization delegates are installed; additional
+translated string catalogs remain a release-localization workstream. Recording
+controls and local transcript search provide semantic labels, but physical
+screen-reader and large-text certification remains required.
 
 Promotion from experimental to beta/stable requires release builds on the
 representative matrix, no corrupt output, bounded memory behavior, and a tested

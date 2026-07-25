@@ -20,6 +20,7 @@ class TranscriptionSessionRepository extends ChangeNotifier {
 
   final Future<Directory> Function() _rootDirectoryProvider;
   final List<TranscriptionSession> _sessions = [];
+  final Map<String, String> _searchDocuments = {};
 
   List<TranscriptionSession> get sessions => List.unmodifiable(_sessions);
 
@@ -40,6 +41,86 @@ class TranscriptionSessionRepository extends ChangeNotifier {
       }
     }
     _sessions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    await _rebuildSearchIndex();
+    notifyListeners();
+  }
+
+  List<TranscriptionSession> search(String query) {
+    final terms = _terms(query);
+    if (terms.isEmpty) return sessions;
+    return _sessions
+        .where((session) {
+          final document = _searchDocuments[session.id] ?? '';
+          return terms.every(document.contains);
+        })
+        .toList(growable: false);
+  }
+
+  Future<int> storageBytes() async {
+    final root = await _rootDirectoryProvider();
+    if (!await root.exists()) return 0;
+    var total = 0;
+    await for (final entity in root.list(recursive: true)) {
+      if (entity is File) total += await entity.length();
+    }
+    return total;
+  }
+
+  /// Copies the complete local transcription store to a user-selected folder.
+  ///
+  /// This API deliberately requires the UI to record explicit consent. The
+  /// export contains transcripts and session audio, but never app credentials.
+  Future<Directory> exportTo(
+    Directory destination, {
+    required bool userConsented,
+  }) async {
+    if (!userConsented) {
+      throw StateError('Transcription export requires explicit user consent.');
+    }
+    final root = await _rootDirectoryProvider();
+    final export = Directory(
+      p.join(
+        destination.path,
+        'erebrus-transcriptions-${DateTime.now().toUtc().toIso8601String().replaceAll(':', '-')}',
+      ),
+    );
+    await export.create(recursive: true);
+    for (final session in _sessions) {
+      final source = Directory(p.join(root.path, _safeId(session.id)));
+      if (!await source.exists()) continue;
+      final target = Directory(p.join(export.path, _safeId(session.id)));
+      await target.create(recursive: true);
+      await for (final entity in source.list()) {
+        if (entity is! File) continue;
+        await entity.copy(p.join(target.path, p.basename(entity.path)));
+      }
+    }
+    await File(p.join(export.path, 'manifest.json')).writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'schema_version': 1,
+        'exported_at': DateTime.now().toUtc().toIso8601String(),
+        'session_count': _sessions.length,
+        'includes_audio': true,
+        'source': 'Erebrus AI on-device transcription',
+      }),
+      flush: true,
+    );
+    return export;
+  }
+
+  Future<void> deleteAll() async {
+    final root = await _rootDirectoryProvider();
+    if (await root.exists()) {
+      await for (final entity in root.list()) {
+        if (entity is Directory) {
+          await entity.delete(recursive: true);
+        } else if (entity is File) {
+          await entity.delete();
+        }
+      }
+    }
+    _sessions.clear();
+    _searchDocuments.clear();
     notifyListeners();
   }
 
@@ -97,7 +178,7 @@ class TranscriptionSessionRepository extends ChangeNotifier {
           .toList(growable: false),
     );
     await _writeSession(directory, session);
-    _replace(session);
+    await _replace(session);
     return session;
   }
 
@@ -125,7 +206,7 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     );
     final directory = await createSessionDirectory(session.id);
     await _writeSession(directory, updated);
-    _replace(updated);
+    await _replace(updated);
     return updated;
   }
 
@@ -164,13 +245,15 @@ class TranscriptionSessionRepository extends ChangeNotifier {
           const JsonEncoder.withIndent('  ').convert(audioOnly.toJson()),
           flush: true,
         );
-        _replace(audioOnly);
+        await _replace(audioOnly);
         return;
       } else {
         await directory.delete(recursive: true);
       }
     }
     _sessions.removeWhere((session) => session.id == sessionId);
+    _searchDocuments.remove(sessionId);
+    await _writeSearchIndex();
     notifyListeners();
   }
 
@@ -233,11 +316,57 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     );
   }
 
-  void _replace(TranscriptionSession session) {
+  Future<void> _replace(TranscriptionSession session) async {
     _sessions.removeWhere((existing) => existing.id == session.id);
     _sessions.insert(0, session);
+    _searchDocuments[session.id] = _searchDocument(session);
+    await _writeSearchIndex();
     notifyListeners();
   }
+
+  Future<void> _rebuildSearchIndex() async {
+    _searchDocuments
+      ..clear()
+      ..addEntries(
+        _sessions.map(
+          (session) => MapEntry(session.id, _searchDocument(session)),
+        ),
+      );
+    await _writeSearchIndex();
+  }
+
+  Future<void> _writeSearchIndex() async {
+    final root = await _rootDirectoryProvider();
+    await root.create(recursive: true);
+    final destination = File(p.join(root.path, 'search-index.json'));
+    final staging = File('${destination.path}.part');
+    await staging.writeAsString(
+      jsonEncode({
+        'schema_version': 1,
+        'documents': _searchDocuments.entries
+            .map((entry) => {'session_id': entry.key, 'text': entry.value})
+            .toList(growable: false),
+      }),
+      flush: true,
+    );
+    if (await destination.exists()) await destination.delete();
+    await staging.rename(destination.path);
+  }
+
+  static String _searchDocument(TranscriptionSession session) {
+    // Intentionally excludes audio metadata, hashes, and filesystem paths.
+    return _terms(
+      '${session.rawTranscript} ${session.editedTranscript ?? ''} '
+      '${session.locale} ${session.backend.name}',
+    ).join(' ');
+  }
+
+  static List<String> _terms(String value) => value
+      .toLowerCase()
+      .split(RegExp(r'[^\p{L}\p{N}]+', unicode: true))
+      .where((term) => term.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
 
   static String _safeId(String value) {
     final safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');

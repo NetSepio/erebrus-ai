@@ -126,6 +126,42 @@ void main() {
       isFalse,
     );
   });
+
+  test('detects a catalog revision, updates, and rolls back', () async {
+    final firstBytes = utf8.encode('first model revision');
+    final secondBytes = utf8.encode('second model revision');
+    payloads['/first.gguf'] = firstBytes;
+    payloads['/second.gguf'] = secondBytes;
+    final first = _variant(
+      id: 'rolling-q8',
+      bytes: firstBytes,
+      url: url('/first.gguf'),
+    );
+    final second = _variant(
+      id: 'rolling-q8',
+      bytes: secondBytes,
+      url: url('/second.gguf'),
+    );
+    final service = ModelPackageService(
+      modelsDirectoryProvider: () async => temporaryDirectory,
+    );
+
+    await service.downloadVariant(first);
+    expect(service.hasUpdate(second), isTrue);
+    await service.updateVariant(second);
+    final activePath = await service.packagePath(second.id);
+    expect(await File(activePath!).readAsBytes(), secondBytes);
+    expect(service.canRollback(second.id), isTrue);
+
+    expect(await service.rollback(second.id), isTrue);
+    expect(await File(activePath).readAsBytes(), firstBytes);
+
+    final restored = ModelPackageService(
+      modelsDirectoryProvider: () async => temporaryDirectory,
+    );
+    await restored.loadIndex();
+    expect(restored.canRollback(second.id), isTrue);
+  });
 }
 
 ModelVariant _variant({

@@ -97,4 +97,72 @@ void main() {
     expect(repository.sessions.single.rawTranscript, isEmpty);
     expect(repository.sessions.single.audio, isNotNull);
   });
+
+  test('local index follows edits and excludes audio metadata', () async {
+    final directory = await repository.createSessionDirectory('searchable');
+    final audio = File('${directory.path}/private-recording.caf');
+    await audio.writeAsBytes([1, 2]);
+    final session = await repository.finalize(
+      sessionId: 'searchable',
+      createdAt: DateTime.utc(2026, 7, 25),
+      duration: const Duration(seconds: 1),
+      locale: 'en-US',
+      rawTranscript: 'Roadmap alpha',
+      segments: const [],
+      audioPath: audio.path,
+    );
+
+    expect(repository.search('roadmap').single.id, 'searchable');
+    expect(repository.search('private-recording'), isEmpty);
+    await repository.saveEdit(session, 'Launch beta');
+    expect(repository.search('launch beta').single.id, 'searchable');
+    expect(repository.search('roadmap').single.id, 'searchable');
+    final index = await File('${root.path}/search-index.json').readAsString();
+    expect(index, isNot(contains('private-recording')));
+    expect(index, isNot(contains(audio.path)));
+  });
+
+  test(
+    'export requires consent and delete all removes local evidence',
+    () async {
+      final directory = await repository.createSessionDirectory('exportable');
+      final audio = File('${directory.path}/audio.wav');
+      await audio.writeAsBytes([1, 2, 3]);
+      await repository.finalize(
+        sessionId: 'exportable',
+        createdAt: DateTime.utc(2026, 7, 25),
+        duration: const Duration(seconds: 1),
+        locale: 'en-US',
+        rawTranscript: 'export me',
+        segments: const [],
+        audioPath: audio.path,
+      );
+      final destination = await Directory.systemTemp.createTemp(
+        'erebrus-export-',
+      );
+      addTearDown(() async {
+        if (await destination.exists()) {
+          await destination.delete(recursive: true);
+        }
+      });
+
+      await expectLater(
+        repository.exportTo(destination, userConsented: false),
+        throwsStateError,
+      );
+      final exported = await repository.exportTo(
+        destination,
+        userConsented: true,
+      );
+      expect(File('${exported.path}/manifest.json').existsSync(), isTrue);
+      expect(
+        File('${exported.path}/exportable/audio.wav').existsSync(),
+        isTrue,
+      );
+
+      await repository.deleteAll();
+      expect(repository.sessions, isEmpty);
+      expect(await root.list().isEmpty, isTrue);
+    },
+  );
 }

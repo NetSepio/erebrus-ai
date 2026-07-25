@@ -41,8 +41,10 @@ memory cost.
   `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21`
 
 The manager downloads to `.part`, validates exact size and SHA-256, and only
-then atomically publishes the file. A package lock alone is not treated as model
-integrity.
+then atomically publishes the file. A verified prior revision remains in a
+rollback slot. A package lock alone is not treated as model integrity. Asset
+metadata is checked automatically after an app update, while the large download
+remains an explicit user action to protect metered data, battery, and storage.
 
 `whisper_ggml_plus` 1.5.2 has a universal-macOS pod definition defect: it
 includes ARM GGML sources for the Intel slice and excludes the x86 sources.
@@ -67,6 +69,13 @@ transcriptions/<session-id>/
 format, known sample rate/channel count, size, and SHA-256. The raw transcript
 remains separate from user edits. Deleting only the transcript retains an
 audio-only session that can still be replayed or shared.
+
+The app maintains an atomic local search index over raw and edited transcript
+text. Audio paths and metadata are excluded. Settings exposes storage size,
+explicit full export (including audio), delete-all, and redacted backend/model/
+ASR diagnostics. Optional analysis opens an editable Chat draft from a built-in
+or user-authored local prompt template; recording and transcription never
+invoke the LLM automatically.
 
 ## Verified build scope
 

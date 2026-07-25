@@ -11,6 +11,7 @@ import '../../services/device_info_service.dart';
 import '../../services/inference_memory_policy.dart';
 import '../../services/inference_planner.dart';
 import '../../services/inference_readiness_service.dart';
+import '../../services/inference_service.dart';
 import '../../services/model_download_service.dart';
 import '../../services/model_package_service.dart';
 import '../../services/node_discovery_service.dart';
@@ -531,6 +532,8 @@ class _LocalListState extends State<_LocalList> {
         : entry.quant;
     final backend = _preferredBackends[entry.id];
     final backendLabel = backend?.catalogName ?? 'llama.cpp';
+    final updateAvailable =
+        variant != null && ModelPackageService.instance.hasUpdate(variant);
     final model = MockModel(
       entry.name,
       entry.letter,
@@ -567,6 +570,9 @@ class _LocalListState extends State<_LocalList> {
       onDownload: status == ModelStatus.catalog
           ? () => _download(context, app, entry, variant)
           : null,
+      onUpdate: updateAvailable
+          ? () => _download(context, app, entry, variant, updating: true)
+          : null,
     );
   }
 
@@ -574,8 +580,9 @@ class _LocalListState extends State<_LocalList> {
     BuildContext context,
     AppState app,
     CatalogEntry entry,
-    ModelVariant? variant,
-  ) async {
+    ModelVariant? variant, {
+    bool updating = false,
+  }) async {
     try {
       if (variant == null ||
           !variant.files
@@ -585,7 +592,12 @@ class _LocalListState extends State<_LocalList> {
         if (!ok) throw StateError('Legacy model download failed');
         return;
       }
-      await ModelPackageService.instance.downloadVariant(variant);
+      if (updating) {
+        await InferenceService.instance.unload();
+        await ModelPackageService.instance.updateVariant(variant);
+      } else {
+        await ModelPackageService.instance.downloadVariant(variant);
+      }
       final packagePath = await ModelPackageService.instance.packagePath(
         variant.id,
       );
@@ -603,10 +615,14 @@ class _LocalListState extends State<_LocalList> {
         contextSize: memoryPlan.contextSize,
       );
       if (!readiness.runnable) {
-        await ModelPackageService.instance.markUnrunnable(
-          variant.id,
-          readiness.failureCode,
-        );
+        if (updating) {
+          await ModelPackageService.instance.rollback(variant.id);
+        } else {
+          await ModelPackageService.instance.markUnrunnable(
+            variant.id,
+            readiness.failureCode,
+          );
+        }
         throw StateError(readiness.reason);
       }
       app.selectModel(
@@ -655,20 +671,22 @@ class _LocalModelCard extends StatelessWidget {
     this.onTap,
     this.onUse,
     this.onDownload,
+    this.onUpdate,
   });
 
   final MockModel model;
   final VoidCallback? onTap;
   final VoidCallback? onUse;
   final VoidCallback? onDownload;
+  final VoidCallback? onUpdate;
 
   @override
   Widget build(BuildContext context) {
     final canTap =
         model.status != ModelStatus.downloading &&
-        (onTap ?? onUse ?? onDownload) != null;
+        (onTap ?? onUse ?? onDownload ?? onUpdate) != null;
     return GestureDetector(
-      onTap: canTap ? (onTap ?? onUse ?? onDownload) : null,
+      onTap: canTap ? (onTap ?? onUse ?? onDownload ?? onUpdate) : null,
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(15),
@@ -709,7 +727,14 @@ class _LocalModelCard extends StatelessWidget {
                   ),
                 ),
                 switch (model.status) {
-                  ModelStatus.loaded => const StatusBadge('LOADED'),
+                  ModelStatus.loaded =>
+                    onUpdate != null
+                        ? AccentChip(
+                            'UPDATE',
+                            icon: Symbols.system_update_alt,
+                            onTap: onUpdate!,
+                          )
+                        : const StatusBadge('LOADED'),
                   ModelStatus.idle =>
                     onUse != null
                         ? AccentChip('USE', onTap: onUse!)

@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../data/catalog_entry.dart';
 import '../data/installed_model.dart';
 import 'storage_service.dart';
+import 'power_service.dart';
 
 typedef ModelDownloadProgress =
     void Function(String artifactId, int receivedBytes, int totalBytes);
@@ -26,6 +27,7 @@ class ModelPackageService extends ChangeNotifier {
   final Future<Directory> Function() _modelsDirectoryProvider;
   final HttpClient Function() _httpClientProvider;
   final Map<String, InstalledModel> _installed = {};
+  final Map<String, InstalledModel> _previous = {};
   final Set<String> _downloading = {};
   final Map<String, int> _receivedBytes = {};
   final Map<String, int> _totalBytes = {};
@@ -48,6 +50,25 @@ class ModelPackageService extends ChangeNotifier {
 
   InstalledModel? byVariantId(String variantId) => _installed[variantId];
 
+  bool hasUpdate(ModelVariant variant) {
+    final installed = _installed[variant.id];
+    if (installed == null || !installed.runnable) return false;
+    final declared = {
+      for (final artifact in variant.files.where((file) => file.required))
+        artifact.id: artifact.sha256.toLowerCase(),
+    };
+    final local = {
+      for (final file in installed.files)
+        file.artifactId: file.sha256.toLowerCase(),
+    };
+    return declared.isNotEmpty &&
+        declared.values.every((digest) => digest.isNotEmpty) &&
+        (declared.length != local.length ||
+            declared.entries.any((entry) => local[entry.key] != entry.value));
+  }
+
+  bool canRollback(String variantId) => _previous.containsKey(variantId);
+
   InstalledModel? runnableForModelId(String modelId) => _installed.values
       .where((record) => record.modelId == modelId && record.runnable)
       .firstOrNull;
@@ -61,6 +82,7 @@ class ModelPackageService extends ChangeNotifier {
 
   Future<void> loadIndex() async {
     _installed.clear();
+    _previous.clear();
     final index = await _indexFile;
     if (!await index.exists()) {
       notifyListeners();
@@ -76,9 +98,17 @@ class ModelPackageService extends ChangeNotifier {
         );
         if (record.variantId.isNotEmpty) _installed[record.variantId] = record;
       }
+      final previousRecords = json['previous'] as List<Object?>? ?? const [];
+      for (final value in previousRecords) {
+        final record = InstalledModel.fromJson(
+          (value as Map<Object?, Object?>).cast<String, Object?>(),
+        );
+        if (record.variantId.isNotEmpty) _previous[record.variantId] = record;
+      }
     } on Object {
       // A corrupt index never makes an unverified package runnable.
       _installed.clear();
+      _previous.clear();
     } finally {
       notifyListeners();
     }
@@ -87,6 +117,7 @@ class ModelPackageService extends ChangeNotifier {
   Future<InstalledModel> downloadVariant(
     ModelVariant variant, {
     ModelDownloadProgress? onProgress,
+    bool replaceExisting = false,
   }) async {
     _validateVariant(variant);
     if (_downloading.contains(variant.id)) {
@@ -99,7 +130,11 @@ class ModelPackageService extends ChangeNotifier {
     _receivedBytes[variant.id] = 0;
     _totalBytes[variant.id] = variant.sizeBytes;
     notifyListeners();
+    await PowerService.instance.startDownload(variant.modelId);
     Directory? staging;
+    Directory? displaced;
+    InstalledModel? displacedRecord;
+    var activated = false;
     try {
       final models = await _modelsDirectoryProvider();
       await models.create(recursive: true);
@@ -107,7 +142,10 @@ class ModelPackageService extends ChangeNotifier {
         p.join(models.path, _safeName(variant.id)),
       );
       final existing = _installed[variant.id];
-      if (existing?.runnable == true && await finalDirectory.exists()) {
+      displacedRecord = existing;
+      if (!replaceExisting &&
+          existing?.runnable == true &&
+          await finalDirectory.exists()) {
         return existing!;
       }
 
@@ -151,13 +189,30 @@ class ModelPackageService extends ChangeNotifier {
       }
       await _writePackageManifest(staging, variant, files);
 
-      if (await finalDirectory.exists()) {
+      if (await finalDirectory.exists() && !replaceExisting) {
         throw ModelPackageException(
           'variant_already_exists',
           'A non-runnable package already exists for ${variant.id}',
         );
       }
-      await staging.rename(finalDirectory.path);
+      if (await finalDirectory.exists()) {
+        displaced = Directory('${finalDirectory.path}.previous');
+        if (await displaced.exists()) {
+          await displaced.delete(recursive: true);
+        }
+        await finalDirectory.rename(displaced.path);
+      }
+      try {
+        await staging.rename(finalDirectory.path);
+        activated = true;
+      } on Object {
+        if (displaced != null &&
+            await displaced.exists() &&
+            !await finalDirectory.exists()) {
+          await displaced.rename(finalDirectory.path);
+        }
+        rethrow;
+      }
       final now = DateTime.now().toUtc();
       final installed = InstalledModel(
         modelId: variant.modelId,
@@ -169,6 +224,9 @@ class ModelPackageService extends ChangeNotifier {
         files: files,
         runnable: true,
       );
+      if (replaceExisting && existing != null) {
+        _previous[variant.id] = existing;
+      }
       _installed[variant.id] = installed;
       await _saveIndex();
       notifyListeners();
@@ -177,10 +235,52 @@ class ModelPackageService extends ChangeNotifier {
       if (staging != null && await staging.exists()) {
         await staging.delete(recursive: true);
       }
+      if (replaceExisting && activated && displaced != null) {
+        final models = await _modelsDirectoryProvider();
+        final active = Directory(p.join(models.path, _safeName(variant.id)));
+        if (await active.exists()) await active.delete(recursive: true);
+        if (await displaced.exists()) {
+          await displaced.rename(active.path);
+        }
+        if (displacedRecord != null) {
+          _installed[variant.id] = displacedRecord;
+        }
+      }
       rethrow;
     } finally {
       _downloading.remove(variant.id);
+      await PowerService.instance.stopDownload();
       notifyListeners();
+    }
+  }
+
+  Future<InstalledModel> updateVariant(ModelVariant variant) =>
+      downloadVariant(variant, replaceExisting: true);
+
+  Future<bool> rollback(String variantId) async {
+    final previousRecord = _previous[variantId];
+    final activeRecord = _installed[variantId];
+    if (previousRecord == null || activeRecord == null) return false;
+    final models = await _modelsDirectoryProvider();
+    final active = Directory(p.join(models.path, _safeName(variantId)));
+    final previous = Directory('${active.path}.previous');
+    if (!await active.exists() || !await previous.exists()) return false;
+    final temporary = Directory('${active.path}.rollback-part');
+    if (await temporary.exists()) await temporary.delete(recursive: true);
+    await active.rename(temporary.path);
+    try {
+      await previous.rename(active.path);
+      await temporary.rename(previous.path);
+      _installed[variantId] = previousRecord;
+      _previous[variantId] = activeRecord;
+      await _saveIndex();
+      notifyListeners();
+      return true;
+    } on Object {
+      if (!await active.exists() && await temporary.exists()) {
+        await temporary.rename(active.path);
+      }
+      rethrow;
     }
   }
 
@@ -346,15 +446,19 @@ class ModelPackageService extends ChangeNotifier {
   Future<void> _saveIndex() async {
     final file = await _indexFile;
     await file.parent.create(recursive: true);
-    await file.writeAsString(
+    final staging = File('${file.path}.part');
+    await staging.writeAsString(
       const JsonEncoder.withIndent('  ').convert({
         'schema_version': 1,
         'installed': _installed.values
             .map((record) => record.toJson())
             .toList(),
+        'previous': _previous.values.map((record) => record.toJson()).toList(),
       }),
       flush: true,
     );
+    if (await file.exists()) await file.delete();
+    await staging.rename(file.path);
   }
 
   static void _validateVariant(ModelVariant variant) {

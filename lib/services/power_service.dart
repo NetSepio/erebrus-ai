@@ -16,11 +16,11 @@ class PowerService {
   PowerService._();
   static final PowerService instance = PowerService._();
 
-  bool _downloadActive = false;
+  int _activeDownloads = 0;
   bool _serving = false;
   bool _initialized = false;
 
-  bool get isBusy => _downloadActive || _serving;
+  bool get isBusy => _activeDownloads > 0 || _serving;
 
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
@@ -57,8 +57,13 @@ class PowerService {
 
   /// Call when a model download starts.
   Future<void> startDownload(String label) async {
-    _downloadActive = true;
-    await WakelockPlus.enable();
+    _activeDownloads++;
+    if (kIsWeb || _inTest) return;
+    try {
+      await WakelockPlus.enable();
+    } on Object catch (error) {
+      debugPrint('[Power] could not enable wake lock: $error');
+    }
     await _updateOrStart('Downloading $label');
   }
 
@@ -70,10 +75,16 @@ class PowerService {
 
   /// Call when a model download finishes or fails.
   Future<void> stopDownload() async {
-    _downloadActive = false;
+    if (_activeDownloads > 0) _activeDownloads--;
+    if (kIsWeb || _inTest) return;
+    if (_activeDownloads > 0) return;
     if (!_serving) {
       await _stop();
-      await WakelockPlus.disable();
+      try {
+        await WakelockPlus.disable();
+      } on Object catch (error) {
+        debugPrint('[Power] could not disable wake lock: $error');
+      }
     } else {
       await _updateOrStart('Serving on LAN');
     }
@@ -86,11 +97,19 @@ class PowerService {
   }) async {
     _serving = serving;
     if (serving) {
-      await WakelockPlus.enable();
+      try {
+        await WakelockPlus.enable();
+      } on Object catch (error) {
+        debugPrint('[Power] could not enable wake lock: $error');
+      }
       await _updateOrStart(label);
-    } else if (!_downloadActive) {
+    } else if (_activeDownloads == 0) {
       await _stop();
-      await WakelockPlus.disable();
+      try {
+        await WakelockPlus.disable();
+      } on Object catch (error) {
+        debugPrint('[Power] could not disable wake lock: $error');
+      }
     }
   }
 
