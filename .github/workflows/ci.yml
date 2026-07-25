@@ -73,6 +73,41 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+  build-ios:
+    name: Build iOS (unsigned)
+    runs-on: macos-15
+    needs: analyze-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create .env placeholder
+        run: cp env.example .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify packaged iOS llama.cpp Metal framework
+        run: |
+          device_binary=third_party/lib_llama_cpp_ios/ios/lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework/ios-arm64/lib_llama_cpp_ios.framework/lib_llama_cpp_ios
+          simulator_binary=third_party/lib_llama_cpp_ios/ios/lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework/ios-arm64_x86_64-simulator/lib_llama_cpp_ios.framework/lib_llama_cpp_ios
+          shasum -a 256 -c third_party/lib_llama_cpp_ios/FRAMEWORK.sha256
+          lipo "$device_binary" -verify_arch arm64
+          lipo "$simulator_binary" -verify_arch arm64 x86_64
+          nm -gU "$device_binary" | grep -q _ggml_backend_metal_init
+
+      - name: Test iOS backend resolver
+        run: flutter test third_party/lib_llama_cpp_ios/test/lib_llama_cpp_ios_test.dart
+
+      - name: Build unsigned iOS release
+        run: flutter build ios --release --no-codesign
+
   build-desktop-windows:
     name: Build Windows
     runs-on: windows-latest

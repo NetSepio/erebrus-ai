@@ -1,0 +1,5 @@
+framework module lib_llama_cpp_ios {
+  umbrella header "lib_llama_cpp_ios.h"
+  export *
+  module * { export * }
+}

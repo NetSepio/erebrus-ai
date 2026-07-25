@@ -1,0 +1,52 @@
+import 'package:lib_llama_cpp_ios/lib_llama_cpp_ios.dart';
+import 'package:lib_llama_cpp_platform_interface/lib_llama_cpp_platform_interface.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('registerWith installs the iOS platform implementation', () {
+    final initial = LibLlamaCppPlatform.instance;
+    addTearDown(() => LibLlamaCppPlatform.instance = initial);
+
+    LibLlamaCppIos.registerWith();
+
+    expect(LibLlamaCppPlatform.instance, isA<LibLlamaCppIos>());
+  });
+
+  test('resolveLibrary returns the bundled iOS framework path', () async {
+    final descriptor = await LibLlamaCppIos().resolveLibrary();
+
+    expect(descriptor.resolution, LlamaCppLibraryResolution.path);
+    expect(descriptor.path, 'lib_llama_cpp_ios.framework/lib_llama_cpp_ios');
+    expect(
+      descriptor.capabilities,
+      equals({
+        LlamaCppLibraryCapability.cpu,
+        LlamaCppLibraryCapability.metal,
+      }),
+    );
+  });
+
+  test('bundled iOS library satisfies a Metal request', () async {
+    final descriptor = await LibLlamaCppIos().resolveLibrary(
+      request: const LlamaCppLibraryRequest(
+        requiredCapabilities: {LlamaCppLibraryCapability.metal},
+      ),
+    );
+
+    expect(
+      descriptor.capabilities,
+      contains(LlamaCppLibraryCapability.metal),
+    );
+  });
+
+  test('bundled iOS library rejects unsupported required backends', () async {
+    await expectLater(
+      LibLlamaCppIos().resolveLibrary(
+        request: const LlamaCppLibraryRequest(
+          requiredCapabilities: {LlamaCppLibraryCapability.cuda},
+        ),
+      ),
+      throwsA(isA<UnsupportedError>()),
+    );
+  });
+}

@@ -25,7 +25,8 @@ class LlamaCppBackend implements InferenceBackend {
   int _generatedTokens = 0;
   int _maximumOutputTokens = 0;
 
-  LlamaCppLibraryRequest get _libraryRequest => platform == 'macos-arm64'
+  LlamaCppLibraryRequest get _libraryRequest =>
+      platform == 'macos-arm64' || platform == 'ios-arm64'
       ? const LlamaCppLibraryRequest(
           requiredCapabilities: {LlamaCppLibraryCapability.metal},
         )
@@ -110,7 +111,8 @@ class LlamaCppBackend implements InferenceBackend {
         modelPath: request.packagePath,
         contextSize: request.contextSize,
         gpuLayerCount:
-            request.gpuLayerCount ?? (platform == 'macos-arm64' ? 99 : 0),
+            request.gpuLayerCount ??
+            (platform == 'macos-arm64' || platform == 'ios-arm64' ? 99 : 0),
       ),
     );
     await _loadCompleter!.future;

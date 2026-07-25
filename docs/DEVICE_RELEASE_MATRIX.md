@@ -11,8 +11,8 @@ MLX integration. SpeechAnalyzer remains runtime-gated to iOS/macOS 26+.
 | --- | --- | --- | --- |
 | Apple-silicon macOS | llama.cpp Metal | MLX Swift | 8 GB M1, 16 GB M-series, 32 GB M-series |
 | Intel macOS | llama.cpp CPU | none | 8 GB and 16 GB Intel Macs |
-| iPhone | llama.cpp CPU | MLX Swift | 4 GB older supported device, 6 GB recent device, 8 GB recent Pro |
-| iPad | llama.cpp CPU | MLX Swift | A-series 4/6 GB and M-series 8/16 GB |
+| iPhone | llama.cpp Metal | MLX Swift | 4 GB older supported device, 6 GB recent device, 8 GB recent Pro |
+| iPad | llama.cpp Metal | MLX Swift | A-series 4/6 GB and M-series 8/16 GB |
 | Android ARM64 | llama.cpp CPU | TurboQuant CPU, allowlisted Vulkan later | 4 GB low tier, 6/8 GB mid tier, 12/16 GB flagship |
 | Windows x86-64 | llama.cpp CPU/GPU | TurboQuant CPU/CUDA/ROCm | CPU-only, NVIDIA, AMD |
 | Linux x86-64 | llama.cpp CPU/GPU | TurboQuant CPU/CUDA/ROCm | CPU-only, NVIDIA, AMD |
@@ -110,7 +110,8 @@ permissions remain mandatory; no audio or transcript leaves the device.
 | --- | --- | --- |
 | llama.cpp CPU | Packaged; model load verifies usability | `llama.cpp · CPU` |
 | llama.cpp Metal | Packaged and runtime-verified on Apple-silicon macOS; universal framework contains arm64 and x86-64 slices | `llama.cpp · Metal` after a successful capability probe |
-| MLX Swift | Packaged on iOS 17+/macOS 14+; native probe and build verified | `mlx · Metal` only after a successful runtime probe |
+| llama.cpp Metal (iOS) | Device and simulator XCFramework packaged; unsigned release build verified | `llama.cpp · Metal` after a successful capability probe |
+| MLX Swift | Packaged on iOS 17+/macOS 14+; macOS runtime and unsigned iOS release build verified | `mlx · Metal` only after a successful runtime probe |
 | TurboQuant | Contract and selection policy only | unavailable |
 | SpeechAnalyzer | Native live-capture, streamed transcription, and session-audio prototype packaged; runtime-gated to iOS/macOS 26+ | `SpeechAnalyzer · on-device` only after a successful locale/asset probe |
 | whisper.cpp | Not packaged | unavailable |
@@ -123,3 +124,6 @@ CI builds macOS release artifacts on both `macos-15` arm64 and
 `macos-15-intel`, tests the platform resolver, verifies both framework slices,
 and checks the exported Metal initialization symbol. Runtime performance and
 thermal certification still require the physical device classes listed above.
+The iOS CI job likewise verifies device/simulator Metal slices and builds an
+unsigned release app containing MLX Swift. A signed build on physical iPhones
+is still required before declaring any device tier certified.
