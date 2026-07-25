@@ -9,7 +9,7 @@ MLX integration. SpeechAnalyzer remains runtime-gated to iOS/macOS 26+.
 
 | Platform class | Baseline | Strategic backend | Initial certification devices |
 | --- | --- | --- | --- |
-| Apple-silicon macOS | llama.cpp CPU, then Metal | MLX Swift | 8 GB M1, 16 GB M-series, 32 GB M-series |
+| Apple-silicon macOS | llama.cpp Metal | MLX Swift | 8 GB M1, 16 GB M-series, 32 GB M-series |
 | Intel macOS | llama.cpp CPU | none | 8 GB and 16 GB Intel Macs |
 | iPhone | llama.cpp CPU | MLX Swift | 4 GB older supported device, 6 GB recent device, 8 GB recent Pro |
 | iPad | llama.cpp CPU | MLX Swift | A-series 4/6 GB and M-series 8/16 GB |
@@ -61,6 +61,23 @@ than the two warm filesystem-cache runs. These figures establish the current
 CPU compatibility baseline; they are not release-build or sustained thermal
 results, and the current bridge does not yet report prompt speed or peak RSS.
 
+Run the packaged Metal path by adding:
+
+```sh
+--dart-define=BENCHMARK_GPU_LAYERS=99
+```
+
+The verified Metal package uses the official `lib_llama_cpp` 0.7.3 Metal
+release asset, pinned by release tag, source revision, archive size, and
+SHA-256 in `third_party/lib_llama_cpp_macos/PREBUILT_PROVENANCE.md`. On the
+same Apple-silicon Mac and SmolLM2-135M-Instruct Q8_0 fixture, three debug
+runs averaged 360.4 tokens/second. The cold run loaded in 7,555 ms and decoded
+at 304.9 tok/s while Metal pipelines and caches were initialized. The next two
+runs loaded in 48–49 ms, reached the first token in 64–65 ms, and decoded at
+373.1–403.2 tok/s. This verifies packaging and materially faster execution; it
+does not replace release-build, memory, energy, or representative-device
+certification.
+
 Run the native MLX bridge smoke test on macOS with a complete local MLX package:
 
 ```sh
@@ -68,11 +85,12 @@ flutter test integration_test/mlx_streaming_test.dart -d macos \
   --dart-define=MLX_TEST_MODEL=/absolute/path/to/mlx-model-directory
 ```
 
-The first debug run on 25 July 2026 with the MLX Swift LM registry's
-`SmolLM-135M-Instruct-4bit` loaded in 296 ms, emitted its first token in
-1,327 ms, and completed the short streamed response in 1,574 ms. This proves
-the Flutter/native load and event-stream path; it is not a release-performance
-or model-quality certification.
+The production package was verified on 25 July 2026 with the exact
+revision-pinned SmolLM2-135M-Instruct BF16 files published by the catalog. A
+cold debug run loaded in 338 ms and emitted its first token in 1,308 ms; a warm
+minimal-package run loaded in 327 ms and emitted its first token in 51 ms. This
+proves the complete catalog-download-to-native-stream path; it is not a
+release-performance or model-quality certification.
 
 Run the Apple SpeechAnalyzer capability test with:
 
@@ -91,7 +109,7 @@ permissions remain mandatory; no audio or transcript leaves the device.
 | Backend | Status | Honest application label |
 | --- | --- | --- |
 | llama.cpp CPU | Packaged; model load verifies usability | `llama.cpp · CPU` |
-| llama.cpp Metal | Not packaged in the current Apple XCFramework | unavailable |
+| llama.cpp Metal | Packaged and runtime-verified on Apple-silicon macOS; universal framework contains arm64 and x86-64 slices | `llama.cpp · Metal` after a successful capability probe |
 | MLX Swift | Packaged on iOS 17+/macOS 14+; native probe and build verified | `mlx · Metal` only after a successful runtime probe |
 | TurboQuant | Contract and selection policy only | unavailable |
 | SpeechAnalyzer | Native live-capture, streamed transcription, and session-audio prototype packaged; runtime-gated to iOS/macOS 26+ | `SpeechAnalyzer · on-device` only after a successful locale/asset probe |

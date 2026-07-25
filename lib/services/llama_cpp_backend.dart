@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:lib_llama_cpp/lib_llama_cpp.dart';
+import 'package:lib_llama_cpp_platform_interface/lib_llama_cpp_platform_interface.dart';
 
 import '../data/catalog_entry.dart';
 import 'inference_contract.dart';
@@ -24,6 +25,12 @@ class LlamaCppBackend implements InferenceBackend {
   int _generatedTokens = 0;
   int _maximumOutputTokens = 0;
 
+  LlamaCppLibraryRequest get _libraryRequest => platform == 'macos-arm64'
+      ? const LlamaCppLibraryRequest(
+          requiredCapabilities: {LlamaCppLibraryCapability.metal},
+        )
+      : const LlamaCppLibraryRequest();
+
   @override
   BackendKind get kind => BackendKind.llamaCpp;
 
@@ -31,14 +38,34 @@ class LlamaCppBackend implements InferenceBackend {
   String? get loadedVariantId => _loadedVariantId;
 
   @override
-  Future<BackendCapabilities> probe() async => BackendCapabilities(
-    kind: kind,
-    operational: true,
-    platforms: [platform],
-    formats: const ['gguf'],
-    accelerators: const ['CPU'],
-    reason: 'Packaged llama.cpp runtime; model loads are verified on demand',
-  );
+  Future<BackendCapabilities> probe() async {
+    try {
+      final descriptor = await LibLlamaCppPlatform.instance.resolveLibrary(
+        request: _libraryRequest,
+      );
+      final metal = descriptor.capabilities.contains(
+        LlamaCppLibraryCapability.metal,
+      );
+      return BackendCapabilities(
+        kind: kind,
+        operational: true,
+        platforms: [platform],
+        formats: const ['gguf'],
+        accelerators: [if (metal) 'Metal', 'CPU'],
+        reason: metal
+            ? 'Packaged llama.cpp Metal runtime; model loads are verified on demand'
+            : 'Packaged llama.cpp CPU runtime; model loads are verified on demand',
+      );
+    } on Object catch (error) {
+      return BackendCapabilities(
+        kind: kind,
+        operational: false,
+        platforms: [platform],
+        formats: const ['gguf'],
+        reason: error.toString(),
+      );
+    }
+  }
 
   @override
   bool supports(ModelVariant variant) =>
@@ -71,7 +98,7 @@ class LlamaCppBackend implements InferenceBackend {
     _commands = commands;
     _loadCompleter = Completer<void>();
     _responses = _engine
-        .transform(commands.stream)
+        .transform(commands.stream, libraryRequest: _libraryRequest)
         .listen(
           _handleResponse,
           onError: _handleRuntimeError,
@@ -82,7 +109,8 @@ class LlamaCppBackend implements InferenceBackend {
       LlamaLoadModelCommand(
         modelPath: request.packagePath,
         contextSize: request.contextSize,
-        gpuLayerCount: request.gpuLayerCount ?? 0,
+        gpuLayerCount:
+            request.gpuLayerCount ?? (platform == 'macos-arm64' ? 99 : 0),
       ),
     );
     await _loadCompleter!.future;

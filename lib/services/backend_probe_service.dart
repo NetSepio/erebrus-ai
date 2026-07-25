@@ -5,6 +5,7 @@ import 'package:erebrus_mlx/erebrus_mlx.dart';
 
 import 'device_info_service.dart';
 import 'inference_contract.dart';
+import 'llama_cpp_backend.dart';
 
 /// Reports packaged inference engines separately from hardware availability.
 ///
@@ -49,19 +50,38 @@ class BackendProbeService extends ChangeNotifier {
   }) async {
     if (_probed) return capabilities;
     final profile = device ?? DeviceInfoService.detect();
-    final mlx = await _probeMlx(profile, mlxProbe ?? ErebrusMlx().probe);
+    final inFlutterTest = Platform.environment.containsKey('FLUTTER_TEST');
+    final mlx = inFlutterTest && mlxProbe == null
+        ? BackendCapabilities(
+            kind: BackendKind.mlx,
+            operational: false,
+            platforms: [profile.platform],
+            formats: const ['mlx'],
+            reason: 'Native MLX probing is disabled in Flutter unit tests',
+          )
+        : await _probeMlx(profile, mlxProbe ?? ErebrusMlx().probe);
+    final llama = LlamaCppBackend(platform: profile.platform);
     _capabilities = [
       mlx,
-      BackendCapabilities(
-        kind: BackendKind.llamaCpp,
-        operational: !kIsWeb,
-        platforms: [profile.platform],
-        formats: const ['gguf'],
-        accelerators: const ['CPU'],
-        reason: kIsWeb
-            ? 'Native llama.cpp is unavailable on web'
-            : 'Packaged CPU runtime; each model load is verified separately',
-      ),
+      if (kIsWeb)
+        BackendCapabilities(
+          kind: BackendKind.llamaCpp,
+          operational: false,
+          platforms: [profile.platform],
+          formats: const ['gguf'],
+          reason: 'Native llama.cpp is unavailable on web',
+        )
+      else if (inFlutterTest)
+        BackendCapabilities(
+          kind: BackendKind.llamaCpp,
+          operational: true,
+          platforms: [profile.platform],
+          formats: const ['gguf'],
+          accelerators: const ['CPU'],
+          reason: 'Native resolution is disabled in Flutter unit tests',
+        )
+      else
+        await llama.probe(),
       BackendCapabilities(
         kind: BackendKind.turboQuant,
         operational: false,
@@ -79,15 +99,6 @@ class BackendProbeService extends ChangeNotifier {
     DeviceProfile profile,
     MlxProbe nativeProbe,
   ) async {
-    if (Platform.environment.containsKey('FLUTTER_TEST')) {
-      return BackendCapabilities(
-        kind: BackendKind.mlx,
-        operational: false,
-        platforms: [profile.platform],
-        formats: const ['mlx'],
-        reason: 'Native MLX probing is disabled in Flutter unit tests',
-      );
-    }
     final isApple =
         profile.platform.startsWith('macos-') ||
         profile.platform.startsWith('ios-');

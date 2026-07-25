@@ -108,7 +108,7 @@ class InferenceService extends ChangeNotifier {
                 variant: variant,
                 packagePath: packagePath,
                 contextSize: contextSize,
-                gpuLayerCount: 0,
+                gpuLayerCount: null,
               ),
             ),
           );
@@ -127,7 +127,7 @@ class InferenceService extends ChangeNotifier {
               variant: _legacyVariant(modelId, legacyPath, profile.platform),
               packagePath: legacyPath,
               contextSize: contextSize,
-              gpuLayerCount: 0,
+              gpuLayerCount: null,
             ),
           ),
         );

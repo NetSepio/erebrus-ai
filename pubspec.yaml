@@ -51,6 +51,10 @@ dependency_overrides:
   # scalar spans token pieces. This local patch buffers incomplete sequences.
   lib_llama_cpp:
     path: third_party/lib_llama_cpp
+  # Official v0.7.3 Metal release asset, checksum and provenance are vendored
+  # with the local platform package.
+  lib_llama_cpp_macos:
+    path: third_party/lib_llama_cpp_macos
 
 dev_dependencies:
   flutter_test:

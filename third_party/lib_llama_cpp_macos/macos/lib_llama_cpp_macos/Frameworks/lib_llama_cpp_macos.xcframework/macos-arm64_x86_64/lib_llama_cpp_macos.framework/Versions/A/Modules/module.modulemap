@@ -1,0 +1,5 @@
+framework module lib_llama_cpp_macos {
+  umbrella header "lib_llama_cpp_macos.h"
+  export *
+  module * { export * }
+}
