@@ -10,6 +10,7 @@ import 'org/org_state.dart';
 import 'services/chat_service.dart';
 import 'services/model_download_service.dart';
 import 'services/node_discovery_service.dart';
+import 'services/storage_service.dart';
 import 'services/persona_service.dart';
 import 'services/power_service.dart';
 
@@ -23,6 +24,10 @@ Future<void> main() async {
   // Re-hydrate chats and personas so the first screens have data.
   await ChatService.instance.load();
   await PersonaService.instance.load();
+
+  // Restore the user-selected models directory (with macOS security-scoped
+  // bookmark) before scanning for downloaded models.
+  await StorageService.instance.loadCustomModelsDirectory();
 
   final auth = WalletAuthController();
   final orgState = OrgState(auth: auth);

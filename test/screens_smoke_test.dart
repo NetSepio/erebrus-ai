@@ -215,6 +215,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Serve while app is open'), findsOneWidget);
       expect(find.text('Maximum response length'), findsOneWidget);
+      expect(find.text('Default · ErebrusAI/models'), findsOneWidget);
 
       // Sign-in is a full-screen page with guest escape.
       await tester.tap(find.text('SIGN IN / REGISTER'));

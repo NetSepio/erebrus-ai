@@ -39,7 +39,7 @@ class DeviceInfoService {
     if (ramBytes <= 0) ramBytes = 8 * 1024 * 1024 * 1024;
 
     var type = DeviceType.desktop;
-    var name = SysInfo.operatingSystemName;
+    String name;
     String os;
 
     if (kIsWeb) {
@@ -48,20 +48,28 @@ class DeviceInfoService {
       os = 'web';
     } else if (Platform.isAndroid) {
       type = DeviceType.mobile;
+      name = _systemInfoOsName(fallback: 'Android');
       os = 'android';
     } else if (Platform.isIOS) {
       type = DeviceType.mobile;
+      name = Platform.operatingSystemVersion.isNotEmpty
+          ? 'iOS ${Platform.operatingSystemVersion}'
+          : 'iOS';
       os = 'ios';
     } else if (Platform.isMacOS) {
       type = DeviceType.desktop;
+      name = _systemInfoOsName(fallback: 'macOS');
       os = 'macos';
     } else if (Platform.isWindows) {
       type = DeviceType.desktop;
+      name = _systemInfoOsName(fallback: 'Windows');
       os = 'windows';
     } else if (Platform.isLinux) {
       type = DeviceType.desktop;
+      name = _systemInfoOsName(fallback: 'Linux');
       os = 'linux';
     } else {
+      name = _systemInfoOsName(fallback: 'Unknown');
       os = 'unknown';
     }
 
@@ -81,6 +89,14 @@ class DeviceInfoService {
       name: name,
       platform: platform,
     );
+  }
+
+  static String _systemInfoOsName({required String fallback}) {
+    try {
+      return SysInfo.operatingSystemName;
+    } catch (_) {
+      return fallback;
+    }
   }
 
   static String _detectArchitecture() {

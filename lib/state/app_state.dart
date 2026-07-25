@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/entitlement_state.dart';
 import '../services/model_download_service.dart';
+import '../services/storage_service.dart';
 import '../auth/user_org_invite.dart';
 import '../auth/user_profile.dart';
 import '../auth/wallet_auth_controller.dart';
@@ -160,6 +161,44 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// The resolved filesystem path of the current models directory, or `null`
+  /// while it is still being determined.
+  String? modelsDirectory;
+  bool get usesCustomModelsDirectory =>
+      StorageService.instance.usesCustomModelsDirectory;
+  String get modelsDirectoryDisplayLabel =>
+      StorageService.instance.modelsDirectoryDisplayLabel;
+
+  Future<bool> setModelsDirectory(String? path) async {
+    if (path == null || path.isEmpty) {
+      // Resetting to default is not implemented; use the current directory.
+      return false;
+    }
+    final ok = await StorageService.instance.setCustomModelsDirectory(path);
+    if (!ok) return false;
+    modelsDirectory = await StorageService.instance
+        .currentModelsDirectoryPath();
+    notifyListeners();
+    await ModelDownloadService.instance.scanDownloads();
+    return true;
+  }
+
+  Future<void> resetModelsDirectory() async {
+    await StorageService.instance.resetModelsDirectory();
+    await refreshModelsDirectory();
+  }
+
+  Future<void> refreshModelsDirectory({bool scan = true}) async {
+    try {
+      modelsDirectory = await StorageService.instance
+          .currentModelsDirectoryPath();
+      notifyListeners();
+      if (scan) await ModelDownloadService.instance.scanDownloads();
+    } catch (error) {
+      debugPrint('[AppState] models directory refresh failed: $error');
+    }
+  }
+
   Future<void> _loadLocalSettings() async {
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -173,6 +212,8 @@ class AppState extends ChangeNotifier {
     } finally {
       localSettingsLoaded = true;
       notifyListeners();
+      // main() performs the initial model scan after the first frame.
+      unawaited(refreshModelsDirectory(scan: false));
     }
   }
 

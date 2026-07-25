@@ -124,15 +124,27 @@ class SpeechService extends ChangeNotifier {
       _selectedVoiceId = preferences.getString('speech_voice_id');
       _rate = preferences.getDouble('speech_rate') ?? _rate;
       _pitch = preferences.getDouble('speech_pitch') ?? _pitch;
-      final rawEngines = await _tts.getEngines;
-      if (rawEngines is List) {
-        _engines = rawEngines.map((engine) => '$engine').toList()..sort();
-      }
-      if (_selectedEngine != null && _engines.contains(_selectedEngine)) {
-        await _tts.setEngine(_selectedEngine!);
+
+      // flutter_tts exposes engine selection only on Android. Calling these
+      // methods elsewhere throws MissingPluginException and prevents voices
+      // from loading on otherwise supported platforms.
+      final canSelectEngine =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      if (canSelectEngine) {
+        final rawEngines = await _tts.getEngines;
+        if (rawEngines is List) {
+          _engines = rawEngines.map((engine) => '$engine').toList()..sort();
+        }
+        if (_selectedEngine != null && _engines.contains(_selectedEngine)) {
+          await _tts.setEngine(_selectedEngine!);
+        } else {
+          _selectedEngine = (await _tts.getDefaultEngine)?.toString();
+        }
       } else {
-        _selectedEngine = (await _tts.getDefaultEngine)?.toString();
+        _engines = const [];
+        _selectedEngine = null;
       }
+
       await _loadVoices();
       if (selectedVoice != null) {
         await _tts.setVoice(selectedVoice!.platformValue);

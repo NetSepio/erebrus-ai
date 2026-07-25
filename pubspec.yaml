@@ -38,6 +38,8 @@ dependencies:
   lib_llama_cpp_platform_interface: ^0.7.3
   share_plus: ^12.0.2
   flutter_tts: ^4.2.5
+  file_picker: ^8.0.0+1
+  macos_secure_bookmarks: ^0.2.1
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8

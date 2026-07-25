@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../state/app_state.dart';
 import '../../services/speech_service.dart';
 import '../../services/local_server_service.dart';
+import '../../services/storage_service.dart';
 import '../../org/ai_org.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -79,6 +81,7 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             const _ApiKeyRow(dense: false),
+            const _ModelsFolderRow(dense: false),
             SettingsRow(
               icon: Symbols.wifi,
               title: 'Serve on local network',
@@ -111,6 +114,7 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             const _ApiKeyRow(dense: true),
+            const _ModelsFolderRow(dense: true),
           ],
         ),
       SizedBox(height: wide ? 20 : 18),
@@ -1153,6 +1157,98 @@ class _ApiKeyRow extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _ModelsFolderRow extends StatelessWidget {
+  const _ModelsFolderRow({required this.dense});
+
+  final bool dense;
+
+  bool get _isSupported => StorageService.supportsCustomModelsDirectory;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final custom = app.usesCustomModelsDirectory;
+    return SettingsRow(
+      icon: Symbols.folder,
+      title: 'Models folder',
+      subtitle: app.modelsDirectoryDisplayLabel,
+      subtitleMaxLines: 1,
+      dense: dense,
+      trailing: [
+        if (_isSupported && custom)
+          AccentChip(
+            'RESET',
+            radius: 8,
+            fontSize: dense ? 9 : 10,
+            padding: EdgeInsets.symmetric(
+              horizontal: dense ? 8 : 10,
+              vertical: dense ? 6 : 7,
+            ),
+            onTap: () => _resetModelsFolder(context, app),
+          ),
+        RowValue(
+          _isSupported ? (custom ? 'CHANGE' : 'CHOOSE') : 'DEFAULT',
+          chevron: false,
+        ),
+      ],
+      onTap: _isSupported ? () => _pickModelsFolder(context, app) : null,
+    );
+  }
+
+  Future<void> _pickModelsFolder(BuildContext context, AppState app) async {
+    if (Platform.isAndroid) {
+      final ok = await StorageService.instance.ensurePermissions();
+      if (!ok) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Storage permission is needed for a public models folder',
+            ),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: StorageService.instance.openSettings,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    // Ensure the current models directory exists before offering to change it.
+    await app.refreshModelsDirectory();
+
+    try {
+      final picked = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Choose your models folder',
+        initialDirectory: app.modelsDirectory,
+      );
+      if (picked == null || picked.isEmpty) return;
+      if (!context.mounted) return;
+      final ok = await app.setModelsDirectory(picked);
+      if (!context.mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not use selected folder')),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Folder picker failed: $e')));
+    }
+  }
+
+  Future<void> _resetModelsFolder(BuildContext context, AppState app) async {
+    await app.resetModelsDirectory();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Using the default models folder')),
     );
   }
 }

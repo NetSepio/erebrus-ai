@@ -24,6 +24,7 @@ class ModelDownloadService extends ChangeNotifier {
   final Map<String, int> _receivedBytes = {};
   final Map<String, int> _totalBytes = {};
   final Map<String, int> _lastNotifiedPercent = {};
+  final Map<String, String> _ggufPaths = {};
   int _downloadedBytes = 0;
 
   final FlutterLocalNotificationsPlugin _notifications =
@@ -40,9 +41,20 @@ class ModelDownloadService extends ChangeNotifier {
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
   /// Scans the models directory for existing downloads and completed manifests.
+  ///
+  /// Also discovers `.gguf` files that were placed there outside the app (e.g.
+  /// an existing model folder on the user's desktop). The filename without the
+  /// `.gguf` extension is treated as the model id so catalog entries that match
+  /// it appear as downloaded.
   Future<void> scanDownloads() async {
     final dir = await StorageService.instance.modelsDir();
-    if (!await dir.exists()) return;
+    _completed.clear();
+    _ggufPaths.clear();
+    _downloadedBytes = 0;
+    if (!await dir.exists()) {
+      notifyListeners();
+      return;
+    }
     final manifests = await dir
         .list()
         .where((e) => e is File && e.path.endsWith('.json'))
@@ -53,25 +65,49 @@ class ModelDownloadService extends ChangeNotifier {
         final text = await file.readAsString();
         final manifest = json.decode(text) as Map<String, dynamic>;
         final id = manifest['id'] as String?;
-        if (id != null && id.isNotEmpty) _completed.add(id);
+        if (id == null || id.isEmpty) continue;
+        final modelFile = File(p.join(dir.path, '${_safeName(id)}.gguf'));
+        if (!await modelFile.exists()) continue;
+        _completed.add(id);
+        _ggufPaths[id] = modelFile.path;
       } catch (_) {
         // Ignore corrupt manifest files.
       }
     }
+
+    await for (final entity in dir.list()) {
+      if (entity is! File || !entity.path.toLowerCase().endsWith('.gguf')) {
+        continue;
+      }
+      final name = p.basenameWithoutExtension(entity.path);
+      if (name.isEmpty || name.endsWith('_mmproj')) continue;
+      _ggufPaths[name] = entity.path;
+    }
+
     await _refreshDownloadedBytes(dir);
     notifyListeners();
   }
 
-  bool isDownloaded(String id) => _completed.contains(id);
+  bool isDownloaded(String id) =>
+      _completed.contains(id) || _ggufPaths.containsKey(id);
 
   /// Absolute path to a downloaded GGUF model, or `null` when the download is
   /// incomplete/missing. Native llama.cpp bindings require a real filesystem
   /// path (asset URLs and model ids are not sufficient).
   Future<String?> modelPath(String id) async {
-    if (id.isEmpty || !_completed.contains(id)) return null;
+    if (id.isEmpty) return null;
+    if (_ggufPaths.containsKey(id)) {
+      final existing = File(_ggufPaths[id]!);
+      if (await existing.exists()) return existing.path;
+      _ggufPaths.remove(id);
+    }
+    if (!_completed.contains(id)) return null;
     final dir = await StorageService.instance.modelsDir();
     final file = File(p.join(dir.path, '${_safeName(id)}.gguf'));
-    return await file.exists() ? file.path : null;
+    if (await file.exists()) return file.path;
+    _completed.remove(id);
+    notifyListeners();
+    return null;
   }
 
   Future<String?> mmprojPath(String id) async {
@@ -88,7 +124,7 @@ class ModelDownloadService extends ChangeNotifier {
 
   /// Downloads the recommended model artifact (and optional mmproj) for [entry].
   Future<bool> download(CatalogEntry entry) async {
-    if (_completed.contains(entry.id)) return true;
+    if (isDownloaded(entry.id)) return true;
 
     final permitted = await StorageService.instance.ensurePermissions();
     if (!permitted) {
@@ -165,6 +201,7 @@ class ModelDownloadService extends ChangeNotifier {
     await manifestFile.writeAsString(json.encode(manifest));
 
     _completed.add(entry.id);
+    _ggufPaths[entry.id] = modelFile.path;
     _downloading.remove(entry.id);
     _progress[entry.id] = 1.0;
     await _refreshDownloadedBytes(dir);
@@ -248,7 +285,9 @@ class ModelDownloadService extends ChangeNotifier {
   Future<void> _refreshDownloadedBytes(Directory dir) async {
     var total = 0;
     await for (final entity in dir.list()) {
-      if (entity is! File || !entity.path.endsWith('.gguf')) continue;
+      if (entity is! File || !entity.path.toLowerCase().endsWith('.gguf')) {
+        continue;
+      }
       try {
         total += await entity.length();
       } catch (_) {}

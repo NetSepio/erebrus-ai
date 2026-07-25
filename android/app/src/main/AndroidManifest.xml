@@ -43,7 +43,9 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="erebrusai" android:host="auth"/>
+                <!-- Accept the auth callback and Reown envelopes. Dart
+                     validates the host/payload before using either. -->
+                <data android:scheme="erebrusai"/>
             </intent-filter>
         </activity>
 

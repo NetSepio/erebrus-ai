@@ -5,14 +5,20 @@ import 'desktop_web_auth.dart';
 import 'wallet_auth_controller.dart';
 
 /// Routes `erebrusai://` callbacks — desktop PASETO auth and mobile Reown envelopes.
+///
+/// The custom platform channel is only implemented on Android; on iOS and macOS
+/// Reown/AppKit handle the deep-link envelopes through their own plugins.
 class DeepLinkHandler {
   static const _methodChannel = MethodChannel('com.erebrus.ai/methods');
   static const _eventChannel = EventChannel('com.erebrus.ai/events');
 
   static WalletAuthController? _auth;
 
+  static bool get _useCustomChannel =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   static void initListener() {
-    if (kIsWeb) return;
+    if (!_useCustomChannel) return;
     try {
       _eventChannel.receiveBroadcastStream().listen(_onLink, onError: _onError);
     } catch (e) {
@@ -25,10 +31,11 @@ class DeepLinkHandler {
     _auth = auth;
   }
 
-  static void checkInitialLink() {
-    if (kIsWeb) return;
+  static Future<void> checkInitialLink() async {
+    if (!_useCustomChannel) return;
     try {
-      _methodChannel.invokeMethod<void>('initialLink');
+      final link = await _methodChannel.invokeMethod<String>('initialLink');
+      if (link != null && link.isNotEmpty) await _onLink(link);
     } catch (e) {
       debugPrint('[DeepLinkHandler] checkInitialLink $e');
     }

@@ -45,6 +45,7 @@ class SettingsRow extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.subtitleMono = false,
+    this.subtitleMaxLines,
     this.trailing = const [],
     this.iconColor = AppColors.textSecondary,
     this.titleColor = AppColors.textPrimary,
@@ -56,6 +57,7 @@ class SettingsRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final bool subtitleMono;
+  final int? subtitleMaxLines;
   final List<Widget> trailing;
   final Color iconColor;
   final Color titleColor;
@@ -98,6 +100,10 @@ class SettingsRow extends StatelessWidget {
                             dense ? 11 : 11.5,
                             color: AppColors.textMuted,
                           ),
+                    maxLines: subtitleMaxLines,
+                    overflow: subtitleMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
                   ),
                 ],
               ],
