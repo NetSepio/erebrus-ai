@@ -1,6 +1,6 @@
 import 'mock_data.dart';
 
-/// A single downloadable artifact (usually a GGUF model file or mmproj).
+/// A single file in a downloadable model package.
 class Artifact {
   const Artifact({
     required this.id,
@@ -14,15 +14,25 @@ class Artifact {
     this.sizeBytes,
     this.platforms = const [],
     this.recommended = false,
+    this.backend = '',
+    this.revision = '',
+    this.sha256 = '',
+    this.required = true,
   });
 
-  factory Artifact.fromJson(Map<String, dynamic> json) {
+  factory Artifact.fromJson(
+    Map<String, dynamic> json, {
+    String defaultFormat = '',
+    String defaultQuantization = '',
+    String defaultBackend = '',
+    List<String> defaultPlatforms = const [],
+  }) {
     final fileSizeDisplay = json['file_size_display'] as String?;
     return Artifact(
-      id: (json['id'] as String?) ?? '',
-      role: (json['role'] as String?) ?? '',
-      format: (json['format'] as String?) ?? '',
-      quantization: (json['quantization'] as String?) ?? '',
+      id: (json['artifact_id'] as String?) ?? (json['id'] as String?) ?? '',
+      role: (json['role'] as String?) ?? 'model',
+      format: (json['format'] as String?) ?? defaultFormat,
+      quantization: (json['quantization'] as String?) ?? defaultQuantization,
       filename: (json['filename'] as String?) ?? '',
       repositoryId: (json['repository_id'] as String?) ?? '',
       downloadUrl: (json['download_url'] as String?) ?? '',
@@ -30,8 +40,14 @@ class Artifact {
       sizeBytes:
           (json['file_size_bytes'] as int?) ??
           parseFileSizeDisplay(fileSizeDisplay),
-      platforms: _stringList(json['platforms']),
+      platforms: _stringList(json['platforms']).isNotEmpty
+          ? _stringList(json['platforms'])
+          : defaultPlatforms,
       recommended: json['recommended'] == true,
+      backend: (json['backend'] as String?) ?? defaultBackend,
+      revision: (json['revision'] as String?) ?? '',
+      sha256: (json['sha256'] as String?) ?? '',
+      required: json['required'] != false,
     );
   }
 
@@ -46,6 +62,130 @@ class Artifact {
   final int? sizeBytes;
   final List<String> platforms;
   final bool recommended;
+  final String backend;
+  final String revision;
+  final String sha256;
+  final bool required;
+}
+
+/// A runnable package of model files for one backend/platform combination.
+///
+/// Schema 1.1 catalogs publish these under a logical model's `variants` array.
+/// Schema 1.0 entries are converted to a synthetic llama.cpp/GGUF variant whose
+/// id matches the legacy model id.
+class ModelVariant {
+  const ModelVariant({
+    required this.id,
+    required this.modelId,
+    required this.format,
+    required this.quantization,
+    required this.files,
+    this.platforms = const [],
+    this.compatibleBackends = const [],
+    this.minimumRamGB = 0,
+    this.recommendedRamGB = 0,
+    this.releaseChannel = 'stable',
+    this.status = 'active',
+    this.minimumAppVersion = '',
+    this.minimumRuntimeVersion = '',
+  });
+
+  factory ModelVariant.fromJson(
+    Map<String, dynamic> json, {
+    required String fallbackModelId,
+  }) {
+    final format = (json['format'] as String?) ?? '';
+    final quantization = (json['quantization'] as String?) ?? '';
+    final platforms = _stringList(json['platforms']);
+    final compatibleBackends = _stringList(json['compatible_backends']);
+    final backend = (json['backend'] as String?) ?? '';
+    final backends = compatibleBackends.isNotEmpty
+        ? compatibleBackends
+        : backend.isNotEmpty
+        ? [backend]
+        : const <String>[];
+    final filesJson =
+        (json['files'] as List<dynamic>?) ??
+        (json['artifacts'] as List<dynamic>?) ??
+        const <dynamic>[];
+    final files = filesJson
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (file) => Artifact.fromJson(
+            file,
+            defaultFormat: format,
+            defaultQuantization: quantization,
+            defaultBackend: backends.firstOrNull ?? '',
+            defaultPlatforms: platforms,
+          ),
+        )
+        .toList();
+
+    return ModelVariant(
+      id: (json['variant_id'] as String?) ?? (json['id'] as String?) ?? '',
+      modelId: (json['model_id'] as String?) ?? fallbackModelId,
+      format: format,
+      quantization: quantization,
+      files: files,
+      platforms: platforms,
+      compatibleBackends: backends,
+      minimumRamGB:
+          (json['minimum_ram_gb'] as num?)?.toDouble() ??
+          (json['minimum_working_memory_gb'] as num?)?.toDouble() ??
+          0,
+      recommendedRamGB:
+          (json['recommended_ram_gb'] as num?)?.toDouble() ??
+          (json['recommended_working_memory_gb'] as num?)?.toDouble() ??
+          0,
+      releaseChannel: (json['release_channel'] as String?) ?? 'stable',
+      status: (json['status'] as String?) ?? 'active',
+      minimumAppVersion: (json['minimum_app_version'] as String?) ?? '',
+      minimumRuntimeVersion: (json['minimum_runtime_version'] as String?) ?? '',
+    );
+  }
+
+  final String id;
+  final String modelId;
+  final String format;
+  final String quantization;
+  final List<Artifact> files;
+  final List<String> platforms;
+  final List<String> compatibleBackends;
+  final double minimumRamGB;
+  final double recommendedRamGB;
+  final String releaseChannel;
+  final String status;
+  final String minimumAppVersion;
+  final String minimumRuntimeVersion;
+
+  Artifact? get primaryArtifact {
+    for (final file in files) {
+      if (file.role == 'model' && file.recommended) return file;
+    }
+    for (final file in files) {
+      if (file.role == 'model') return file;
+    }
+    return files.firstOrNull;
+  }
+
+  int get sizeBytes => files
+      .where((file) => file.required)
+      .fold(0, (sum, file) => sum + (file.sizeBytes ?? 0));
+
+  bool supportsPlatform(String platform) =>
+      platforms.isEmpty ||
+      platforms.any(
+        (candidate) => candidate.toLowerCase() == platform.toLowerCase(),
+      );
+
+  bool supportsBackend(String backend) => compatibleBackends.any(
+    (candidate) => candidate.toLowerCase() == backend.toLowerCase(),
+  );
+
+  bool get isActive {
+    final normalized = status.toLowerCase();
+    return normalized != 'deprecated' && normalized != 'removed';
+  }
 }
 
 /// A real open-source model that can be downloaded and run locally.
@@ -83,6 +223,8 @@ class CatalogEntry {
     this.featured = false,
     this.status = 'active',
     this.fileSizeDisplay = '',
+    this.variants = const [],
+    this.preferredVariantId = '',
   });
 
   factory CatalogEntry.fromJson(Map<String, dynamic> json) {
@@ -90,6 +232,8 @@ class CatalogEntry {
     final dsMap = json['device_support'] as Map<String, dynamic>?;
     final displayMap = json['display'] as Map<String, dynamic>?;
     final statusMap = json['status'] as Map<String, dynamic>?;
+    final runtimeMap = json['runtime'] as Map<String, dynamic>?;
+    final modelId = (json['id'] as String?) ?? '';
 
     final parameterCount =
         (modelMap?['parameter_count'] as num?)?.toDouble() ?? 0;
@@ -99,12 +243,76 @@ class CatalogEntry {
         : parseParameterLabel(parameterLabel);
 
     final artifacts = (json['artifacts'] as List<dynamic>? ?? [])
-        .map((a) => Artifact.fromJson(a as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(Artifact.fromJson)
         .toList();
 
-    final modelArtifact = artifacts.firstWhere(
+    final parsedVariants = (json['variants'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (variant) => ModelVariant.fromJson(variant, fallbackModelId: modelId),
+        )
+        .where((variant) => variant.id.isNotEmpty)
+        .toList();
+
+    final preferredBackend =
+        (runtimeMap?['preferred_backend'] as String?) ?? 'llama.cpp';
+    final legacyVariant = artifacts.isEmpty
+        ? null
+        : ModelVariant(
+            id: modelId,
+            modelId: modelId,
+            format: artifacts.firstOrNull?.format ?? 'gguf',
+            quantization:
+                artifacts
+                    .where((artifact) => artifact.role == 'model')
+                    .firstOrNull
+                    ?.quantization ??
+                '',
+            files: artifacts,
+            platforms: _stringList(
+              (json['device_support'] as Map<String, dynamic>?)?['platforms'],
+            ),
+            compatibleBackends:
+                _stringList(runtimeMap?['compatible_backends']).isNotEmpty
+                ? _stringList(runtimeMap?['compatible_backends'])
+                : [preferredBackend],
+            minimumRamGB:
+                ((json['device_support']
+                            as Map<String, dynamic>?)?['minimum_ram_gb']
+                        as num?)
+                    ?.toDouble() ??
+                0,
+            recommendedRamGB:
+                ((json['device_support']
+                            as Map<String, dynamic>?)?['recommended_ram_gb']
+                        as num?)
+                    ?.toDouble() ??
+                0,
+            releaseChannel:
+                (statusMap?['release_channel'] as String?) ?? 'stable',
+            status: (statusMap?['catalog_state'] as String?) ?? 'active',
+            minimumAppVersion:
+                (statusMap?['minimum_app_version'] as String?) ?? '',
+            minimumRuntimeVersion:
+                (runtimeMap?['minimum_runtime_version'] as String?) ?? '',
+          );
+    final variants = parsedVariants.isNotEmpty
+        ? parsedVariants
+        : legacyVariant == null
+        ? const <ModelVariant>[]
+        : [legacyVariant];
+    final requestedPreferredVariantId =
+        (json['preferred_variant_id'] as String?) ?? '';
+    final projectedVariant = _selectLegacyCompatibleVariant(
+      variants,
+      requestedPreferredVariantId,
+    );
+
+    final projectedFiles = projectedVariant?.files ?? artifacts;
+    final modelArtifact = projectedFiles.firstWhere(
       (a) => a.role == 'model' && a.recommended,
-      orElse: () => artifacts.firstWhere(
+      orElse: () => projectedFiles.firstWhere(
         (a) => a.role == 'model',
         orElse: () => const Artifact(
           id: '',
@@ -117,7 +325,7 @@ class CatalogEntry {
         ),
       ),
     );
-    final mmprojArtifact = artifacts.firstWhere(
+    final mmprojArtifact = projectedFiles.firstWhere(
       (a) => a.role == 'mmproj',
       orElse: () => const Artifact(
         id: '',
@@ -167,8 +375,8 @@ class CatalogEntry {
         platforms.isEmpty;
 
     return CatalogEntry(
-      id: (json['id'] as String?) ?? '',
-      slug: (json['slug'] as String?) ?? (json['id'] as String?) ?? '',
+      id: modelId,
+      slug: (json['slug'] as String?) ?? modelId,
       family: (json['family'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
       variant: (json['variant'] as String?) ?? '',
@@ -190,12 +398,14 @@ class CatalogEntry {
       recommendedTier: (dsMap?['recommended_tier'] as String?) ?? '',
       gpuRequired: dsMap?['gpu_required'] == true,
       gpuRecommended: dsMap?['gpu_recommended'] == true,
-      artifacts: artifacts,
+      artifacts: projectedFiles,
       downloadUrl: modelArtifact.downloadUrl,
       mmprojDownloadUrl: mmprojArtifact.downloadUrl,
       sortOrder: (displayMap?['sort_order'] as int?) ?? 0,
       featured: displayMap?['featured'] == true,
       status: (statusMap?['catalog_state'] as String?) ?? 'active',
+      variants: variants,
+      preferredVariantId: projectedVariant?.id ?? '',
     );
   }
 
@@ -261,6 +471,22 @@ class CatalogEntry {
 
   /// Catalog lifecycle state, e.g. `active`, `beta`, `deprecated`.
   final String status;
+
+  /// Runnable backend/platform packages for this logical model.
+  final List<ModelVariant> variants;
+
+  /// Variant projected through legacy fields such as [downloadUrl].
+  ///
+  /// Until the package downloader ships, this deliberately resolves only a
+  /// llama.cpp/GGUF variant so an MLX package is never treated as a `.gguf`.
+  final String preferredVariantId;
+
+  ModelVariant? get preferredVariant {
+    for (final variant in variants) {
+      if (variant.id == preferredVariantId) return variant;
+    }
+    return null;
+  }
 
   String get letter =>
       name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
@@ -328,4 +554,28 @@ List<String> _stringList(dynamic value) {
     return value.whereType<String>().toList();
   }
   return const [];
+}
+
+ModelVariant? _selectLegacyCompatibleVariant(
+  List<ModelVariant> variants,
+  String preferredVariantId,
+) {
+  bool isLegacyCompatible(ModelVariant variant) =>
+      variant.isActive &&
+      variant.format.toLowerCase() == 'gguf' &&
+      variant.compatibleBackends.any(
+        (backend) => backend.toLowerCase() == 'llama.cpp',
+      );
+
+  if (preferredVariantId.isNotEmpty) {
+    for (final variant in variants) {
+      if (variant.id == preferredVariantId && isLegacyCompatible(variant)) {
+        return variant;
+      }
+    }
+  }
+  for (final variant in variants) {
+    if (isLegacyCompatible(variant)) return variant;
+  }
+  return null;
 }
