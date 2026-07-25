@@ -16,8 +16,8 @@ whose variant ID matches the legacy model ID. Schema 1.1 can publish GGUF and
 complete MLX package variants side by side without presenting MLX weights as a
 GGUF download.
 
-The Phase 1 installed index will key files and state by `variant_id`, never only
-by logical model ID:
+The installed index keys files and state by `variant_id`, never only by logical
+model ID:
 
 ```text
 models/
@@ -25,6 +25,13 @@ models/
     manifest.json
     <required artifacts>
 ```
+
+`ModelPackageService` downloads every required artifact into a private staging
+directory, checks the declared byte count and SHA-256, writes the package
+manifest, and only then renames the directory into its runnable location. A
+checksum failure removes staging data and never enters the installed index.
+Legacy flat GGUF discovery remains available through `ModelDownloadService`
+during migration.
 
 ## Transcription sessions
 

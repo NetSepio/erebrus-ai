@@ -32,6 +32,7 @@ dependencies:
   multicast_dns: ^0.3.2+7
   http: ^1.2.2
   uuid: ^4.5.1
+  crypto: ^3.0.7
   qr_flutter: ^4.1.0
   bonsoir: ^7.1.4
   lib_llama_cpp: ^0.7.3
