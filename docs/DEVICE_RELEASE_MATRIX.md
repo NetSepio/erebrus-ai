@@ -58,6 +58,18 @@ The first debug run on 25 July 2026 with the MLX Swift LM registry's
 the Flutter/native load and event-stream path; it is not a release-performance
 or model-quality certification.
 
+Run the Apple SpeechAnalyzer capability test with:
+
+```sh
+flutter test integration_test/speech_analyzer_probe_test.dart -d macos
+```
+
+The prototype uses one microphone buffer stream for both consumers: it writes
+the original capture format to a per-session CAF file and converts that same
+buffer to SpeechAnalyzer's preferred format for transcription. It requests and
+installs only Apple's system-managed locale assets. Microphone and speech
+permissions remain mandatory; no audio or transcript leaves the device.
+
 ## Current status
 
 | Backend | Status | Honest application label |
@@ -66,7 +78,7 @@ or model-quality certification.
 | llama.cpp Metal | Not packaged in the current Apple XCFramework | unavailable |
 | MLX Swift | Packaged on iOS 17+/macOS 14+; native probe and build verified | `mlx · Metal` only after a successful runtime probe |
 | TurboQuant | Contract and selection policy only | unavailable |
-| SpeechAnalyzer | Contract only | unavailable |
+| SpeechAnalyzer | Native live-capture, streamed transcription, and session-audio prototype packaged; runtime-gated to iOS/macOS 26+ | `SpeechAnalyzer · on-device` only after a successful locale/asset probe |
 | whisper.cpp | Not packaged | unavailable |
 
 Promotion from experimental to beta/stable requires release builds on the

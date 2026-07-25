@@ -26,8 +26,12 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Erebrus AI uses Apple on-device speech recognition to transcribe your audio privately.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

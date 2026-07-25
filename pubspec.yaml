@@ -42,6 +42,8 @@ dependencies:
   macos_secure_bookmarks: ^0.2.1
   erebrus_mlx:
     path: packages/erebrus_mlx
+  erebrus_speech:
+    path: packages/erebrus_speech
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8

@@ -66,6 +66,10 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Erebrus AI uses Apple on-device speech recognition to transcribe your audio privately.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_erebrusai._tcp</string>
