@@ -2,6 +2,7 @@ import 'package:erebrus_ai/data/catalog_entry.dart';
 import 'package:erebrus_ai/services/backend_probe_service.dart';
 import 'package:erebrus_ai/services/device_info_service.dart';
 import 'package:erebrus_ai/services/inference_contract.dart';
+import 'package:erebrus_mlx/erebrus_mlx.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -51,6 +52,30 @@ void main() {
 
     expect(capability.supports(variant, 'macos-arm64'), isTrue);
     expect(capability.supports(variant, 'ios-arm64'), isFalse);
+  });
+
+  test('a responding packaged MLX runtime takes priority on Apple', () async {
+    final service = BackendProbeService.instance;
+    service.reset();
+
+    final capabilities = await service.probe(
+      device: _mac,
+      mlxProbe: () async => const MlxProbeResult(
+        available: true,
+        metalAvailable: true,
+        platform: 'macos-arm64',
+        minimumOperatingSystem: 'macOS 14',
+        reason: 'MLX Swift LM 3.31.3 is packaged',
+      ),
+    );
+
+    expect(
+      capabilities
+          .singleWhere((capability) => capability.kind == BackendKind.mlx)
+          .operational,
+      isTrue,
+    );
+    expect(service.activeLabel, 'mlx · Metal');
   });
 }
 

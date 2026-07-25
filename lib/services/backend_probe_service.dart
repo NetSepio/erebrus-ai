@@ -1,13 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:erebrus_mlx/erebrus_mlx.dart';
 
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 
 /// Reports packaged inference engines separately from hardware availability.
 ///
-/// This initial probe is intentionally conservative: Erebrus currently ships a
-/// CPU llama.cpp runtime and does not claim MLX, TurboQuant, or Metal until
-/// their native packages and operational probes are integrated.
+typedef MlxProbe = Future<MlxProbeResult> Function();
+
+/// A backend is operational only when both its package and runtime accelerator
+/// respond. Hardware detection alone never advertises an inference backend.
 class BackendProbeService extends ChangeNotifier {
   BackendProbeService._();
 
@@ -39,10 +41,15 @@ class BackendProbeService extends ChangeNotifier {
     return active?.reason ?? 'No packaged local inference backend responded';
   }
 
-  Future<List<BackendCapabilities>> probe({DeviceProfile? device}) async {
+  Future<List<BackendCapabilities>> probe({
+    DeviceProfile? device,
+    MlxProbe? mlxProbe,
+  }) async {
     if (_probed) return capabilities;
     final profile = device ?? DeviceInfoService.detect();
+    final mlx = await _probeMlx(profile, mlxProbe ?? ErebrusMlx().probe);
     _capabilities = [
+      mlx,
       BackendCapabilities(
         kind: BackendKind.llamaCpp,
         operational: !kIsWeb,
@@ -52,13 +59,6 @@ class BackendProbeService extends ChangeNotifier {
         reason: kIsWeb
             ? 'Native llama.cpp is unavailable on web'
             : 'Packaged CPU runtime; each model load is verified separately',
-      ),
-      BackendCapabilities(
-        kind: BackendKind.mlx,
-        operational: false,
-        platforms: [profile.platform],
-        formats: const ['mlx'],
-        reason: 'MLX Swift runtime is not packaged in this build',
       ),
       BackendCapabilities(
         kind: BackendKind.turboQuant,
@@ -71,6 +71,51 @@ class BackendProbeService extends ChangeNotifier {
     _probed = true;
     notifyListeners();
     return capabilities;
+  }
+
+  Future<BackendCapabilities> _probeMlx(
+    DeviceProfile profile,
+    MlxProbe nativeProbe,
+  ) async {
+    final isApple =
+        profile.platform.startsWith('macos-') ||
+        profile.platform.startsWith('ios-');
+    if (kIsWeb || !isApple) {
+      return BackendCapabilities(
+        kind: BackendKind.mlx,
+        operational: false,
+        platforms: [profile.platform],
+        formats: const ['mlx'],
+        reason: 'MLX is available only in Apple platform builds',
+      );
+    }
+
+    try {
+      final result = await nativeProbe();
+      final operational = result.available && result.metalAvailable;
+      return BackendCapabilities(
+        kind: BackendKind.mlx,
+        operational: operational,
+        platforms: [
+          if (result.platform.isNotEmpty) result.platform else profile.platform,
+        ],
+        formats: const ['mlx'],
+        accelerators: result.metalAvailable ? const ['Metal'] : const [],
+        reason: operational
+            ? '${result.reason}; minimum ${result.minimumOperatingSystem}'
+            : result.reason.isNotEmpty
+            ? result.reason
+            : 'MLX package or Metal device probe failed',
+      );
+    } catch (error) {
+      return BackendCapabilities(
+        kind: BackendKind.mlx,
+        operational: false,
+        platforms: [profile.platform],
+        formats: const ['mlx'],
+        reason: 'MLX native probe did not respond: $error',
+      );
+    }
   }
 
   @visibleForTesting

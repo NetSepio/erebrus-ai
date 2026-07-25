@@ -40,6 +40,8 @@ dependencies:
   flutter_tts: ^4.2.5
   file_picker: ^8.0.0+1
   macos_secure_bookmarks: ^0.2.1
+  erebrus_mlx:
+    path: packages/erebrus_mlx
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8
@@ -49,6 +51,8 @@ dependency_overrides:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
@@ -71,6 +75,8 @@ flutter_launcher_icons:
     icon_size: 256
 
 flutter:
+  config:
+    enable-swift-package-manager: true
   uses-material-design: true
 
   assets:
