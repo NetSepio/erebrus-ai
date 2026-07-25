@@ -89,6 +89,10 @@ class ErebrusSpeech {
   Stream<SpeechTranscriptionEvent> get events =>
       ErebrusSpeechPlatform.instance.events;
 
+  Future<void> pause() => ErebrusSpeechPlatform.instance.pause();
+
+  Future<void> resume() => ErebrusSpeechPlatform.instance.resume();
+
   Future<SpeechSessionResult> stop() => ErebrusSpeechPlatform.instance.stop();
 
   Future<void> cancel() => ErebrusSpeechPlatform.instance.cancel();

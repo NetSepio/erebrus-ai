@@ -10,8 +10,8 @@ import '../widgets/spark_logo.dart';
 import 'auth/sign_in.dart';
 import 'chat/chat_screen.dart';
 import 'models/models_screen.dart';
-import 'personas/personas_screen.dart';
 import 'settings/settings_screen.dart';
+import 'transcribe/transcribe_screen.dart';
 
 /// Responsive app shell — 224px sidebar at ≥900dp, bottom nav below.
 const kDesktopBreakpoint = 900.0;
@@ -25,8 +25,8 @@ class _NavItem {
 
 const _navItems = [
   _NavItem(ShellTab.chat, 'CHAT', Symbols.chat_bubble),
+  _NavItem(ShellTab.transcribe, 'TRANSCRIBE', Symbols.mic),
   _NavItem(ShellTab.models, 'MODELS', Symbols.deployed_code),
-  _NavItem(ShellTab.personas, 'PERSONAS', Symbols.theater_comedy),
   _NavItem(ShellTab.settings, 'SETTINGS', Symbols.tune),
 ];
 
@@ -54,11 +54,11 @@ class _ShellState extends State<Shell> {
     index: _tab.index,
     children: [
       ChatScreen(wide: wide),
+      TranscribeScreen(wide: wide, onOpenChat: () => _setTab(ShellTab.chat)),
       ModelsScreen(
         wide: wide,
         initialSubTab: widget.initialTab == ShellTab.models ? 1 : 0,
       ),
-      PersonasScreen(wide: wide),
       SettingsScreen(wide: wide),
     ],
   );

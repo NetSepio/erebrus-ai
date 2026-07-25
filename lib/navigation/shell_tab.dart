@@ -1,1 +1,1 @@
-enum ShellTab { chat, models, personas, settings }
+enum ShellTab { chat, transcribe, models, settings }

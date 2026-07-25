@@ -754,7 +754,26 @@ class _ComposerState extends State<_Composer> {
   bool _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    ChatService.instance.addListener(_takeDraft);
+  }
+
+  void _takeDraft() {
+    final draft = ChatService.instance.pendingDraft;
+    if (draft.isEmpty || _controller.text.isNotEmpty) return;
+    _controller.text = ChatService.instance.takePendingDraft();
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
   void dispose() {
+    ChatService.instance.removeListener(_takeDraft);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();

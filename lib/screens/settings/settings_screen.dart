@@ -17,6 +17,7 @@ import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
 import '../../widgets/settings_rows.dart';
 import '../auth/sign_in.dart';
+import '../personas/personas_screen.dart';
 import 'pair_sheet.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -175,6 +176,21 @@ class SettingsScreen extends StatelessWidget {
           ],
         ),
       SizedBox(height: wide ? 20 : 18),
+      _SectionLabel('PERSONAS', wide: wide),
+      SizedBox(height: wide ? 9 : 8),
+      SettingsCard(
+        children: [
+          SettingsRow(
+            icon: Symbols.theater_comedy,
+            title: 'Manage personas',
+            subtitle: '${app.selectedPersona} is selected for Chat',
+            dense: !wide,
+            trailing: const [RowValue('OPEN')],
+            onTap: () => _openPersonas(context, wide),
+          ),
+        ],
+      ),
+      SizedBox(height: wide ? 20 : 18),
       _SectionLabel('VOICE', wide: wide),
       SizedBox(height: wide ? 9 : 8),
       AnimatedBuilder(
@@ -239,6 +255,22 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+void _openPersonas(BuildContext context, bool wide) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          foregroundColor: AppColors.textPrimary,
+          title: const Text('Personas'),
+        ),
+        body: PersonasScreen(wide: wide),
+      ),
+    ),
+  );
 }
 
 void showVoiceSettings(BuildContext context) {

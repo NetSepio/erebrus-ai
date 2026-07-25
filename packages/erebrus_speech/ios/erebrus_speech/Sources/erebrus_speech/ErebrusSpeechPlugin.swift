@@ -82,6 +82,28 @@ public final class ErebrusSpeechPlugin: NSObject, FlutterPlugin, FlutterStreamHa
           fail(result, code: "session_stop_failed", error: error)
         }
       }
+    case "pause":
+      guard #available(iOS 26.0, *),
+        let session = activeSession as? SpeechAnalyzerCaptureSession
+      else {
+        result(FlutterError(code: "no_active_session", message: "No transcription session is active", details: nil))
+        return
+      }
+      session.pause()
+      result(nil)
+    case "resume":
+      guard #available(iOS 26.0, *),
+        let session = activeSession as? SpeechAnalyzerCaptureSession
+      else {
+        result(FlutterError(code: "no_active_session", message: "No transcription session is active", details: nil))
+        return
+      }
+      do {
+        try session.resume()
+        result(nil)
+      } catch {
+        fail(result, code: "session_resume_failed", error: error)
+      }
     case "cancel":
       guard #available(iOS 26.0, *),
         let session = activeSession as? SpeechAnalyzerCaptureSession
@@ -222,6 +244,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   private var resultsTask: Task<Void, Error>?
   private var transcript = ""
   private var stopped = false
+  private var paused = false
 
   private init(
     audioURL: URL,
@@ -349,6 +372,20 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     audioFile = nil
     emit(["type": "stopped", "audio_path": audioURL.path, "text": transcript])
     return ["audio_path": audioURL.path, "transcript": transcript]
+  }
+
+  func pause() {
+    guard !stopped, !paused else { return }
+    engine.pause()
+    paused = true
+    emit(["type": "paused", "audio_path": audioURL.path])
+  }
+
+  func resume() throws {
+    guard !stopped, paused else { return }
+    try engine.start()
+    paused = false
+    emit(["type": "resumed", "audio_path": audioURL.path])
   }
 
   func cancel() async {

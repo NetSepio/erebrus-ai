@@ -29,6 +29,8 @@ void main() {
               'audio_path': '/tmp/session/audio.caf',
               'transcript': 'hello on device',
             },
+            'pause' => null,
+            'resume' => null,
             'cancel' => null,
             _ => throw MissingPluginException(),
           };
@@ -75,6 +77,15 @@ void main() {
     await plugin.cancel();
 
     expect(calls.single.method, 'cancel');
+  });
+
+  test('pause and resume are forwarded to the native bridge', () async {
+    final plugin = MethodChannelErebrusSpeech();
+
+    await plugin.pause();
+    await plugin.resume();
+
+    expect(calls.map((call) => call.method), ['pause', 'resume']);
   });
 
   test('event DTO preserves partial timing and diagnostics', () {

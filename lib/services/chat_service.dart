@@ -27,10 +27,12 @@ class ChatService extends ChangeNotifier {
   final List<ChatSession> _sessions = [];
   final Map<String, List<ChatMessage>> _messages = {};
   String? _activeSessionId;
+  String _pendingDraft = '';
   bool _loaded = false;
 
   List<ChatSession> get sessions => List.unmodifiable(_sessions);
   String? get activeSessionId => _activeSessionId;
+  String get pendingDraft => _pendingDraft;
   ChatSession? get activeSession {
     if (_activeSessionId == null) return null;
     return _sessions.where((s) => s.id == _activeSessionId).firstOrNull;
@@ -96,6 +98,18 @@ class ChatService extends ChangeNotifier {
     _activeSessionId = session.id;
     notifyListeners();
     await _persist(session.id);
+  }
+
+  Future<void> prepareDraft(String text) async {
+    await newSession();
+    _pendingDraft = text;
+    notifyListeners();
+  }
+
+  String takePendingDraft() {
+    final draft = _pendingDraft;
+    _pendingDraft = '';
+    return draft;
   }
 
   /// Switches the active session.

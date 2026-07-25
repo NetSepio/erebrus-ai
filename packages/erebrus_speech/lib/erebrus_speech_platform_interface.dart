@@ -25,6 +25,10 @@ abstract class ErebrusSpeechPlatform extends PlatformInterface {
 
   Stream<SpeechTranscriptionEvent> get events;
 
+  Future<void> pause();
+
+  Future<void> resume();
+
   Future<SpeechSessionResult> stop();
 
   Future<void> cancel();

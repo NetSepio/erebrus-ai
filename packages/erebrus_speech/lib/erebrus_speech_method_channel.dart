@@ -43,6 +43,12 @@ class MethodChannelErebrusSpeech extends ErebrusSpeechPlatform {
       );
 
   @override
+  Future<void> pause() => methodChannel.invokeMethod<void>('pause');
+
+  @override
+  Future<void> resume() => methodChannel.invokeMethod<void>('resume');
+
+  @override
   Future<SpeechSessionResult> stop() async {
     final result = await methodChannel.invokeMapMethod<Object?, Object?>(
       'stop',

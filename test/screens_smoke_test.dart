@@ -65,7 +65,9 @@ void main() {
   }
 
   group('desktop 1280x800', () {
-    testWidgets('chat, models, personas, settings render', (tester) async {
+    testWidgets('chat, transcribe, models, and settings render', (
+      tester,
+    ) async {
       await pumpApp(tester, const Size(1280, 800));
 
       // Chat (default tab) — sidebar + sessions + streaming status.
@@ -83,18 +85,33 @@ void main() {
       expect(find.text('Private workspace models'), findsOneWidget);
       expect(find.text('Private workspace models'), findsOneWidget);
 
-      // Personas editor.
-      await tester.tap(find.text('PERSONAS'));
+      // Transcribe is a primary tab and does not invoke analysis automatically.
+      await tester.tap(find.text('TRANSCRIBE'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('SYSTEM PROMPT'), findsOneWidget);
-      expect(find.text('SAVE PERSONA'), findsOneWidget);
-      expect(find.text('Share to workspace'), findsOneWidget);
+      expect(find.text('Transcribe'), findsOneWidget);
+      expect(find.text('START TRANSCRIPTION'), findsOneWidget);
+      expect(
+        find.textContaining('No analysis runs automatically'),
+        findsOneWidget,
+      );
 
-      // Settings (guest).
+      // Settings (guest), with Personas nested under it.
       await tester.tap(find.text('SETTINGS'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Unlock private models & workspaces'), findsOneWidget);
       expect(find.text('Serve on local network'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Manage personas'),
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.text('Manage personas'));
+      await tester.pumpAndSettle();
+      expect(find.text('SYSTEM PROMPT'), findsOneWidget);
+      expect(find.text('SAVE PERSONA'), findsOneWidget);
+      expect(find.text('Share to workspace'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('Assistant voice'),
         250,
