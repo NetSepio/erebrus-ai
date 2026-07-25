@@ -1,8 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:lib_llama_cpp/lib_llama_cpp.dart';
 
+import '../data/catalog_entry.dart';
+import 'device_info_service.dart';
+import 'inference_contract.dart';
+import 'inference_coordinator.dart';
+import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
 
 /// Cross-platform GGUF inference backed by llama.cpp.
@@ -11,10 +15,15 @@ import 'model_download_service.dart';
 /// patch buffers UTF-8 sequences split across token pieces, which is required
 /// for multilingual models on mobile.
 class InferenceService extends ChangeNotifier {
-  InferenceService._();
+  InferenceService._() {
+    _llamaCpp = LlamaCppBackend(platform: DeviceInfoService.detect().platform);
+    _coordinator = InferenceCoordinator([_llamaCpp]);
+  }
 
   static final InferenceService instance = InferenceService._();
 
+  late final LlamaCppBackend _llamaCpp;
+  late final InferenceCoordinator _coordinator;
   String? _activeModelId;
   bool _generating = false;
   double? _currentTokensPerSecond;
@@ -69,62 +78,76 @@ class InferenceService extends ChangeNotifier {
     );
 
     try {
-      final commands = Stream<LlamaCommand>.fromIterable([
-        LlamaLoadModelCommand(
-          modelPath: modelPath,
-          contextSize: contextSize,
-          gpuLayerCount: 0,
-        ),
-        LlamaGenerateMessagesCommand(
+      final variant = ModelVariant(
+        id: modelId,
+        modelId: modelId,
+        format: 'gguf',
+        quantization: '',
+        files: [
+          Artifact(
+            id: '$modelId-model',
+            role: 'model',
+            format: 'gguf',
+            quantization: '',
+            filename: modelPath,
+            repositoryId: '',
+            downloadUrl: '',
+            backend: BackendKind.llamaCpp.catalogName,
+          ),
+        ],
+        platforms: [DeviceInfoService.detect().platform],
+        compatibleBackends: [BackendKind.llamaCpp.catalogName],
+      );
+      final events = _coordinator.generate(
+        plans: [
+          InferenceExecutionPlan(
+            backend: BackendKind.llamaCpp,
+            loadRequest: InferenceLoadRequest(
+              variant: variant,
+              packagePath: modelPath,
+              contextSize: contextSize,
+              gpuLayerCount: 0,
+            ),
+          ),
+        ],
+        request: InferenceRequest(
           messages: [
             if (systemPrompt.trim().isNotEmpty)
-              LlamaMessage(role: 'system', content: systemPrompt.trim()),
-            LlamaMessage(role: 'user', content: prompt),
+              InferenceMessage(role: 'system', content: systemPrompt.trim()),
+            InferenceMessage(role: 'user', content: prompt),
           ],
-          maxTokens: outputTokens,
-          temperature: temperature,
-          topP: topP,
-          repeatPenalty: repeatPenalty,
-          stop: stop,
+          maxOutputTokens: outputTokens,
+          sampling: InferenceSampling(
+            temperature: temperature,
+            topP: topP,
+            repeatPenalty: repeatPenalty,
+          ),
+          stopSequences: stop,
         ),
-        const LlamaDisposeCommand(),
-      ]);
+      );
 
       var tokenCount = 0;
-      Stopwatch? tokenClock;
-      await for (final response in const LibLlamaCpp().transform(commands)) {
-        switch (response) {
-          case LlamaReadyResponse():
-            debugPrint('[Inference] native runtime ready');
-          case LlamaStateChangedResponse(:final state):
+      await for (final event in events) {
+        switch (event) {
+          case InferenceLoadCompleted(:final backend, :final loadDuration):
             debugPrint(
-              state.isModelLoaded
-                  ? '[Inference] model loaded'
-                  : '[Inference] model unloaded',
+              '[Inference] ${backend.catalogName} ready in '
+              '${loadDuration.inMilliseconds} ms',
             );
-          case LlamaTokenResponse(:final text):
+          case InferenceToken(:final text):
             tokenCount++;
-            if (tokenCount == 1) {
-              tokenClock = Stopwatch()..start();
-              debugPrint('[Inference] first token received');
-            } else if (tokenClock!.elapsedMicroseconds > 0) {
-              // Completion throughput excludes model loading and prompt eval.
-              _currentTokensPerSecond =
-                  (tokenCount - 1) /
-                  (tokenClock.elapsedMicroseconds /
-                      Duration.microsecondsPerSecond);
+            if (text.isNotEmpty) yield text;
+          case InferenceMetrics(:final decodeTokensPerSecond):
+            if (decodeTokensPerSecond != null) {
+              _currentTokensPerSecond = decodeTokensPerSecond;
               notifyListeners();
             }
-            if (text.isNotEmpty) yield text;
-          case LlamaErrorResponse(:final message):
+          case InferenceFailure(:final message):
             throw InferenceException(_friendlyError(message));
-          case LlamaDoneResponse():
+          case InferenceCompleted(:final reason):
             _lastTokensPerSecond = _currentTokensPerSecond;
-            _lastOutputWasTruncated = tokenCount >= outputTokens;
+            _lastOutputWasTruncated = reason == InferenceFinishReason.length;
             debugPrint('[Inference] generation completed ($tokenCount tokens)');
-          case LlamaToolCallResponse():
-            // Plain local chats do not submit tools.
-            break;
         }
       }
     } catch (error) {
@@ -134,6 +157,14 @@ class InferenceService extends ChangeNotifier {
       _generating = false;
       notifyListeners();
     }
+  }
+
+  Future<void> cancel() => _coordinator.cancel();
+
+  Future<void> unload() async {
+    await _coordinator.unload();
+    _activeModelId = null;
+    notifyListeners();
   }
 
   static String _friendlyError(String message) {

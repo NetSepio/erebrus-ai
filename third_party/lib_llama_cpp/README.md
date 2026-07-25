@@ -261,8 +261,8 @@ omit both and rely on federated plugin registration.
 | Command | Fields | Current behavior |
 | --- | --- | --- |
 | `LlamaLoadModelCommand` | `modelPath`, `contextSize`, `gpuLayerCount`, `mmprojPath`, `mmprojUseGpu`, `imageMinTokens`, `imageMaxTokens` | Loads the app-supplied GGUF model path and optional multimodal projector, then emits `LlamaStateChangedResponse` when the runtime state changes. |
-| `LlamaGenerateCommand` | `prompt`, optional `maxTokens`, `temperature`, `topP`, `stop` | Requires a loaded model. When `maxTokens` is omitted, generation can use the remaining model context window. Successful generation emits `LlamaTokenResponse` values; runtime failures emit `LlamaErrorResponse`. |
-| `LlamaGenerateMessagesCommand` | `messages`, `tools`, `toolChoice`, `parallelToolCalls`, sampling fields | Applies the model chat template, evaluates typed media parts when present, and emits text or `LlamaToolCallResponse` values. |
+| `LlamaGenerateCommand` | `prompt`, optional `maxTokens`, `temperature`, `topP`, `stop` | Requires a loaded model. When `maxTokens` is omitted, generation can use the remaining model context window. Successful generation emits `LlamaTokenResponse` values followed by `LlamaDoneResponse`; runtime failures emit `LlamaErrorResponse`. |
+| `LlamaGenerateMessagesCommand` | `messages`, `tools`, `toolChoice`, `parallelToolCalls`, sampling fields | Applies the model chat template, evaluates typed media parts when present, and emits text or `LlamaToolCallResponse` values followed by `LlamaDoneResponse`. |
 | `LlamaDisposeCommand` | none | Resets state to `LlamaState.empty()`, emits `LlamaStateChangedResponse`, then emits `LlamaDoneResponse`. |
 
 ### Responses
@@ -274,7 +274,7 @@ omit both and rely on federated plugin registration.
 | `LlamaTokenResponse` | `text` and zero-based `index` for token streaming |
 | `LlamaToolCallResponse` | structured tool call data emitted by message generation |
 | `LlamaErrorResponse` | `message` |
-| `LlamaDoneResponse` | none |
+| `LlamaDoneResponse` | marks completion of generation or disposal |
 
 ### State
 

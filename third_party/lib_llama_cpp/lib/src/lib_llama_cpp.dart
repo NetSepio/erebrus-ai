@@ -55,6 +55,14 @@ final class LibLlamaCpp implements LlamaEngine {
     try {
       await for (final command in commands) {
         yield* actor.dispatch(command);
+        if (command is LlamaGenerateCommand ||
+            command is LlamaGenerateMessagesCommand) {
+          // The worker closes each dispatch stream when native generation
+          // finishes, but that boundary was previously swallowed here. Expose
+          // it so a retained runtime can complete one request without
+          // disposing the loaded model.
+          yield const LlamaDoneResponse();
+        }
         if (command is LlamaDisposeCommand) {
           break;
         }
