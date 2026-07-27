@@ -67,6 +67,33 @@ void main() {
       expect(entry.artifacts, isEmpty);
       expect(entry.variants.single.format, 'mlx');
     });
+
+    test('parses official and community package provenance', () {
+      final json = _multiVariantJson();
+      final variants = json['variants'] as List<dynamic>;
+      (variants[0] as Map<String, dynamic>)['provenance'] = {
+        'kind': 'community_conversion',
+        'publisher': 'mlx-community',
+        'repository_id': 'mlx-community/Llama-1B-4bit',
+        'upstream_repository_id': 'publisher/Llama-1B',
+        'verification': 'immutable_revision_size_and_sha256',
+      };
+      (variants[1] as Map<String, dynamic>)['provenance'] = {
+        'kind': 'official',
+        'publisher': 'publisher',
+        'repository_id': 'publisher/Llama-1B-GGUF',
+      };
+
+      final entry = CatalogEntry.fromJson(json);
+
+      expect(entry.variants.first.provenance.isCommunityConversion, isTrue);
+      expect(
+        entry.variants.first.provenance.upstreamRepositoryId,
+        'publisher/Llama-1B',
+      );
+      expect(entry.variants.last.provenance.isOfficial, isTrue);
+      expect(entry.variants.last.provenance.label, 'OFFICIAL');
+    });
   });
 
   group('InferencePlanner', () {

@@ -339,6 +339,7 @@ class _LocalListState extends State<_LocalList> {
   late Future<List<CatalogEntry>> _catalogFuture;
   final Map<String, ModelVariant> _preferredVariants = {};
   final Map<String, BackendKind> _preferredBackends = {};
+  List<BackendCapabilities> _capabilities = const [];
   late final DeviceProfile _device;
 
   @override
@@ -354,6 +355,7 @@ class _LocalListState extends State<_LocalList> {
     final capabilities = await BackendProbeService.instance.probe(
       device: _device,
     );
+    _capabilities = capabilities;
     final resolved = const InferencePlanner().resolve(
       models: catalog,
       device: _device,
@@ -401,13 +403,34 @@ class _LocalListState extends State<_LocalList> {
   }
 
   bool _isSelected(AppState app, MockModel m) {
-    final variant = m.id == null ? null : _preferredVariants[m.id];
-    if (variant != null && app.selectedModelVariantId.isNotEmpty) {
-      return app.selectedModelVariantId == variant.id;
-    }
     if (m.id != null && m.id!.isNotEmpty) return app.selectedModelId == m.id;
     return app.selectedModel == m.name;
   }
+
+  BackendKind? _backendForVariant(ModelVariant variant) {
+    final supported = _capabilities
+        .where((capability) => capability.supports(variant, _device.platform))
+        .toList();
+    if (supported.isEmpty) return null;
+    final apple =
+        _device.platform.startsWith('macos-') ||
+        _device.platform.startsWith('ios-');
+    supported.sort((a, b) {
+      int score(BackendKind kind) => switch ((apple, kind)) {
+        (true, BackendKind.mlx) => 3,
+        (false, BackendKind.turboQuant) => 3,
+        (_, BackendKind.llamaCpp) => 2,
+        _ => 1,
+      };
+      return score(b.kind).compareTo(score(a.kind));
+    });
+    return supported.first.kind;
+  }
+
+  List<ModelVariant> _variantsForDevice(CatalogEntry entry) => entry.variants
+      .where((variant) => variant.isActive)
+      .where((variant) => _backendForVariant(variant) != null)
+      .toList(growable: false);
 
   @override
   Widget build(BuildContext context) {
@@ -534,6 +557,7 @@ class _LocalListState extends State<_LocalList> {
     final backendLabel = backend?.catalogName ?? 'llama.cpp';
     final updateAvailable =
         variant != null && ModelPackageService.instance.hasUpdate(variant);
+    final deviceVariants = _variantsForDevice(entry);
     final model = MockModel(
       entry.name,
       entry.letter,
@@ -573,7 +597,122 @@ class _LocalListState extends State<_LocalList> {
       onUpdate: updateAvailable
           ? () => _download(context, app, entry, variant, updating: true)
           : null,
+      variantCount: deviceVariants.length,
+      onVariants: deviceVariants.isEmpty
+          ? null
+          : () => _showVariants(context, app, entry, deviceVariants),
     );
+  }
+
+  Future<void> _showVariants(
+    BuildContext context,
+    AppState app,
+    CatalogEntry entry,
+    List<ModelVariant> variants,
+  ) async {
+    final selected = await showModalBottomSheet<ModelVariant>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.75,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.name,
+                      style: AppText.grotesk(20, weight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'CHOOSE AN OPTIMIZED PACKAGE FOR THIS DEVICE',
+                      style: AppText.mono(
+                        10,
+                        color: AppColors.textMuted,
+                        lsEm: 0.08,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                  itemCount: variants.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final candidate = variants[index];
+                    final backend = _backendForVariant(candidate);
+                    final installed = ModelPackageService.instance.byVariantId(
+                      candidate.id,
+                    );
+                    final isSelected =
+                        app.selectedModelVariantId == candidate.id;
+                    return ListTile(
+                      enabled: backend != null,
+                      selected: isSelected,
+                      leading: Icon(
+                        candidate.format == 'mlx'
+                            ? Symbols.memory
+                            : Symbols.deployed_code,
+                        color: isSelected
+                            ? AppColors.accent
+                            : AppColors.textSecondary,
+                      ),
+                      title: Text(
+                        '${candidate.format.toUpperCase()} · ${candidate.quantization}',
+                        style: AppText.grotesk(14, weight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        '${candidate.provenance.label} · '
+                        '${candidate.provenance.publisher} · '
+                        '${backend?.catalogName ?? 'UNAVAILABLE'} · '
+                        '${formatBytes(candidate.sizeBytes)}',
+                        style: AppText.mono(9.5, color: AppColors.textMuted),
+                      ),
+                      trailing: installed?.runnable == true
+                          ? Icon(
+                              isSelected
+                                  ? Symbols.check_circle
+                                  : Symbols.play_arrow,
+                              color: AppColors.accent,
+                            )
+                          : const Icon(Symbols.download, size: 20),
+                      onTap: backend == null
+                          ? null
+                          : () => Navigator.pop(sheetContext, candidate),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !context.mounted) return;
+    if (ModelPackageService.instance.byVariantId(selected.id)?.runnable ==
+        true) {
+      app.selectModel(
+        entry.name,
+        selected.quantization,
+        id: entry.id,
+        variantId: selected.id,
+      );
+      return;
+    }
+    await _download(context, app, entry, selected);
   }
 
   Future<void> _download(
@@ -604,7 +743,12 @@ class _LocalListState extends State<_LocalList> {
       if (packagePath == null) {
         throw StateError('Verified package path is unavailable');
       }
-      final backend = _preferredBackends[entry.id] ?? BackendKind.llamaCpp;
+      final backend = _backendForVariant(variant);
+      if (backend == null) {
+        throw StateError(
+          'No operational backend can run ${variant.id} on ${_device.platform}',
+        );
+      }
       final memoryPlan = const InferenceMemoryPolicy().plan(
         device: _device,
         backend: backend,
@@ -672,6 +816,8 @@ class _LocalModelCard extends StatelessWidget {
     this.onUse,
     this.onDownload,
     this.onUpdate,
+    this.onVariants,
+    this.variantCount = 0,
   });
 
   final MockModel model;
@@ -679,6 +825,8 @@ class _LocalModelCard extends StatelessWidget {
   final VoidCallback? onUse;
   final VoidCallback? onDownload;
   final VoidCallback? onUpdate;
+  final VoidCallback? onVariants;
+  final int variantCount;
 
   @override
   Widget build(BuildContext context) {
@@ -775,6 +923,24 @@ class _LocalModelCard extends StatelessWidget {
                     style: AppText.mono(10, color: AppColors.textMuted),
                   ),
                 ],
+              ),
+            ],
+            if (variantCount > 1 && onVariants != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: onVariants,
+                  child: Text(
+                    '$variantCount PACKAGES AVAILABLE · CHOOSE',
+                    style: AppText.mono(
+                      10,
+                      weight: FontWeight.w600,
+                      color: AppColors.accent,
+                      lsEm: 0.06,
+                    ),
+                  ),
+                ),
               ),
             ],
           ],

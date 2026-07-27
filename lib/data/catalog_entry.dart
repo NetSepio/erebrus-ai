@@ -1,5 +1,40 @@
 import 'mock_data.dart';
 
+class ModelProvenance {
+  const ModelProvenance({
+    this.kind = 'unknown',
+    this.publisher = '',
+    this.repositoryId = '',
+    this.upstreamRepositoryId = '',
+    this.verification = '',
+  });
+
+  factory ModelProvenance.fromJson(Map<String, dynamic>? json) =>
+      ModelProvenance(
+        kind: (json?['kind'] as String?) ?? 'unknown',
+        publisher: (json?['publisher'] as String?) ?? '',
+        repositoryId: (json?['repository_id'] as String?) ?? '',
+        upstreamRepositoryId:
+            (json?['upstream_repository_id'] as String?) ?? '',
+        verification: (json?['verification'] as String?) ?? '',
+      );
+
+  final String kind;
+  final String publisher;
+  final String repositoryId;
+  final String upstreamRepositoryId;
+  final String verification;
+
+  bool get isOfficial => kind.toLowerCase() == 'official';
+  bool get isCommunityConversion =>
+      kind.toLowerCase() == 'community_conversion';
+  String get label => isOfficial
+      ? 'OFFICIAL'
+      : isCommunityConversion
+      ? 'COMMUNITY'
+      : 'SOURCE';
+}
+
 /// A single file in a downloadable model package.
 class Artifact {
   const Artifact({
@@ -88,6 +123,7 @@ class ModelVariant {
     this.status = 'active',
     this.minimumAppVersion = '',
     this.minimumRuntimeVersion = '',
+    this.provenance = const ModelProvenance(),
   });
 
   factory ModelVariant.fromJson(
@@ -141,6 +177,9 @@ class ModelVariant {
       status: (json['status'] as String?) ?? 'active',
       minimumAppVersion: (json['minimum_app_version'] as String?) ?? '',
       minimumRuntimeVersion: (json['minimum_runtime_version'] as String?) ?? '',
+      provenance: ModelProvenance.fromJson(
+        json['provenance'] as Map<String, dynamic>?,
+      ),
     );
   }
 
@@ -157,6 +196,7 @@ class ModelVariant {
   final String status;
   final String minimumAppVersion;
   final String minimumRuntimeVersion;
+  final ModelProvenance provenance;
 
   Artifact? get primaryArtifact {
     for (final file in files) {
