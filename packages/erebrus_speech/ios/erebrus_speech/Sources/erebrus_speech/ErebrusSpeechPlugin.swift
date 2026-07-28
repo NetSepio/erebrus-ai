@@ -209,6 +209,7 @@ private enum SpeechBridgeError: LocalizedError {
   case unsupportedOperatingSystem
   case unsupportedLocale
   case unavailableAudioFormat
+  case invalidCaptureFormat
   case converterCreationFailed
   case bufferCreationFailed
   case conversionFailed(String)
@@ -219,6 +220,7 @@ private enum SpeechBridgeError: LocalizedError {
     case .unsupportedOperatingSystem: "SpeechAnalyzer requires iOS 26 or newer"
     case .unsupportedLocale: "The requested transcription locale is unsupported"
     case .unavailableAudioFormat: "No compatible SpeechAnalyzer audio format is installed"
+    case .invalidCaptureFormat: "The microphone did not provide a valid audio format"
     case .converterCreationFailed: "Could not create an audio converter"
     case .bufferCreationFailed: "Could not allocate a converted audio buffer"
     case .conversionFailed(let message): "Audio conversion failed: \(message)"
@@ -310,8 +312,25 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   }
 
   func start() throws {
+    let audioSession = AVAudioSession.sharedInstance()
+    try audioSession.setCategory(.record, mode: .measurement)
+    try audioSession.setActive(true)
+    var engineStarted = false
+    defer {
+      if !engineStarted {
+        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+      }
+    }
+
     let inputNode = engine.inputNode
-    let captureFormat = inputNode.outputFormat(forBus: 0)
+    let captureFormat = inputNode.inputFormat(forBus: 0)
+    guard
+      captureFormat.sampleRate.isFinite,
+      captureFormat.sampleRate > 0,
+      captureFormat.channelCount > 0
+    else {
+      throw SpeechBridgeError.invalidCaptureFormat
+    }
     audioFile = try AVAudioFile(
       forWriting: audioURL,
       settings: captureFormat.settings,
@@ -355,7 +374,16 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
       self?.accept(buffer)
     }
     engine.prepare()
-    try engine.start()
+    do {
+      try engine.start()
+    } catch {
+      inputNode.removeTap(onBus: 0)
+      inputBuilder.finish()
+      analysisTask?.cancel()
+      resultsTask?.cancel()
+      throw error
+    }
+    engineStarted = true
     emit(["type": "started", "audio_path": audioURL.path])
   }
 
@@ -370,6 +398,10 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     try await analysisTask?.value
     try await resultsTask?.value
     audioFile = nil
+    try? AVAudioSession.sharedInstance().setActive(
+      false,
+      options: .notifyOthersOnDeactivation
+    )
     emit(["type": "stopped", "audio_path": audioURL.path, "text": transcript])
     return ["audio_path": audioURL.path, "transcript": transcript]
   }
@@ -398,6 +430,10 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     resultsTask?.cancel()
     await analyzer.cancelAndFinishNow()
     audioFile = nil
+    try? AVAudioSession.sharedInstance().setActive(
+      false,
+      options: .notifyOthersOnDeactivation
+    )
     emit(["type": "cancelled", "audio_path": audioURL.path])
   }
 
