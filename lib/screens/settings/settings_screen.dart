@@ -672,7 +672,7 @@ Future<void> _exportTranscriptions(
     ),
   );
   if (consent != true || !context.mounted) return;
-  final path = await FilePicker.platform.getDirectoryPath(
+  final path = await FilePicker.getDirectoryPath(
     dialogTitle: 'Choose export destination',
   );
   if (path == null || !context.mounted) return;
@@ -1456,7 +1456,7 @@ class _ModelsFolderRow extends StatelessWidget {
     await app.refreshModelsDirectory();
 
     try {
-      final picked = await FilePicker.platform.getDirectoryPath(
+      final picked = await FilePicker.getDirectoryPath(
         dialogTitle: 'Choose your models folder',
         initialDirectory: app.modelsDirectory,
       );
