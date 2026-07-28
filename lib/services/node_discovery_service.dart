@@ -32,10 +32,14 @@ class NodeDiscoveryService extends ChangeNotifier {
     try {
       _discovery = BonsoirDiscovery(type: kErebrusAiMdnsType);
       await _discovery!.initialize();
-      _subscription = _discovery!.eventStream?.listen(_onEvent);
+      _subscription = _discovery!.eventStream?.listen(
+        _onEvent,
+        onError: _onDiscoveryError,
+      );
       await _discovery!.start();
-    } catch (e) {
-      debugPrint('[Discovery] start failed: $e');
+    } on Object catch (error) {
+      debugPrint('[Discovery] start failed: $error');
+      await _disposeDiscovery();
       _running = false;
       notifyListeners();
     }
@@ -43,11 +47,25 @@ class NodeDiscoveryService extends ChangeNotifier {
 
   /// Stops discovery and clears the node list.
   Future<void> stop() async {
+    await _disposeDiscovery();
+    _nodes.clear();
+    _running = false;
+    notifyListeners();
+  }
+
+  Future<void> _disposeDiscovery() async {
     await _subscription?.cancel();
     _subscription = null;
-    await _discovery?.stop();
+    try {
+      await _discovery?.stop();
+    } on Object catch (error) {
+      debugPrint('[Discovery] stop failed: $error');
+    }
     _discovery = null;
-    _nodes.clear();
+  }
+
+  void _onDiscoveryError(Object error, StackTrace stackTrace) {
+    debugPrint('[Discovery] stream failed: $error');
     _running = false;
     notifyListeners();
   }
@@ -55,9 +73,9 @@ class NodeDiscoveryService extends ChangeNotifier {
   void _onEvent(BonsoirDiscoveryEvent event) async {
     if (event is BonsoirDiscoveryServiceFoundEvent) {
       try {
-        _discovery?.serviceResolver.resolveService(event.service);
-      } catch (e) {
-        debugPrint('[Discovery] resolve failed: $e');
+        await _discovery?.serviceResolver.resolveService(event.service);
+      } on Object catch (error) {
+        debugPrint('[Discovery] resolve failed: $error');
       }
     } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
       _addOrUpdate(event.service);

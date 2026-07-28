@@ -82,10 +82,8 @@ void main() {
       await tester.tap(find.text('SKIP'));
       await tester.pumpAndSettle();
       expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
-      expect(find.text('SHOW SMALLER MODELS'), findsOneWidget);
-      await tester.tap(find.text('SHOW SMALLER MODELS'));
-      await tester.pumpAndSettle();
-      expect(find.text('HIDE SMALLER MODELS'), findsOneWidget);
+      expect(find.text('AVAILABLE MODELS'), findsOneWidget);
+      expect(find.text('RECOMMENDED'), findsOneWidget);
     });
 
     testWidgets('chat, transcribe, models, and settings render', (
@@ -217,7 +215,7 @@ void main() {
       await tester.tap(find.text('SKIP'));
       await tester.pumpAndSettle();
       expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
-      expect(find.text('START USING EREBRUS'), findsOneWidget);
+      expect(find.text('START USING EREBRUS AI'), findsOneWidget);
       expect(find.text('CONTINUE WITHOUT LOCAL AI'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -251,7 +249,7 @@ void main() {
 
       expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
       expect(find.text('RECOMMENDED'), findsOneWidget);
-      expect(find.text('START USING EREBRUS'), findsOneWidget);
+      expect(find.text('START USING EREBRUS AI'), findsOneWidget);
       expect(find.text('CONTINUE WITHOUT LOCAL AI'), findsNothing);
     });
 

@@ -16,11 +16,11 @@ void main() {
       final entries = CatalogService.parsePayload(payload);
       final variants = entries.expand((entry) => entry.variants).toList();
 
-      expect(entries, hasLength(27));
-      expect(variants, hasLength(42));
+      expect(entries, hasLength(29));
+      expect(variants, hasLength(46));
       expect(
         variants.where((variant) => variant.format == 'mlx'),
-        hasLength(12),
+        hasLength(14),
       );
       expect(
         variants.where((variant) => variant.provenance.isOfficial),
@@ -62,7 +62,7 @@ void main() {
           recommendation.recommended.id,
           ...recommendation.alternatives.map((entry) => entry.id),
         ],
-        ['gemma-3n-e2b-it', 'gemma-3-4b-it', 'phi-4-mini-instruct'],
+        ['gemma-4-e4b-it', 'gemma-4-e2b-it', 'gemma-3n-e2b-it'],
       );
 
       final manualOptions = const InferencePlanner().resolve(
@@ -87,7 +87,13 @@ void main() {
       );
       expect(
         manualOptions.map((candidate) => candidate.model.id),
-        containsAll(['gemma-3n-e2b-it', 'gemma-3-4b-it', 'bonsai-27b-q1']),
+        containsAll([
+          'gemma-4-e2b-it',
+          'gemma-4-e4b-it',
+          'gemma-3n-e2b-it',
+          'gemma-3-4b-it',
+          'bonsai-27b-q1',
+        ]),
       );
     },
     skip: path == null

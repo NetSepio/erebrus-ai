@@ -9,9 +9,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 /// Erebrus AI is downloading models or serving on the local network.
 ///
 /// On Android this starts a `dataSync` foreground service so work continues
-/// when the app is backgrounded. On iOS the service is still started (the
-/// plugin keeps a background task alive as long as the OS allows), but the
-/// UI also asks the user to keep the app open.
+/// when the app is backgrounded. iOS uses only the wake lock while the app is
+/// foregrounded; it does not schedule plugin background tasks.
 class PowerService {
   PowerService._();
   static final PowerService instance = PowerService._();
@@ -28,7 +27,7 @@ class PowerService {
 
   @visibleForTesting
   static bool supportsForegroundTaskPlatform(String operatingSystem) =>
-      operatingSystem == 'android' || operatingSystem == 'ios';
+      operatingSystem == 'android';
 
   /// Initialize foreground-task options. Call once before UI paints.
   void initialize() {

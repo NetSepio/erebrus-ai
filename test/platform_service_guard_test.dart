@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('foreground task plugin is limited to supported mobile platforms', () {
     expect(PowerService.supportsForegroundTaskPlatform('android'), isTrue);
-    expect(PowerService.supportsForegroundTaskPlatform('ios'), isTrue);
+    expect(PowerService.supportsForegroundTaskPlatform('ios'), isFalse);
     expect(PowerService.supportsForegroundTaskPlatform('macos'), isFalse);
     expect(PowerService.supportsForegroundTaskPlatform('windows'), isFalse);
     expect(PowerService.supportsForegroundTaskPlatform('linux'), isFalse);
