@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../state/app_state.dart';
 import '../navigation/shell_tab.dart';
+import '../services/inference_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import '../widgets/ere_controls.dart';
@@ -30,6 +33,10 @@ const _navItems = [
   _NavItem(ShellTab.settings, 'SETTINGS', Symbols.tune),
 ];
 
+@visibleForTesting
+bool shouldReleaseChatModel({required ShellTab from, required ShellTab to}) =>
+    from == ShellTab.chat && to != ShellTab.chat;
+
 class Shell extends StatefulWidget {
   const Shell({super.key, this.initialTab = ShellTab.chat});
 
@@ -48,7 +55,25 @@ class _ShellState extends State<Shell> {
     _tab = widget.initialTab;
   }
 
-  void _setTab(ShellTab tab) => setState(() => _tab = tab);
+  void _setTab(ShellTab tab) {
+    if (_tab == tab) return;
+    final previousTab = _tab;
+    setState(() => _tab = tab);
+    if (shouldReleaseChatModel(from: previousTab, to: tab)) {
+      unawaited(_releaseChatModel());
+    }
+  }
+
+  Future<void> _releaseChatModel() async {
+    final inference = InferenceService.instance;
+    try {
+      if (inference.isGenerating) await inference.cancel();
+      await inference.unload();
+      debugPrint('[Inference] chat model unloaded after leaving Chat');
+    } on Object catch (error) {
+      debugPrint('[Inference] chat model unload failed: $error');
+    }
+  }
 
   Widget _body(bool wide) => IndexedStack(
     index: _tab.index,
