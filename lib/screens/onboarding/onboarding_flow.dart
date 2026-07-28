@@ -386,13 +386,17 @@ class _FirstModelPageState extends State<FirstModelPage> {
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'Download could not start. Check storage permission and network.',
+          content: Text(
+            StorageService.supportsAppPermissionSettings
+                ? 'Download could not start. Check storage permission and network.'
+                : 'Download could not start. Check your connection, disk space, and models folder.',
           ),
-          action: SnackBarAction(
-            label: 'SETTINGS',
-            onPressed: () => StorageService.instance.openSettings(),
-          ),
+          action: StorageService.supportsAppPermissionSettings
+              ? SnackBarAction(
+                  label: 'SETTINGS',
+                  onPressed: () => StorageService.instance.openSettings(),
+                )
+              : null,
         ),
       );
     }

@@ -800,10 +800,12 @@ class _LocalListState extends State<_LocalList> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Model install failed: $error'),
-          action: SnackBarAction(
-            label: 'SETTINGS',
-            onPressed: StorageService.instance.openSettings,
-          ),
+          action: StorageService.supportsAppPermissionSettings
+              ? SnackBarAction(
+                  label: 'SETTINGS',
+                  onPressed: StorageService.instance.openSettings,
+                )
+              : null,
         ),
       );
     }

@@ -23,10 +23,20 @@ class PowerService {
   bool get isBusy => _activeDownloads > 0 || _serving;
 
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
+  bool get _supportsForegroundTask =>
+      !kIsWeb && supportsForegroundTaskPlatform(Platform.operatingSystem);
+
+  @visibleForTesting
+  static bool supportsForegroundTaskPlatform(String operatingSystem) =>
+      operatingSystem == 'android' || operatingSystem == 'ios';
 
   /// Initialize foreground-task options. Call once before UI paints.
   void initialize() {
-    if (_initialized || kIsWeb || _inTest) return;
+    if (_initialized || _inTest) return;
+    if (!_supportsForegroundTask) {
+      _initialized = true;
+      return;
+    }
     try {
       FlutterForegroundTask.init(
         androidNotificationOptions: AndroidNotificationOptions(
@@ -114,7 +124,7 @@ class PowerService {
   }
 
   Future<void> _updateOrStart(String text) async {
-    if (kIsWeb || _inTest) return;
+    if (!_supportsForegroundTask || _inTest) return;
     try {
       final running = await FlutterForegroundTask.isRunningService;
       if (running) {
@@ -137,7 +147,7 @@ class PowerService {
   }
 
   Future<void> _stop() async {
-    if (kIsWeb || _inTest) return;
+    if (!_supportsForegroundTask || _inTest) return;
     try {
       final running = await FlutterForegroundTask.isRunningService;
       if (running) {

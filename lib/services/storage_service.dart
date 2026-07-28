@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -48,6 +49,9 @@ class StorageService {
         Platform.isLinux;
   }
 
+  static bool get supportsAppPermissionSettings =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   /// Request permissions required to write the Erebrus AI workspace.
   /// On Android this asks for storage / manage-external-storage; on iOS and
   /// desktop it returns true immediately.
@@ -68,7 +72,21 @@ class StorageService {
   /// Opens the system app settings so the user can grant storage permissions.
   Future<void> openSettings() async {
     if (kIsWeb) return;
-    await openAppSettings();
+    if (!supportsAppPermissionSettings) {
+      // Desktop storage uses app-managed folders or a folder picker; there is
+      // no permission_handler app-settings channel to invoke.
+      debugPrint(
+        '[Storage] app permission settings are not required on desktop',
+      );
+      return;
+    }
+    try {
+      await openAppSettings();
+    } on MissingPluginException catch (error) {
+      debugPrint('[Storage] permission settings plugin unavailable: $error');
+    } on Object catch (error) {
+      debugPrint('[Storage] could not open app settings: $error');
+    }
   }
 
   /// Returns the root `ErebrusAI` directory, creating it if needed.
