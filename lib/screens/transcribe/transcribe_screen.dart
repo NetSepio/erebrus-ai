@@ -14,6 +14,13 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
 
+@visibleForTesting
+bool shouldShowWhisperRuntime({
+  required bool checking,
+  required bool speechReady,
+  required bool whisperReady,
+}) => !checking && !speechReady && whisperReady;
+
 class TranscribeScreen extends StatefulWidget {
   const TranscribeScreen({
     super.key,
@@ -439,7 +446,12 @@ class _RecorderPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          if (speechReady || whisperReady) const _WhisperFallbackCard(),
+          if (shouldShowWhisperRuntime(
+            checking: checkingReadiness,
+            speechReady: speechReady,
+            whisperReady: whisperReady,
+          ))
+            const _WhisperRuntimeCard(),
           if (!widgetIsWide(context) && service.sessions.isNotEmpty) ...[
             const SizedBox(height: 20),
             Text('RECENT SESSIONS', style: AppText.sectionHeader()),
@@ -542,8 +554,8 @@ class _TranscriptionReadinessCard extends StatelessWidget {
   }
 }
 
-class _WhisperFallbackCard extends StatelessWidget {
-  const _WhisperFallbackCard();
+class _WhisperRuntimeCard extends StatelessWidget {
+  const _WhisperRuntimeCard();
 
   @override
   Widget build(BuildContext context) {
@@ -574,7 +586,7 @@ class _WhisperFallbackCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Whisper Tiny fallback',
+                        'Whisper Tiny runtime',
                         style: AppText.grotesk(13, weight: FontWeight.w600),
                       ),
                       const SizedBox(height: 2),
@@ -582,10 +594,10 @@ class _WhisperFallbackCard extends StatelessWidget {
                         installed
                             ? manager.updateAvailable
                                   ? 'Verified update available · previous revision stays rollback-ready'
-                                  : 'Verified · 74 MB · multilingual · on device'
+                                  : 'Required on this device · verified · 74 MB · multilingual'
                             : manager.downloading
                             ? '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}% · checksum verified after download'
-                            : 'Required on Android, Windows, Linux, and older Apple OS versions',
+                            : 'Required before transcription can start on this device',
                         style: AppText.grotesk(
                           11.5,
                           color: AppColors.textMuted,
