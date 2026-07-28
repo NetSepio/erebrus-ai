@@ -1,4 +1,10 @@
 WARNING_CFLAGS = -Wall -Wconditional-uninitialized -Wnullable-to-nonnull-conversion -Wmissing-method-return-type -Woverlength-strings
+
+// Xcode 26's downloadable Metal toolchain does not ship Swift linker
+// libraries. Keep macOS linking on Xcode's bundled default toolchain, which
+// still includes the Metal compiler.
+TOOLCHAINS = com.apple.dt.toolchain.XcodeDefault
+
 GCC_WARN_UNDECLARED_SELECTOR = YES
 CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES
 CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE

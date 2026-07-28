@@ -39,6 +39,17 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
 
+    # Xcode 26 may select its downloadable Metal toolchain as the primary
+    # linker toolchain. That asset intentionally has no usr/lib/swift/macosx
+    # directory, so every CocoaPods target emits the same missing search-path
+    # warning. The bundled default toolchain still provides the Metal compiler
+    # and contains the Swift libraries used while linking macOS targets.
+    target.build_configurations.each do |configuration|
+      configuration.build_settings[
+        'TOOLCHAINS'
+      ] = 'com.apple.dt.toolchain.XcodeDefault'
+    end
+
     # whisper_ggml_plus 1.5.2 globally includes ARM kernels and excludes x86
     # kernels even though macOS pods are universal. Correct the source set per
     # architecture so both Apple-silicon and Intel releases link.
