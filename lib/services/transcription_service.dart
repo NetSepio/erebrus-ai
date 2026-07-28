@@ -28,6 +28,11 @@ enum TranscriptionUiState {
 
 enum TranscriptionShareKind { transcript, audio, both }
 
+@visibleForTesting
+AudioContext transcriptionPlaybackAudioContext() => AudioContext(
+  iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+);
+
 class TranscriptionService extends ChangeNotifier {
   static final TranscriptionService instance = TranscriptionService();
 
@@ -333,7 +338,10 @@ class TranscriptionService extends ChangeNotifier {
     if (_playing) {
       await _audioPlayer.pause();
     } else {
-      await _audioPlayer.play(DeviceFileSource(path));
+      await _audioPlayer.play(
+        DeviceFileSource(path),
+        ctx: transcriptionPlaybackAudioContext(),
+      );
     }
   }
 

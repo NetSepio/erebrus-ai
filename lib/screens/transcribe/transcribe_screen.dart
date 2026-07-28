@@ -21,6 +21,10 @@ bool shouldShowWhisperRuntime({
   required bool whisperReady,
 }) => !checking && !speechReady && whisperReady;
 
+@visibleForTesting
+Widget analysisPromptDialogForTest(String transcript) =>
+    _AnalysisPromptDialog(transcript: transcript);
+
 class TranscribeScreen extends StatefulWidget {
   const TranscribeScreen({
     super.key,
@@ -153,10 +157,18 @@ class _AnalysisPromptDialogState extends State<_AnalysisPromptDialog> {
   @override
   Widget build(BuildContext context) {
     final templateService = TranscriptPromptTemplateService.instance;
+    final media = MediaQuery.of(context);
+    final compactHeight =
+        media.size.height -
+            media.viewInsets.bottom -
+            media.viewPadding.vertical <
+        560;
     return AnimatedBuilder(
       animation: templateService,
       builder: (context, _) => AlertDialog(
         backgroundColor: AppColors.surface,
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         title: const Text('Prepare analysis prompt'),
         content: SizedBox(
           width: 600,
@@ -195,8 +207,8 @@ class _AnalysisPromptDialogState extends State<_AnalysisPromptDialog> {
               const SizedBox(height: 10),
               TextField(
                 controller: _controller,
-                minLines: 8,
-                maxLines: 16,
+                minLines: compactHeight ? 4 : 8,
+                maxLines: compactHeight ? 6 : 16,
                 autofocus: true,
                 decoration: const InputDecoration(
                   hintText: 'Edit the prompt before opening Chat',

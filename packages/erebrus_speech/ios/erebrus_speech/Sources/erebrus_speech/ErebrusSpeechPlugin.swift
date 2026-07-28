@@ -247,6 +247,9 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   private var transcript = ""
   private var stopped = false
   private var paused = false
+  private var previousAudioCategory: AVAudioSession.Category?
+  private var previousAudioMode: AVAudioSession.Mode?
+  private var previousAudioOptions: AVAudioSession.CategoryOptions = []
 
   private init(
     audioURL: URL,
@@ -313,12 +316,15 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
 
   func start() throws {
     let audioSession = AVAudioSession.sharedInstance()
+    previousAudioCategory = audioSession.category
+    previousAudioMode = audioSession.mode
+    previousAudioOptions = audioSession.categoryOptions
     try audioSession.setCategory(.record, mode: .measurement)
     try audioSession.setActive(true)
     var engineStarted = false
     defer {
       if !engineStarted {
-        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+        restoreAudioSession()
       }
     }
 
@@ -398,10 +404,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     try await analysisTask?.value
     try await resultsTask?.value
     audioFile = nil
-    try? AVAudioSession.sharedInstance().setActive(
-      false,
-      options: .notifyOthersOnDeactivation
-    )
+    restoreAudioSession()
     emit(["type": "stopped", "audio_path": audioURL.path, "text": transcript])
     return ["audio_path": audioURL.path, "transcript": transcript]
   }
@@ -430,11 +433,21 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     resultsTask?.cancel()
     await analyzer.cancelAndFinishNow()
     audioFile = nil
-    try? AVAudioSession.sharedInstance().setActive(
-      false,
-      options: .notifyOthersOnDeactivation
-    )
+    restoreAudioSession()
     emit(["type": "cancelled", "audio_path": audioURL.path])
+  }
+
+  private func restoreAudioSession() {
+    let audioSession = AVAudioSession.sharedInstance()
+    try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+    guard let category = previousAudioCategory, let mode = previousAudioMode else {
+      return
+    }
+    try? audioSession.setCategory(
+      category,
+      mode: mode,
+      options: previousAudioOptions
+    )
   }
 
   private func accept(_ buffer: AVAudioPCMBuffer) {
