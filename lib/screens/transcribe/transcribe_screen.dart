@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -28,12 +30,56 @@ class TranscribeScreen extends StatefulWidget {
 
 class _TranscribeScreenState extends State<TranscribeScreen> {
   final _service = TranscriptionService.instance;
+  bool _speechReady = false;
+  bool _whisperReady = false;
+  bool _checkingReadiness = true;
 
   @override
   void initState() {
     super.initState();
     _service.initialize();
     TranscriptPromptTemplateService.instance.load();
+    _refreshReadiness();
+  }
+
+  Future<void> _refreshReadiness() async {
+    if (mounted) setState(() => _checkingReadiness = true);
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      if (!mounted) return;
+      setState(() {
+        _speechReady = false;
+        _whisperReady = false;
+        _checkingReadiness = false;
+      });
+      return;
+    }
+    var speechReady = false;
+    try {
+      final probe = await _service.probe();
+      speechReady = probe.available && probe.localeSupported;
+    } on Object {
+      speechReady = false;
+    }
+    final whisper = await WhisperModelManager.instance.installedPath() != null;
+    if (!mounted) return;
+    setState(() {
+      _speechReady = speechReady;
+      _whisperReady = whisper;
+      _checkingReadiness = false;
+    });
+  }
+
+  Future<void> _setupTranscription() async {
+    if (_speechReady || _whisperReady) return;
+    try {
+      await WhisperModelManager.instance.install();
+      await _refreshReadiness();
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Transcription setup failed: $error')),
+      );
+    }
   }
 
   @override
@@ -41,7 +87,14 @@ class _TranscribeScreenState extends State<TranscribeScreen> {
     return AnimatedBuilder(
       animation: _service,
       builder: (context, _) {
-        final content = _RecorderPane(service: _service, onAnalyze: _analyze);
+        final content = _RecorderPane(
+          service: _service,
+          onAnalyze: _analyze,
+          checkingReadiness: _checkingReadiness,
+          speechReady: _speechReady,
+          whisperReady: _whisperReady,
+          onSetup: _setupTranscription,
+        );
         if (widget.wide) {
           return Row(
             children: [
@@ -227,10 +280,21 @@ class _AnalysisPromptDialogState extends State<_AnalysisPromptDialog> {
 }
 
 class _RecorderPane extends StatelessWidget {
-  const _RecorderPane({required this.service, required this.onAnalyze});
+  const _RecorderPane({
+    required this.service,
+    required this.onAnalyze,
+    required this.checkingReadiness,
+    required this.speechReady,
+    required this.whisperReady,
+    required this.onSetup,
+  });
 
   final TranscriptionService service;
   final ValueChanged<TranscriptionSession> onAnalyze;
+  final bool checkingReadiness;
+  final bool speechReady;
+  final bool whisperReady;
+  final Future<void> Function() onSetup;
 
   @override
   Widget build(BuildContext context) {
@@ -270,6 +334,13 @@ class _RecorderPane extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
+          _TranscriptionReadinessCard(
+            checking: checkingReadiness,
+            speechReady: speechReady,
+            whisperReady: whisperReady,
+            onSetup: onSetup,
+          ),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -332,7 +403,12 @@ class _RecorderPane extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 16),
-                _RecordingControls(service: service),
+                _RecordingControls(
+                  service: service,
+                  ready: speechReady || whisperReady,
+                  checking: checkingReadiness,
+                  onSetup: onSetup,
+                ),
               ],
             ),
           ),
@@ -363,13 +439,103 @@ class _RecorderPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const _WhisperFallbackCard(),
+          if (speechReady || whisperReady) const _WhisperFallbackCard(),
           if (!widgetIsWide(context) && service.sessions.isNotEmpty) ...[
             const SizedBox(height: 20),
             Text('RECENT SESSIONS', style: AppText.sectionHeader()),
             const SizedBox(height: 8),
             _MobileSessionSearch(service: service),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TranscriptionReadinessCard extends StatelessWidget {
+  const _TranscriptionReadinessCard({
+    required this.checking,
+    required this.speechReady,
+    required this.whisperReady,
+    required this.onSetup,
+  });
+
+  final bool checking;
+  final bool speechReady;
+  final bool whisperReady;
+  final Future<void> Function() onSetup;
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = speechReady || whisperReady;
+    final title = checking
+        ? 'Checking transcription engine…'
+        : speechReady
+        ? 'SpeechAnalyzer ready'
+        : whisperReady
+        ? 'Whisper Tiny ready'
+        : 'Transcription setup required';
+    final detail = checking
+        ? 'Verifying private on-device speech support.'
+        : speechReady
+        ? 'Uses Apple on-device speech assets. No chat model is required.'
+        : whisperReady
+        ? 'Uses the verified local Whisper model. No chat model is required.'
+        : 'SpeechAnalyzer is unavailable here. Download the verified 74 MB '
+              'Whisper Tiny model before recording. No chat model is required.';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ready
+            ? AppColors.success.withA(0.06)
+            : AppColors.warn.withA(0.06),
+        border: Border.all(
+          color: ready
+              ? AppColors.success.withA(0.25)
+              : AppColors.warn.withA(0.28),
+        ),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        children: [
+          if (checking)
+            const SizedBox(
+              width: 19,
+              height: 19,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.accent,
+              ),
+            )
+          else
+            Icon(
+              ready ? Symbols.check_circle : Symbols.download,
+              size: 20,
+              color: ready ? AppColors.success : AppColors.warn,
+            ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppText.grotesk(13, weight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  detail,
+                  style: AppText.grotesk(
+                    11.5,
+                    color: AppColors.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!checking && !ready)
+            GhostButton('DOWNLOAD', icon: Symbols.download, onTap: onSetup),
         ],
       ),
     );
@@ -582,9 +748,17 @@ class _StoredTranscript extends StatelessWidget {
 }
 
 class _RecordingControls extends StatelessWidget {
-  const _RecordingControls({required this.service});
+  const _RecordingControls({
+    required this.service,
+    required this.ready,
+    required this.checking,
+    required this.onSetup,
+  });
 
   final TranscriptionService service;
+  final bool ready;
+  final bool checking;
+  final Future<void> Function() onSetup;
 
   @override
   Widget build(BuildContext context) {
@@ -617,7 +791,15 @@ class _RecordingControls extends StatelessWidget {
       ),
       TranscriptionUiState.preparing || TranscriptionUiState.finalizing =>
         const Center(child: CircularProgressIndicator(color: AppColors.accent)),
-      _ => PrimaryCta('START TRANSCRIPTION', onTap: () => service.start()),
+      _ => PrimaryCta(
+        ready ? 'START TRANSCRIPTION' : 'SET UP TRANSCRIPTION',
+        enabled: !checking,
+        onTap: checking
+            ? null
+            : ready
+            ? () => service.start()
+            : onSetup,
+      ),
     };
   }
 }

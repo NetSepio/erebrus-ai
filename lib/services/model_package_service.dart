@@ -29,6 +29,8 @@ class ModelPackageService extends ChangeNotifier {
   final Map<String, InstalledModel> _installed = {};
   final Map<String, InstalledModel> _previous = {};
   final Set<String> _downloading = {};
+  final Set<String> _cancelled = {};
+  final Map<String, HttpClient> _activeClients = {};
   final Map<String, int> _receivedBytes = {};
   final Map<String, int> _totalBytes = {};
 
@@ -127,6 +129,7 @@ class ModelPackageService extends ChangeNotifier {
       );
     }
     _downloading.add(variant.id);
+    _cancelled.remove(variant.id);
     _receivedBytes[variant.id] = 0;
     _totalBytes[variant.id] = variant.sizeBytes;
     notifyListeners();
@@ -170,6 +173,7 @@ class ModelPackageService extends ChangeNotifier {
           p.join(staging.path, _safeFilename(artifact.filename)),
         );
         await _downloadArtifact(
+          variant.id,
           artifact,
           destination,
           onProgress: (artifactId, received, total) {
@@ -249,9 +253,20 @@ class ModelPackageService extends ChangeNotifier {
       rethrow;
     } finally {
       _downloading.remove(variant.id);
+      if (_cancelled.remove(variant.id)) {
+        _receivedBytes.remove(variant.id);
+        _totalBytes.remove(variant.id);
+      }
       await PowerService.instance.stopDownload();
       notifyListeners();
     }
+  }
+
+  Future<void> cancelDownload(String variantId) async {
+    if (!_downloading.contains(variantId)) return;
+    _cancelled.add(variantId);
+    _activeClients.remove(variantId)?.close(force: true);
+    notifyListeners();
   }
 
   Future<InstalledModel> updateVariant(ModelVariant variant) =>
@@ -351,13 +366,21 @@ class ModelPackageService extends ChangeNotifier {
   }
 
   Future<void> _downloadArtifact(
+    String variantId,
     Artifact artifact,
     File destination, {
     ModelDownloadProgress? onProgress,
   }) async {
     final client = _httpClientProvider();
+    _activeClients[variantId] = client;
     IOSink? sink;
     try {
+      if (_cancelled.contains(variantId)) {
+        throw const ModelPackageException(
+          'download_cancelled',
+          'Model download was cancelled',
+        );
+      }
       final request = await client.getUrl(Uri.parse(artifact.downloadUrl));
       final response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
@@ -371,14 +394,31 @@ class ModelPackageService extends ChangeNotifier {
       var received = 0;
       sink = destination.openWrite();
       await for (final chunk in response) {
+        if (_cancelled.contains(variantId)) {
+          throw const ModelPackageException(
+            'download_cancelled',
+            'Model download was cancelled',
+          );
+        }
         sink.add(chunk);
         received += chunk.length;
         onProgress?.call(artifact.id, received, expectedTotal);
       }
       await sink.close();
       sink = null;
+    } on Object {
+      if (_cancelled.contains(variantId)) {
+        throw const ModelPackageException(
+          'download_cancelled',
+          'Model download was cancelled',
+        );
+      }
+      rethrow;
     } finally {
       await sink?.close();
+      if (identical(_activeClients[variantId], client)) {
+        _activeClients.remove(variantId);
+      }
       client.close(force: true);
     }
   }

@@ -18,8 +18,8 @@ import '../../widgets/ere_controls.dart';
 import '../../widgets/onboarding_art.dart';
 import '../../widgets/spark_logo.dart';
 
-/// Mobile onboarding: 3 story pages on the warm radial background, then the
-/// first-model picker. Fully skippable — guest-first, no account gate anywhere.
+/// Cross-platform onboarding: three skippable story pages followed by a
+/// required default-model download and readiness check.
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({super.key});
 
@@ -86,9 +86,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   void _skipToModels() {
-    final app = AppScope.of(context);
-    app.onboardingTargetTab = ShellTab.models;
-    app.completeOnboarding();
+    setState(() => _pickingModel = true);
   }
 
   @override
@@ -414,12 +412,6 @@ class _FirstModelPageState extends State<FirstModelPage> {
     app.completeOnboarding();
   }
 
-  void _skipToNetwork() {
-    final app = AppScope.of(context);
-    app.onboardingTargetTab = ShellTab.models;
-    app.completeOnboarding();
-  }
-
   bool _isReady(CatalogEntry entry) =>
       entry.id.isNotEmpty &&
       (ModelPackageService.instance.byVariantId(_variantId(entry))?.runnable ==
@@ -601,24 +593,11 @@ class _FirstModelPageState extends State<FirstModelPage> {
                         enabled: ready,
                         onTap: ready ? _startChatting : null,
                       ),
-                      const SizedBox(height: 16),
-                      GestureDetector(
-                        onTap: _skipToNetwork,
-                        child: Center(
-                          child: Text(
-                            'CONTINUE WITHOUT LOCAL AI',
-                            style: AppText.mono(
-                              11,
-                              weight: FontWeight.w500,
-                              color: AppColors.textMuted,
-                              lsEm: 0.08,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 8),
                       Text(
-                        'Chat and transcript analysis will not be ready offline.',
+                        ready
+                            ? 'This verified package becomes your default local model.'
+                            : 'Download one verified package to finish setup.',
                         textAlign: TextAlign.center,
                         style: AppText.grotesk(11, color: AppColors.textFaint),
                       ),

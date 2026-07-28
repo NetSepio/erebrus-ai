@@ -21,6 +21,8 @@ class ModelDownloadService extends ChangeNotifier {
   final Map<String, double> _progress = {};
   final Set<String> _completed = {};
   final Set<String> _downloading = {};
+  final Set<String> _cancelled = {};
+  final Map<String, HttpClient> _activeClients = {};
   final Map<String, int> _receivedBytes = {};
   final Map<String, int> _totalBytes = {};
   final Map<String, int> _lastNotifiedPercent = {};
@@ -142,6 +144,7 @@ class ModelDownloadService extends ChangeNotifier {
         .fold<int>(0, (sum, artifact) => sum + (artifact.sizeBytes ?? 0));
     final totalBytes = entry.sizeBytes + mmprojBytes;
     _downloading.add(entry.id);
+    _cancelled.remove(entry.id);
     _progress[entry.id] = 0.0;
     _receivedBytes[entry.id] = 0;
     _totalBytes[entry.id] = totalBytes;
@@ -160,8 +163,16 @@ class ModelDownloadService extends ChangeNotifier {
     );
     if (!ok) {
       _downloading.remove(entry.id);
-      await _showNotification('Download failed', 0.0, failed: true);
+      final cancelled = _cancelled.remove(entry.id);
+      _receivedBytes.remove(entry.id);
+      _totalBytes.remove(entry.id);
+      await _showNotification(
+        cancelled ? 'Download cancelled' : 'Download failed',
+        0.0,
+        failed: !cancelled,
+      );
       await PowerService.instance.stopDownload();
+      notifyListeners();
       return false;
     }
 
@@ -179,10 +190,18 @@ class ModelDownloadService extends ChangeNotifier {
         overallTotal: totalBytes,
       );
       if (!ok2) {
+        if (await modelFile.exists()) await modelFile.delete();
         _downloading.remove(entry.id);
+        final cancelled = _cancelled.remove(entry.id);
         _progress.remove(entry.id);
+        _receivedBytes.remove(entry.id);
+        _totalBytes.remove(entry.id);
         notifyListeners();
-        await _showNotification('Download failed', 0.0, failed: true);
+        await _showNotification(
+          cancelled ? 'Download cancelled' : 'Download failed',
+          0.0,
+          failed: !cancelled,
+        );
         await PowerService.instance.stopDownload();
         return false;
       }
@@ -203,12 +222,20 @@ class ModelDownloadService extends ChangeNotifier {
     _completed.add(entry.id);
     _ggufPaths[entry.id] = modelFile.path;
     _downloading.remove(entry.id);
+    _cancelled.remove(entry.id);
     _progress[entry.id] = 1.0;
     await _refreshDownloadedBytes(dir);
     notifyListeners();
     await _showNotification('${entry.name} is ready', 1.0, complete: true);
     await PowerService.instance.stopDownload();
     return true;
+  }
+
+  Future<void> cancelDownload(String id) async {
+    if (!_downloading.contains(id)) return;
+    _cancelled.add(id);
+    _activeClients.remove(id)?.close(force: true);
+    notifyListeners();
   }
 
   Future<bool> _downloadUrl(
@@ -224,6 +251,7 @@ class ModelDownloadService extends ChangeNotifier {
     IOSink? sink;
     try {
       client = HttpClient();
+      _activeClients[progressId] = client;
       client.connectionTimeout = const Duration(seconds: 30);
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
@@ -236,6 +264,9 @@ class ModelDownloadService extends ChangeNotifier {
       sink = file.openWrite();
 
       await for (final chunk in response) {
+        if (_cancelled.contains(progressId)) {
+          throw const HttpException('Download cancelled');
+        }
         sink.add(chunk);
         received += chunk.length;
         final overallReceived = receivedOffset + received;
@@ -260,6 +291,7 @@ class ModelDownloadService extends ChangeNotifier {
       await sink.close();
       sink = null;
       client.close();
+      _activeClients.remove(progressId);
       client = null;
       if (overallTotal <= 0 || receivedOffset + received >= overallTotal) {
         _progress[progressId] = 1.0;
@@ -275,6 +307,7 @@ class ModelDownloadService extends ChangeNotifier {
         await file.delete();
       } catch (_) {}
       client?.close();
+      _activeClients.remove(progressId);
       _progress.remove(progressId);
       _lastNotifiedPercent.remove(progressId);
       notifyListeners();

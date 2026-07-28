@@ -98,8 +98,8 @@ class _ErebrusAppState extends State<ErebrusApp> {
   }
 }
 
-/// First launch on a phone-sized layout shows onboarding; desktop goes straight
-/// to the shell. Onboarding is skippable everywhere — guest-first.
+/// Every platform completes onboarding and configures a default local model
+/// before entering the shell.
 class _RootGate extends StatelessWidget {
   const _RootGate();
 
@@ -109,12 +109,9 @@ class _RootGate extends StatelessWidget {
     if (!app.localSettingsLoaded) {
       return const ColoredBox(color: AppColors.bg);
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= kDesktopBreakpoint;
-        if (!wide && !app.onboarded) return const OnboardingFlow();
-        return Shell(initialTab: app.onboardingTargetTab);
-      },
-    );
+    if (!app.onboarded || !app.hasConfiguredDefaultModel) {
+      return const OnboardingFlow();
+    }
+    return Shell(initialTab: app.onboardingTargetTab);
   }
 }

@@ -601,6 +601,16 @@ class _LocalListState extends State<_LocalList> {
       onVariants: deviceVariants.isEmpty
           ? null
           : () => _showVariants(context, app, entry, deviceVariants),
+      onCancel: status == ModelStatus.downloading
+          ? () {
+              if (variant != null &&
+                  ModelPackageService.instance.isDownloading(variant.id)) {
+                ModelPackageService.instance.cancelDownload(variant.id);
+              } else {
+                ModelDownloadService.instance.cancelDownload(entry.id);
+              }
+            }
+          : null,
     );
   }
 
@@ -723,6 +733,12 @@ class _LocalListState extends State<_LocalList> {
     bool updating = false,
   }) async {
     try {
+      if (variant != null) {
+        _preferredVariants[entry.id] = variant;
+        final backend = _backendForVariant(variant);
+        if (backend != null) _preferredBackends[entry.id] = backend;
+        if (mounted) setState(() {});
+      }
       if (variant == null ||
           !variant.files
               .where((artifact) => artifact.required)
@@ -776,6 +792,10 @@ class _LocalListState extends State<_LocalList> {
         variantId: variant.id,
       );
     } on Object catch (error) {
+      if (error is ModelPackageException &&
+          error.code == 'download_cancelled') {
+        return;
+      }
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -817,6 +837,7 @@ class _LocalModelCard extends StatelessWidget {
     this.onDownload,
     this.onUpdate,
     this.onVariants,
+    this.onCancel,
     this.variantCount = 0,
   });
 
@@ -826,6 +847,7 @@ class _LocalModelCard extends StatelessWidget {
   final VoidCallback? onDownload;
   final VoidCallback? onUpdate;
   final VoidCallback? onVariants;
+  final VoidCallback? onCancel;
   final int variantCount;
 
   @override
@@ -887,10 +909,15 @@ class _LocalModelCard extends StatelessWidget {
                     onUse != null
                         ? AccentChip('USE', onTap: onUse!)
                         : const StatusBadge('READY'),
-                  ModelStatus.downloading => const Icon(
-                    Symbols.close,
-                    size: 18,
-                    color: AppColors.textSecondary,
+                  ModelStatus.downloading => IconButton(
+                    tooltip: 'Cancel download',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onCancel,
+                    icon: const Icon(
+                      Symbols.close,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   ModelStatus.catalog =>
                     onDownload != null

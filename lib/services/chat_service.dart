@@ -119,6 +119,25 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Permanently removes a chat and its persisted message file.
+  Future<void> deleteSession(String id) async {
+    final index = _sessions.indexWhere((session) => session.id == id);
+    if (index < 0) return;
+    if (_activeSessionId == id && InferenceService.instance.isGenerating) {
+      await InferenceService.instance.cancel();
+    }
+    _sessions.removeAt(index);
+    _messages.remove(id);
+    if (_activeSessionId == id) {
+      _activeSessionId = _sessions.firstOrNull?.id;
+    }
+    notifyListeners();
+    if (kIsWeb || _inTest) return;
+    final directory = await StorageService.instance.chatsDir();
+    final file = File(p.join(directory.path, '$id.json'));
+    if (await file.exists()) await file.delete();
+  }
+
   /// Sends a user message in the active session and streams the assistant reply.
   Future<void> send(
     String text, {

@@ -75,6 +75,11 @@ class AppState extends ChangeNotifier {
       (selectedModelId.isNotEmpty &&
           ModelDownloadService.instance.isDownloaded(selectedModelId));
 
+  /// Onboarding is not complete until a default local package was selected
+  /// after its download/readiness check succeeded.
+  bool get hasConfiguredDefaultModel =>
+      defaultModelId.isNotEmpty && defaultModelVariantId.isNotEmpty;
+
   String? get walletAddress =>
       auth.walletAddress.isNotEmpty ? auth.walletAddress : null;
   String? get userId => auth.userId.isNotEmpty ? auth.userId : null;

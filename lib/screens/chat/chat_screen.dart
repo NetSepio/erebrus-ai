@@ -124,32 +124,48 @@ class _SessionsList extends StatelessWidget {
                                 color: active ? AppColors.surface3 : null,
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    s.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.grotesk(
-                                      13,
-                                      weight: active
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                      color: active
-                                          ? AppColors.textPrimary
-                                          : AppColors.textSecondary,
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          s.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppText.grotesk(
+                                            13,
+                                            weight: active
+                                                ? FontWeight.w600
+                                                : FontWeight.w500,
+                                            color: active
+                                                ? AppColors.textPrimary
+                                                : AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          _sessionMeta(s),
+                                          style: AppText.mono(
+                                            10,
+                                            color: active
+                                                ? AppColors.textTertiary
+                                                : AppColors.textFaint,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _sessionMeta(s),
-                                    style: AppText.mono(
-                                      10,
-                                      color: active
-                                          ? AppColors.textTertiary
-                                          : AppColors.textFaint,
-                                    ),
+                                  IconButton(
+                                    tooltip: 'Delete chat',
+                                    visualDensity: VisualDensity.compact,
+                                    iconSize: 17,
+                                    color: AppColors.textMuted,
+                                    onPressed: () =>
+                                        _confirmDelete(context, chat, s),
+                                    icon: const Icon(Symbols.delete),
                                   ),
                                 ],
                               ),
@@ -163,6 +179,38 @@ class _SessionsList extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    ChatService chat,
+    ChatSession session,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete chat?'),
+        content: Text(
+          '"${session.title}" and all of its messages will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'DELETE',
+              style: TextStyle(color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await chat.deleteSession(session.id);
+    }
   }
 
   String _sessionMeta(ChatSession s) {

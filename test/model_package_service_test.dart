@@ -24,7 +24,16 @@ void main() {
         request.response.statusCode = HttpStatus.notFound;
       } else {
         request.response.contentLength = payload.length;
-        request.response.add(payload);
+        if (request.uri.path == '/slow.gguf') {
+          for (var offset = 0; offset < payload.length; offset += 8192) {
+            final end = (offset + 8192).clamp(0, payload.length);
+            request.response.add(payload.sublist(offset, end));
+            await request.response.flush();
+            await Future<void>.delayed(const Duration(milliseconds: 3));
+          }
+        } else {
+          request.response.add(payload);
+        }
       }
       await request.response.close();
     });
@@ -124,6 +133,46 @@ void main() {
     expect(
       await Directory('${temporaryDirectory.path}/bad-q8').exists(),
       isFalse,
+    );
+  });
+
+  test('cancels an active package and removes staging files', () async {
+    final bytes = List<int>.generate(1024 * 1024, (index) => index % 251);
+    payloads['/slow.gguf'] = bytes;
+    final variant = _variant(
+      id: 'cancel-q8',
+      bytes: bytes,
+      url: url('/slow.gguf'),
+    );
+    final service = ModelPackageService(
+      modelsDirectoryProvider: () async => temporaryDirectory,
+    );
+
+    final download = service.downloadVariant(variant);
+    while (!service.isDownloading(variant.id)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 12));
+    await service.cancelDownload(variant.id);
+
+    await expectLater(
+      download,
+      throwsA(
+        isA<ModelPackageException>().having(
+          (error) => error.code,
+          'code',
+          'download_cancelled',
+        ),
+      ),
+    );
+    expect(service.isDownloading(variant.id), isFalse);
+    expect(service.byVariantId(variant.id), isNull);
+    expect(
+      await temporaryDirectory
+          .list()
+          .where((entry) => entry.path.endsWith('.part'))
+          .isEmpty,
+      isTrue,
     );
   });
 

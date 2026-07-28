@@ -5,6 +5,7 @@ import 'package:erebrus_ai/auth/wallet_auth_controller.dart';
 import 'package:erebrus_ai/data/catalog_service.dart';
 import 'package:erebrus_ai/data/model_catalog.dart';
 import 'package:erebrus_ai/org/org_state.dart';
+import 'package:erebrus_ai/services/chat_service.dart';
 import 'package:erebrus_ai/state/app_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,7 +39,13 @@ void main() {
     CatalogService.setEntries(modelCatalog);
   });
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(
+    () => SharedPreferences.setMockInitialValues({
+      'onboarding_complete': true,
+      'default_model_id': 'smollm2-135m-instruct',
+      'default_model_variant_id': 'smollm2-135m-instruct-gguf-q8_0',
+    }),
+  );
 
   Future<void> pumpApp(
     WidgetTester tester,
@@ -65,6 +72,18 @@ void main() {
   }
 
   group('desktop 1280x800', () {
+    testWidgets('desktop first launch requires onboarding and model setup', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpApp(tester, const Size(1280, 800));
+
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
+      await tester.tap(find.text('SKIP'));
+      await tester.pumpAndSettle();
+      expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
+    });
+
     testWidgets('chat, transcribe, models, and settings render', (
       tester,
     ) async {
@@ -89,11 +108,12 @@ void main() {
       await tester.tap(find.text('TRANSCRIBE'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Transcribe'), findsOneWidget);
-      expect(find.text('START TRANSCRIPTION'), findsOneWidget);
+      expect(find.text('SET UP TRANSCRIPTION'), findsOneWidget);
       expect(
         find.textContaining('No analysis runs automatically'),
         findsOneWidget,
       );
+      expect(find.textContaining('No chat model is required'), findsOneWidget);
 
       // Settings (guest), with Personas nested under it.
       await tester.tap(find.text('SETTINGS'));
@@ -164,25 +184,45 @@ void main() {
       expect(find.text('SWITCH MODEL'), findsOneWidget);
       expect(find.text('No downloaded models'), findsOneWidget);
     });
+
+    testWidgets('chat sessions can be permanently deleted', (tester) async {
+      await pumpApp(tester, const Size(1280, 800));
+      final before = ChatService.instance.sessions.length;
+      await tester.tap(find.text('NEW'));
+      await tester.pumpAndSettle();
+      expect(ChatService.instance.sessions, hasLength(before + 1));
+
+      await tester.tap(find.byTooltip('Delete chat').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete chat?'), findsOneWidget);
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+
+      expect(ChatService.instance.sessions, hasLength(before));
+    });
   });
 
   group('mobile 390x844', () {
-    testWidgets('onboarding completion survives app restart', (tester) async {
+    testWidgets('story skip still requires default-model setup', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
       await pumpApp(tester, const Size(390, 844));
       expect(find.text('01 / PRIVATE AI'), findsOneWidget);
 
       await tester.tap(find.text('SKIP'));
       await tester.pumpAndSettle();
-      expect(find.text('01 / PRIVATE AI'), findsNothing);
+      expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
+      expect(find.text('START USING EREBRUS'), findsOneWidget);
+      expect(find.text('CONTINUE WITHOUT LOCAL AI'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
+      SharedPreferences.setMockInitialValues({'onboarding_complete': true});
       await pumpApp(tester, const Size(390, 844));
-      expect(find.text('01 / PRIVATE AI'), findsNothing);
-      expect(find.text('CHAT'), findsOneWidget);
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
     });
 
     testWidgets('shell content clears the system status bar', (tester) async {
-      SharedPreferences.setMockInitialValues({'onboarding_complete': true});
       await pumpApp(tester, const Size(390, 844), topPadding: 48);
 
       expect(
@@ -191,7 +231,8 @@ void main() {
       );
     });
 
-    testWidgets('onboarding pages → first model → shell', (tester) async {
+    testWidgets('onboarding pages end in required model setup', (tester) async {
+      SharedPreferences.setMockInitialValues({});
       await pumpApp(tester, const Size(390, 844));
 
       expect(find.text('01 / PRIVATE AI'), findsOneWidget);
@@ -207,22 +248,15 @@ void main() {
       expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
       expect(find.text('RECOMMENDED'), findsOneWidget);
       expect(find.text('START USING EREBRUS'), findsOneWidget);
-
-      await tester.tap(find.text('CONTINUE WITHOUT LOCAL AI'));
-      await tester.pump(const Duration(milliseconds: 400));
-
-      // Shell opens on the Models network tab.
-      expect(find.text('CHAT'), findsOneWidget);
-      expect(find.text('Private workspace models'), findsOneWidget);
+      expect(find.text('CONTINUE WITHOUT LOCAL AI'), findsNothing);
     });
 
     testWidgets('models tabs, settings, and sign-in page', (tester) async {
       await pumpApp(tester, const Size(390, 844));
-      // Skip onboarding — goes straight to the Models screen.
-      await tester.tap(find.text('SKIP'));
-      await tester.pump(const Duration(milliseconds: 400));
 
-      // Skip lands on the network tab; switch to local to verify local list.
+      // Configured setup opens the shell; switch to local models.
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.textContaining('LOCAL ·'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('STORAGE · 0 MB USED'), findsOneWidget);
