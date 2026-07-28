@@ -1,6 +1,7 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:erebrus_ai/screens/transcribe/transcribe_screen.dart';
 import 'package:erebrus_ai/services/transcription_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,10 +39,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('saved audio playback requests an iOS playback session', () {
+  test('saved audio playback explicitly routes to the speaker', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final context = transcriptionPlaybackAudioContext();
+    expect(context.iOS.category, AVAudioSessionCategory.playAndRecord);
     expect(
-      transcriptionPlaybackAudioContext().iOS.category,
-      AVAudioSessionCategory.playback,
+      context.iOS.options,
+      contains(AVAudioSessionOptions.defaultToSpeaker),
     );
+    expect(context.android.isSpeakerphoneOn, isTrue);
   });
 }

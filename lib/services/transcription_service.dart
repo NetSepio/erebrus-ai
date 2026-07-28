@@ -29,9 +29,8 @@ enum TranscriptionUiState {
 enum TranscriptionShareKind { transcript, audio, both }
 
 @visibleForTesting
-AudioContext transcriptionPlaybackAudioContext() => AudioContext(
-  iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
-);
+AudioContext transcriptionPlaybackAudioContext() =>
+    AudioContextConfig(route: AudioContextConfigRoute.speaker).build();
 
 class TranscriptionService extends ChangeNotifier {
   static final TranscriptionService instance = TranscriptionService();
