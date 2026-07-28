@@ -262,8 +262,8 @@ class _FirstModelPageState extends State<FirstModelPage> {
   DeviceProfile? _profile;
   Recommendation? _recommendation;
   CatalogEntry? _selected;
-  List<CatalogEntry> _smallerModels = const [];
-  bool _showSmallerModels = false;
+  List<CatalogEntry> _moreModels = const [];
+  bool _showMoreModels = false;
   bool _loading = true;
   String? _error;
   final Map<String, double> _variantProgress = {};
@@ -282,12 +282,19 @@ class _FirstModelPageState extends State<FirstModelPage> {
     final capabilities = await BackendProbeService.instance.probe(
       device: profile,
     );
-    final resolved = const InferencePlanner().resolve(
+    final safeResolved = const InferencePlanner().resolve(
       models: catalog,
       device: profile,
       backends: capabilities,
     );
-    for (final candidate in resolved) {
+    final exploratoryResolved = const InferencePlanner().resolve(
+      models: catalog,
+      device: profile,
+      backends: capabilities,
+      allowExperimental: true,
+      memoryBudgetFraction: 0.85,
+    );
+    for (final candidate in [...safeResolved, ...exploratoryResolved]) {
       _preferredVariants.putIfAbsent(
         candidate.model.id,
         () => candidate.variant,
@@ -303,32 +310,18 @@ class _FirstModelPageState extends State<FirstModelPage> {
       rec.recommended.id,
       ...rec.alternatives.map((entry) => entry.id),
     };
-    final recommendedSize = _packageSizeBytes(rec.recommended);
     final compatibleModels = <String, CatalogEntry>{};
-    for (final candidate in resolved) {
+    for (final candidate in exploratoryResolved) {
       compatibleModels.putIfAbsent(candidate.model.id, () => candidate.model);
     }
-    final smaller =
-        compatibleModels.values
-            .where((entry) => !primaryIds.contains(entry.id))
-            .where(
-              (entry) =>
-                  _packageSizeBytes(entry) < recommendedSize ||
-                  entry.parameterB < rec.recommended.parameterB,
-            )
-            .toList()
-          ..sort((a, b) {
-            final sizeOrder = _packageSizeBytes(
-              a,
-            ).compareTo(_packageSizeBytes(b));
-            if (sizeOrder != 0) return sizeOrder;
-            return a.parameterB.compareTo(b.parameterB);
-          });
+    final moreModels = compatibleModels.values
+        .where((entry) => !primaryIds.contains(entry.id))
+        .toList();
     setState(() {
       _profile = profile;
       _recommendation = rec;
       _selected = rec.recommended;
-      _smallerModels = smaller;
+      _moreModels = moreModels;
       _loading = false;
     });
     final selected = _selected;
@@ -632,17 +625,17 @@ class _FirstModelPageState extends State<FirstModelPage> {
                               requiredRamGB: _packageRamGB(alt),
                             ),
                           ),
-                        if (_smallerModels.isNotEmpty) ...[
-                          _SmallerModelsToggle(
-                            count: _smallerModels.length,
-                            expanded: _showSmallerModels,
+                        if (_moreModels.isNotEmpty) ...[
+                          _MoreModelsToggle(
+                            count: _moreModels.length,
+                            expanded: _showMoreModels,
                             onTap: () => setState(
-                              () => _showSmallerModels = !_showSmallerModels,
+                              () => _showMoreModels = !_showMoreModels,
                             ),
                           ),
-                          if (_showSmallerModels) ...[
+                          if (_showMoreModels) ...[
                             const SizedBox(height: 12),
-                            for (final entry in _smallerModels)
+                            for (final entry in _moreModels)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: _AltModelCard(
@@ -690,7 +683,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       PrimaryCta(
-                        'START USING EREBRUS',
+                        'START USING EREBRUS AI',
                         radius: 14,
                         padding: const EdgeInsets.all(14),
                         glow: false,
@@ -877,8 +870,8 @@ class _RecommendedModelCard extends StatelessWidget {
   }
 }
 
-class _SmallerModelsToggle extends StatelessWidget {
-  const _SmallerModelsToggle({
+class _MoreModelsToggle extends StatelessWidget {
+  const _MoreModelsToggle({
     required this.count,
     required this.expanded,
     required this.onTap,
@@ -902,14 +895,16 @@ class _SmallerModelsToggle extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Symbols.compress, size: 18, color: AppColors.accentHi),
+            const Icon(Symbols.tune, size: 18, color: AppColors.accentHi),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    expanded ? 'HIDE SMALLER MODELS' : 'SHOW SMALLER MODELS',
+                    expanded
+                        ? 'HIDE MORE MODELS'
+                        : 'SHOW MORE COMPATIBLE MODELS',
                     style: AppText.mono(
                       10.5,
                       weight: FontWeight.w600,
@@ -919,7 +914,8 @@ class _SmallerModelsToggle extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '$count lighter download${count == 1 ? '' : 's'} compatible with this device',
+                    '$count additional option${count == 1 ? '' : 's'}, '
+                    'including experimental models',
                     style: AppText.grotesk(11.5, color: AppColors.textMuted),
                   ),
                 ],
@@ -959,15 +955,19 @@ class _DeviceInfoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: AppColors.textSecondary),
           const SizedBox(width: 10),
-          Text(
-            profile.name,
-            style: AppText.grotesk(13.5, weight: FontWeight.w600),
+          Flexible(
+            child: Text(
+              profile.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.grotesk(13.5, weight: FontWeight.w600),
+            ),
           ),
           const SizedBox(width: 10),
           Container(width: 1, height: 16, color: AppColors.stroke),
           const SizedBox(width: 10),
           Text(
-            '${_formatRamGB(profile.ramGB)} GB RAM',
+            '${_formatRamGB(profile.ramGB)} GB available',
             style: AppText.mono(11, color: AppColors.textTertiary),
           ),
         ],
@@ -1038,7 +1038,9 @@ class _AltModelCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        entry.spec,
+                        entry.mobileStatus.toLowerCase() == 'experimental'
+                            ? '${entry.spec} · EXPERIMENTAL'
+                            : entry.spec,
                         style: AppText.mono(
                           10.5,
                           color: AppColors.textTertiary,

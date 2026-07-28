@@ -184,6 +184,58 @@ void main() {
 
       expect(results, isEmpty);
     });
+
+    test('uses the same 60 percent mobile budget as recommendations', () {
+      final results = const InferencePlanner().resolve(
+        models: [_multiVariantEntry(minimumRamGB: 4.5)],
+        device: _iphone,
+        backends: const [
+          BackendCapabilities(
+            kind: BackendKind.mlx,
+            operational: true,
+            formats: ['mlx'],
+          ),
+        ],
+      );
+
+      expect(results, isNotEmpty);
+      expect(results.first.variant.id, 'llama-1b-mlx-4bit');
+    });
+
+    test('can expose minimum-fit experimental models as manual options', () {
+      final entry = _mobileEntry(
+        id: 'bonsai-27b-q1',
+        name: 'Bonsai 27B Q1',
+        parameterB: 27,
+        tier: 'flagship_mobile',
+        sortOrder: 250,
+        minimumRamGB: 8,
+        recommendedRamGB: 16,
+        format: 'gguf',
+        releaseChannel: 'experimental',
+      );
+      final results = const InferencePlanner().resolve(
+        models: [entry],
+        device: DeviceProfile(
+          type: DeviceType.mobile,
+          ramBytes: 12240656794,
+          name: '12 GB-class iPhone',
+          platform: 'ios-arm64',
+        ),
+        backends: const [
+          BackendCapabilities(
+            kind: BackendKind.llamaCpp,
+            operational: true,
+            formats: ['gguf'],
+          ),
+        ],
+        allowExperimental: true,
+        memoryBudgetFraction: 0.85,
+      );
+
+      expect(results, isNotEmpty);
+      expect(results.first.model.id, 'bonsai-27b-q1');
+    });
   });
 
   test('Nano catalog gives a 1 GB phone a sub-0.5B option', () {
@@ -376,6 +428,7 @@ CatalogEntry _mobileEntry({
   required double recommendedRamGB,
   bool featured = false,
   String format = 'mlx',
+  String releaseChannel = 'stable',
 }) {
   final variant = ModelVariant(
     id: '$id-$format',
@@ -387,6 +440,7 @@ CatalogEntry _mobileEntry({
     compatibleBackends: [format == 'mlx' ? 'mlx' : 'llama.cpp'],
     minimumRamGB: minimumRamGB,
     recommendedRamGB: recommendedRamGB,
+    releaseChannel: releaseChannel,
   );
   return CatalogEntry(
     id: id,

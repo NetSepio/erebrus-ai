@@ -428,10 +428,11 @@ Recommendation recommendModel(
   final allowedTiers = <String>{};
   final preferredTiers = <String>{};
   if (device.type == DeviceType.mobile) {
+    final ramClassGB = device.ramClassGB;
     allowedTiers.addAll(const ['mobile', 'tablet']);
-    if (device.ramGB >= 8) allowedTiers.add('high_end_mobile');
-    if (device.ramGB >= 12) allowedTiers.add('flagship_mobile');
-    if (device.ramGB >= 10) {
+    if (ramClassGB >= 8) allowedTiers.add('high_end_mobile');
+    if (ramClassGB >= 12) allowedTiers.add('flagship_mobile');
+    if (ramClassGB >= 10) {
       preferredTiers.addAll(const [
         'high_end_mobile',
         'flagship_mobile',
@@ -527,13 +528,13 @@ Recommendation recommendModel(
     if (device.type == DeviceType.mobile) {
       final highEnd = e.tiers.contains('high_end_mobile');
       final flagship = e.tiers.contains('flagship_mobile');
-      if (device.ramGB >= 10 && highEnd) score += 350;
-      if (device.ramGB >= 12 && flagship) score += 250;
-      if (device.ramGB < 10 &&
+      if (device.ramClassGB >= 10 && highEnd) score += 350;
+      if (device.ramClassGB >= 12 && flagship) score += 250;
+      if (device.ramClassGB < 10 &&
           e.tiers.any((tier) => tier == 'mobile' || tier == 'tablet')) {
         score += 200;
       }
-      if (device.ramGB >= 10 && e.recommendedTier == 'high_end_mobile') {
+      if (device.ramClassGB >= 10 && e.recommendedTier == 'high_end_mobile') {
         score += 150;
       }
       final targetParameters = mobileTargetParameters();

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:erebrus_ai/data/catalog_service.dart';
 import 'package:erebrus_ai/data/model_catalog.dart';
 import 'package:erebrus_ai/services/device_info_service.dart';
+import 'package:erebrus_ai/services/inference_planner.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -26,9 +27,9 @@ void main() {
         hasLength(3),
       );
 
-      const flagshipIphone = DeviceProfile(
+      final flagshipIphone = DeviceProfile(
         type: DeviceType.mobile,
-        ramBytes: 12 * 1024 * 1024 * 1024,
+        ramBytes: (11.4 * 1024 * 1024 * 1024).round(),
         name: 'Flagship iPhone',
         platform: 'ios-arm64',
       );
@@ -62,6 +63,31 @@ void main() {
           ...recommendation.alternatives.map((entry) => entry.id),
         ],
         ['gemma-3n-e2b-it', 'gemma-3-4b-it', 'phi-4-mini-instruct'],
+      );
+
+      final manualOptions = const InferencePlanner().resolve(
+        models: entries,
+        device: flagshipIphone,
+        backends: const [
+          BackendCapabilities(
+            kind: BackendKind.mlx,
+            operational: true,
+            platforms: ['ios-arm64'],
+            formats: ['mlx'],
+          ),
+          BackendCapabilities(
+            kind: BackendKind.llamaCpp,
+            operational: true,
+            platforms: ['ios-arm64'],
+            formats: ['gguf'],
+          ),
+        ],
+        allowExperimental: true,
+        memoryBudgetFraction: 0.85,
+      );
+      expect(
+        manualOptions.map((candidate) => candidate.model.id),
+        containsAll(['gemma-3n-e2b-it', 'gemma-3-4b-it', 'bonsai-27b-q1']),
       );
     },
     skip: path == null

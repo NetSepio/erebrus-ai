@@ -33,10 +33,13 @@ class InferencePlanner {
     required List<BackendCapabilities> backends,
     Set<String>? installedVariantIds,
     bool allowExperimental = false,
+    double? memoryBudgetFraction,
   }) {
     final results = <ResolvedModelVariant>[];
     final memoryBudget =
-        device.ramGB * (device.type == DeviceType.mobile ? 0.45 : 0.70);
+        device.ramGB *
+        (memoryBudgetFraction ??
+            (device.type == DeviceType.mobile ? 0.60 : 0.70));
 
     for (final model in models) {
       for (final variant in model.variants) {

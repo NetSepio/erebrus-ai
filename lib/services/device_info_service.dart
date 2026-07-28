@@ -24,6 +24,20 @@ class DeviceProfile {
   final String platform;
 
   double get ramGB => ramBytes / (1024 * 1024 * 1024);
+
+  /// The marketed memory class inferred from usable physical memory.
+  ///
+  /// iOS can report less memory than the device's nominal capacity because a
+  /// portion is reserved. Keep [ramGB] for safety calculations, but use this
+  /// value for broad catalog tiers so a 12 GB-class phone reporting 11.4 GiB
+  /// is not treated as a lower-tier device.
+  int get ramClassGB {
+    const commonClasses = [2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128];
+    for (final capacity in commonClasses) {
+      if (ramGB >= capacity * 0.90 && ramGB <= capacity) return capacity;
+    }
+    return ramGB.round();
+  }
 }
 
 /// Detects total RAM and a human-readable device name.

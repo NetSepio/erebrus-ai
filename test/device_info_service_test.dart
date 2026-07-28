@@ -38,4 +38,16 @@ void main() {
       );
     });
   });
+
+  test('classifies 11.4 GiB usable memory as a 12 GB device class', () {
+    final profile = DeviceProfile(
+      type: DeviceType.mobile,
+      ramBytes: (11.4 * 1024 * 1024 * 1024).round(),
+      name: 'iPhone',
+      platform: 'ios-arm64',
+    );
+
+    expect(profile.ramGB, closeTo(11.4, 0.01));
+    expect(profile.ramClassGB, 12);
+  });
 }
