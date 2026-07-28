@@ -262,6 +262,8 @@ class _FirstModelPageState extends State<FirstModelPage> {
   DeviceProfile? _profile;
   Recommendation? _recommendation;
   CatalogEntry? _selected;
+  List<CatalogEntry> _smallerModels = const [];
+  bool _showSmallerModels = false;
   bool _loading = true;
   String? _error;
   final Map<String, double> _variantProgress = {};
@@ -293,10 +295,36 @@ class _FirstModelPageState extends State<FirstModelPage> {
     }
     if (!mounted) return;
     final rec = recommendModel(profile, catalog: catalog);
+    final primaryIds = {
+      rec.recommended.id,
+      ...rec.alternatives.map((entry) => entry.id),
+    };
+    final recommendedSize = _packageSizeBytes(rec.recommended);
+    final compatibleModels = <String, CatalogEntry>{};
+    for (final candidate in resolved) {
+      compatibleModels.putIfAbsent(candidate.model.id, () => candidate.model);
+    }
+    final smaller =
+        compatibleModels.values
+            .where((entry) => !primaryIds.contains(entry.id))
+            .where(
+              (entry) =>
+                  _packageSizeBytes(entry) < recommendedSize ||
+                  entry.parameterB < rec.recommended.parameterB,
+            )
+            .toList()
+          ..sort((a, b) {
+            final sizeOrder = _packageSizeBytes(
+              a,
+            ).compareTo(_packageSizeBytes(b));
+            if (sizeOrder != 0) return sizeOrder;
+            return a.parameterB.compareTo(b.parameterB);
+          });
     setState(() {
       _profile = profile;
       _recommendation = rec;
       _selected = rec.recommended;
+      _smallerModels = smaller;
       _loading = false;
     });
     final selected = _selected;
@@ -446,6 +474,16 @@ class _FirstModelPageState extends State<FirstModelPage> {
     return entry.variants.where((variant) => variant.id == id).firstOrNull;
   }
 
+  int _packageSizeBytes(CatalogEntry entry) =>
+      _preferredVariants[entry.id]?.sizeBytes ?? entry.sizeBytes;
+
+  double _packageRamGB(CatalogEntry entry) {
+    final variant = _preferredVariants[entry.id];
+    final recommended = variant?.recommendedRamGB ?? 0;
+    if (recommended > 0) return recommended;
+    return entry.ramGB;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -545,6 +583,8 @@ class _FirstModelPageState extends State<FirstModelPage> {
                           isReady: _isReady(rec.recommended),
                           isDownloading: _isDownloading(rec.recommended),
                           progress: _progress(rec.recommended),
+                          downloadSizeBytes: _packageSizeBytes(rec.recommended),
+                          requiredRamGB: _packageRamGB(rec.recommended),
                         ),
                         const SizedBox(height: 12),
                         for (final alt in rec.alternatives)
@@ -558,8 +598,37 @@ class _FirstModelPageState extends State<FirstModelPage> {
                               isReady: _isReady(alt),
                               isDownloading: _isDownloading(alt),
                               progress: _progress(alt),
+                              downloadSizeBytes: _packageSizeBytes(alt),
+                              requiredRamGB: _packageRamGB(alt),
                             ),
                           ),
+                        if (_smallerModels.isNotEmpty) ...[
+                          _SmallerModelsToggle(
+                            count: _smallerModels.length,
+                            expanded: _showSmallerModels,
+                            onTap: () => setState(
+                              () => _showSmallerModels = !_showSmallerModels,
+                            ),
+                          ),
+                          if (_showSmallerModels) ...[
+                            const SizedBox(height: 12),
+                            for (final entry in _smallerModels)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _AltModelCard(
+                                  entry: entry,
+                                  selected: selected?.id == entry.id,
+                                  onTap: () => _onSelect(entry),
+                                  onDownload: () => _onDownload(entry),
+                                  isReady: _isReady(entry),
+                                  isDownloading: _isDownloading(entry),
+                                  progress: _progress(entry),
+                                  downloadSizeBytes: _packageSizeBytes(entry),
+                                  requiredRamGB: _packageRamGB(entry),
+                                ),
+                              ),
+                          ],
+                        ],
                       ] else ...[
                         Center(
                           child: Padding(
@@ -626,6 +695,8 @@ class _RecommendedModelCard extends StatelessWidget {
     required this.isReady,
     required this.isDownloading,
     required this.progress,
+    required this.downloadSizeBytes,
+    required this.requiredRamGB,
   });
 
   final CatalogEntry entry;
@@ -635,6 +706,8 @@ class _RecommendedModelCard extends StatelessWidget {
   final bool isReady;
   final bool isDownloading;
   final double progress;
+  final int downloadSizeBytes;
+  final double requiredRamGB;
 
   @override
   Widget build(BuildContext context) {
@@ -718,7 +791,7 @@ class _RecommendedModelCard extends StatelessWidget {
                         ? 'READY TO CHAT'
                         : (isDownloading
                               ? 'DOWNLOADING · ${(progress * 100).round()}%'
-                              : 'REQUIRES ${formatGB(entry.ramGB)} RAM'),
+                              : 'REQUIRES ${formatGB(requiredRamGB)} RAM'),
                     style: AppText.mono(
                       10.5,
                       color: isReady ? AppColors.success : AppColors.accentHi,
@@ -739,7 +812,7 @@ class _RecommendedModelCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${formatGB(entry.sizeGB)} DOWNLOAD',
+                  '${formatGB(downloadSizeBytes / (1024 * 1024 * 1024))} DOWNLOAD',
                   style: AppText.mono(
                     10.5,
                     weight: FontWeight.w600,
@@ -752,6 +825,66 @@ class _RecommendedModelCard extends StatelessWidget {
                     style: AppText.mono(10.5, color: AppColors.textMuted),
                   ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallerModelsToggle extends StatelessWidget {
+  const _SmallerModelsToggle({
+    required this.count,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.stroke),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Symbols.compress, size: 18, color: AppColors.accentHi),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    expanded ? 'HIDE SMALLER MODELS' : 'SHOW SMALLER MODELS',
+                    style: AppText.mono(
+                      10.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.accentHi,
+                      lsEm: 0.06,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$count lighter download${count == 1 ? '' : 's'} compatible with this device',
+                    style: AppText.grotesk(11.5, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              expanded ? Symbols.expand_less : Symbols.expand_more,
+              size: 20,
+              color: AppColors.textSecondary,
             ),
           ],
         ),
@@ -808,6 +941,8 @@ class _AltModelCard extends StatelessWidget {
     required this.isReady,
     required this.isDownloading,
     required this.progress,
+    required this.downloadSizeBytes,
+    required this.requiredRamGB,
   });
 
   final CatalogEntry entry;
@@ -817,6 +952,8 @@ class _AltModelCard extends StatelessWidget {
   final bool isReady;
   final bool isDownloading;
   final double progress;
+  final int downloadSizeBytes;
+  final double requiredRamGB;
 
   @override
   Widget build(BuildContext context) {
@@ -912,7 +1049,7 @@ class _AltModelCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'REQUIRES ${formatGB(entry.ramGB)} RAM',
+                      'REQUIRES ${formatGB(requiredRamGB)} RAM',
                       style: AppText.mono(
                         10.5,
                         color: AppColors.accentHi,
@@ -921,7 +1058,7 @@ class _AltModelCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${formatGB(entry.sizeGB)} DOWNLOAD',
+                    '${formatGB(downloadSizeBytes / (1024 * 1024 * 1024))} DOWNLOAD',
                     style: AppText.mono(10.5, color: AppColors.textMuted),
                   ),
                 ],

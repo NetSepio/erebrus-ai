@@ -82,6 +82,10 @@ void main() {
       await tester.tap(find.text('SKIP'));
       await tester.pumpAndSettle();
       expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
+      expect(find.text('SHOW SMALLER MODELS'), findsOneWidget);
+      await tester.tap(find.text('SHOW SMALLER MODELS'));
+      await tester.pumpAndSettle();
+      expect(find.text('HIDE SMALLER MODELS'), findsOneWidget);
     });
 
     testWidgets('chat, transcribe, models, and settings render', (
