@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:erebrus_ai/data/catalog_service.dart';
+import 'package:erebrus_ai/data/model_catalog.dart';
+import 'package:erebrus_ai/services/device_info_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -22,6 +24,44 @@ void main() {
       expect(
         variants.where((variant) => variant.provenance.isOfficial),
         hasLength(3),
+      );
+
+      const flagshipIphone = DeviceProfile(
+        type: DeviceType.mobile,
+        ramBytes: 12 * 1024 * 1024 * 1024,
+        name: 'Flagship iPhone',
+        platform: 'ios-arm64',
+      );
+      final preferredVariants = {
+        for (final entry in entries)
+          if (entry.variants.any(
+            (variant) =>
+                variant.format == 'mlx' &&
+                variant.supportsPlatform(flagshipIphone.platform),
+          ))
+            entry.id: entry.variants.firstWhere(
+              (variant) =>
+                  variant.format == 'mlx' &&
+                  variant.supportsPlatform(flagshipIphone.platform),
+            )
+          else if (entry.variants.any(
+            (variant) => variant.supportsPlatform(flagshipIphone.platform),
+          ))
+            entry.id: entry.variants.firstWhere(
+              (variant) => variant.supportsPlatform(flagshipIphone.platform),
+            ),
+      };
+      final recommendation = recommendModel(
+        flagshipIphone,
+        catalog: entries,
+        preferredVariants: preferredVariants,
+      );
+      expect(
+        [
+          recommendation.recommended.id,
+          ...recommendation.alternatives.map((entry) => entry.id),
+        ],
+        ['gemma-3n-e2b-it', 'gemma-3-4b-it', 'phi-4-mini-instruct'],
       );
     },
     skip: path == null

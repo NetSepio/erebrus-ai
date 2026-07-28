@@ -261,6 +261,82 @@ void main() {
     expect(recommendModel(mac, catalog: catalog).recommended.id, 'qwen3.5-9b');
   });
 
+  test('12 GB flagship iPhone prioritizes optimized 4B-class models', () {
+    const iphone = DeviceProfile(
+      type: DeviceType.mobile,
+      ramBytes: 12 * 1024 * 1024 * 1024,
+      name: 'Flagship iPhone',
+      platform: 'ios-arm64',
+    );
+    final gemma4 = _mobileEntry(
+      id: 'gemma-3-4b-it',
+      name: 'Gemma 3 4B IT',
+      parameterB: 4,
+      tier: 'high_end_mobile',
+      sortOrder: 100,
+      minimumRamGB: 4,
+      recommendedRamGB: 6,
+    );
+    final gemmaE2 = _mobileEntry(
+      id: 'gemma-3n-e2b-it',
+      name: 'Gemma 3n E2B IT',
+      parameterB: 2,
+      tier: 'high_end_mobile',
+      sortOrder: 70,
+      minimumRamGB: 4,
+      recommendedRamGB: 6,
+    );
+    final qwen2 = _mobileEntry(
+      id: 'qwen3.5-2b',
+      name: 'Qwen3.5 2B',
+      parameterB: 2,
+      tier: 'mobile',
+      sortOrder: 20,
+      minimumRamGB: 2.5,
+      recommendedRamGB: 4,
+      featured: true,
+    );
+    final smol = _mobileEntry(
+      id: 'smollm2-360m-instruct',
+      name: 'SmolLM2 360M Instruct',
+      parameterB: 0.36,
+      tier: 'mobile',
+      sortOrder: 2,
+      minimumRamGB: 0.8,
+      recommendedRamGB: 1.3,
+      featured: true,
+    );
+    final bonsai = _mobileEntry(
+      id: 'bonsai-27b-q1',
+      name: 'Bonsai 27B Q1',
+      parameterB: 27,
+      tier: 'flagship_mobile',
+      sortOrder: 250,
+      minimumRamGB: 8,
+      recommendedRamGB: 16,
+      featured: true,
+      format: 'gguf',
+    );
+    final catalog = [smol, qwen2, gemmaE2, gemma4, bonsai];
+    final preferredVariants = {
+      for (final entry in catalog) entry.id: entry.variants.single,
+    };
+
+    final recommendation = recommendModel(
+      iphone,
+      catalog: catalog,
+      preferredVariants: preferredVariants,
+    );
+
+    expect(
+      [
+        recommendation.recommended.id,
+        ...recommendation.alternatives.map((entry) => entry.id),
+      ],
+      ['gemma-3-4b-it', 'gemma-3n-e2b-it', 'qwen3.5-2b'],
+    );
+  });
+
   test('Nano catalog includes a complete verified Apple MLX package', () {
     final entry = modelCatalog.first;
     final mlx = entry.variants.singleWhere(
@@ -288,6 +364,48 @@ void main() {
       isTrue,
     );
   });
+}
+
+CatalogEntry _mobileEntry({
+  required String id,
+  required String name,
+  required double parameterB,
+  required String tier,
+  required int sortOrder,
+  required double minimumRamGB,
+  required double recommendedRamGB,
+  bool featured = false,
+  String format = 'mlx',
+}) {
+  final variant = ModelVariant(
+    id: '$id-$format',
+    modelId: id,
+    format: format,
+    quantization: '4bit',
+    files: const [],
+    platforms: const ['ios-arm64'],
+    compatibleBackends: [format == 'mlx' ? 'mlx' : 'llama.cpp'],
+    minimumRamGB: minimumRamGB,
+    recommendedRamGB: recommendedRamGB,
+  );
+  return CatalogEntry(
+    id: id,
+    family: id,
+    name: name,
+    quant: '4bit',
+    sizeBytes: 1,
+    parameterB: parameterB,
+    minRamGB: minimumRamGB,
+    recRamGB: recommendedRamGB,
+    platforms: const ['ios-arm64'],
+    tiers: [tier],
+    mobileStatus: 'experimental',
+    recommendedTier: tier,
+    sortOrder: sortOrder,
+    featured: featured,
+    variants: [variant],
+    preferredVariantId: variant.id,
+  );
 }
 
 CatalogEntry _multiVariantEntry({double minimumRamGB = 1}) {

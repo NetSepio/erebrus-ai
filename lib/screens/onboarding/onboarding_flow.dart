@@ -276,7 +276,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
   }
 
   Future<void> _load() async {
-    final profile = DeviceInfoService.detect();
+    final profile = await DeviceInfoService.detectAsync();
     final entries = await CatalogService.fetch();
     final catalog = entries.isEmpty ? modelCatalog : entries;
     final capabilities = await BackendProbeService.instance.probe(
@@ -294,7 +294,11 @@ class _FirstModelPageState extends State<FirstModelPage> {
       );
     }
     if (!mounted) return;
-    final rec = recommendModel(profile, catalog: catalog);
+    final rec = recommendModel(
+      profile,
+      catalog: catalog,
+      preferredVariants: _preferredVariants,
+    );
     final primaryIds = {
       rec.recommended.id,
       ...rec.alternatives.map((entry) => entry.id),
@@ -353,6 +357,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
   Future<void> _onDownload(CatalogEntry entry) async {
     final variant = _variantFor(entry);
     var ok = false;
+    var cancelled = false;
     if (variant != null &&
         variant.files
             .where((artifact) => artifact.required)
@@ -388,7 +393,15 @@ class _FirstModelPageState extends State<FirstModelPage> {
         }
         if (mounted) setState(() => _variantProgress[variant.id] = 1);
       } on Object catch (error) {
-        if (mounted) setState(() => _error = error.toString());
+        if (error is ModelPackageException &&
+            error.code == 'download_cancelled') {
+          cancelled = true;
+          if (mounted) {
+            setState(() => _variantProgress.remove(variant.id));
+          }
+        } else if (mounted) {
+          setState(() => _error = error.toString());
+        }
       }
     } else {
       ok = await ModelDownloadService.instance.download(entry);
@@ -411,6 +424,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
         }
       }
     }
+    if (cancelled) return;
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -451,17 +465,28 @@ class _FirstModelPageState extends State<FirstModelPage> {
           ModelDownloadService.instance.isDownloaded(entry.id));
 
   bool _isDownloading(CatalogEntry entry) {
-    final variantProgress = _variantProgress[_variantId(entry)];
-    if (variantProgress != null) {
-      return variantProgress > 0 && variantProgress < 1;
-    }
-    final p = ModelDownloadService.instance.progressOf(entry.id);
-    return p > 0 && p < 1;
+    final variantId = _variantId(entry);
+    return ModelPackageService.instance.isDownloading(variantId) ||
+        ModelDownloadService.instance.isDownloading(entry.id);
   }
 
-  double _progress(CatalogEntry entry) =>
-      _variantProgress[_variantId(entry)] ??
-      ModelDownloadService.instance.progressOf(entry.id);
+  double _progress(CatalogEntry entry) {
+    final variantId = _variantId(entry);
+    if (ModelPackageService.instance.isDownloading(variantId)) {
+      return ModelPackageService.instance.progressOf(variantId);
+    }
+    return _variantProgress[variantId] ??
+        ModelDownloadService.instance.progressOf(entry.id);
+  }
+
+  void _cancelDownload(CatalogEntry entry) {
+    final variantId = _variantId(entry);
+    if (ModelPackageService.instance.isDownloading(variantId)) {
+      ModelPackageService.instance.cancelDownload(variantId);
+    } else {
+      ModelDownloadService.instance.cancelDownload(entry.id);
+    }
+  }
 
   String _variantId(CatalogEntry entry) =>
       _preferredVariants[entry.id]?.id ??
@@ -487,7 +512,10 @@ class _FirstModelPageState extends State<FirstModelPage> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: ModelDownloadService.instance,
+      animation: Listenable.merge([
+        ModelDownloadService.instance,
+        ModelPackageService.instance,
+      ]),
       builder: (context, _) {
         final rec = _recommendation;
         final profile = _profile;
@@ -580,6 +608,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                           selected: selected?.id == rec.recommended.id,
                           onTap: () => _onSelect(rec.recommended),
                           onDownload: () => _onDownload(rec.recommended),
+                          onCancel: () => _cancelDownload(rec.recommended),
                           isReady: _isReady(rec.recommended),
                           isDownloading: _isDownloading(rec.recommended),
                           progress: _progress(rec.recommended),
@@ -595,6 +624,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                               selected: selected?.id == alt.id,
                               onTap: () => _onSelect(alt),
                               onDownload: () => _onDownload(alt),
+                              onCancel: () => _cancelDownload(alt),
                               isReady: _isReady(alt),
                               isDownloading: _isDownloading(alt),
                               progress: _progress(alt),
@@ -620,6 +650,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
                                   selected: selected?.id == entry.id,
                                   onTap: () => _onSelect(entry),
                                   onDownload: () => _onDownload(entry),
+                                  onCancel: () => _cancelDownload(entry),
                                   isReady: _isReady(entry),
                                   isDownloading: _isDownloading(entry),
                                   progress: _progress(entry),
@@ -692,6 +723,7 @@ class _RecommendedModelCard extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.onDownload,
+    required this.onCancel,
     required this.isReady,
     required this.isDownloading,
     required this.progress,
@@ -703,6 +735,7 @@ class _RecommendedModelCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDownload;
+  final VoidCallback onCancel;
   final bool isReady;
   final bool isDownloading;
   final double progress;
@@ -801,6 +834,17 @@ class _RecommendedModelCard extends StatelessWidget {
                 ),
                 if (!isReady && !isDownloading)
                   AccentChip('GET', icon: Symbols.download, onTap: onDownload),
+                if (isDownloading)
+                  IconButton(
+                    tooltip: 'Cancel download',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onCancel,
+                    icon: const Icon(
+                      Symbols.close,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
               ],
             ),
             if (isDownloading) ...[
@@ -945,6 +989,7 @@ class _AltModelCard extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.onDownload,
+    required this.onCancel,
     required this.isReady,
     required this.isDownloading,
     required this.progress,
@@ -956,6 +1001,7 @@ class _AltModelCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDownload;
+  final VoidCallback onCancel;
   final bool isReady;
   final bool isDownloading;
   final double progress;
@@ -1032,17 +1078,28 @@ class _AltModelCard extends StatelessWidget {
                     ),
                   )
                 else if (isDownloading)
-                  SizedBox(
-                    width: 42,
-                    child: Text(
-                      '${(progress * 100).round()}%',
-                      textAlign: TextAlign.right,
-                      style: AppText.mono(
-                        10,
-                        weight: FontWeight.w600,
-                        color: AppColors.accent,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${(progress * 100).round()}%',
+                        style: AppText.mono(
+                          10,
+                          weight: FontWeight.w600,
+                          color: AppColors.accent,
+                        ),
                       ),
-                    ),
+                      IconButton(
+                        tooltip: 'Cancel download',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onCancel,
+                        icon: const Icon(
+                          Symbols.close,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   )
                 else
                   AccentChip('GET', icon: Symbols.download, onTap: onDownload),

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:system_info2/system_info2.dart';
 
 /// Broad device class used for model recommendations.
@@ -29,6 +30,10 @@ class DeviceProfile {
 ///
 /// Falls back to a conservative 8 GB profile if the platform helpers fail.
 class DeviceInfoService {
+  static const MethodChannel _nativeChannel = MethodChannel(
+    'erebrus.ai/device_info',
+  );
+
   static DeviceProfile detect() {
     var ramBytes = 8 * 1024 * 1024 * 1024; // 8 GB fallback
     try {
@@ -89,6 +94,34 @@ class DeviceInfoService {
       name: name,
       platform: platform,
     );
+  }
+
+  /// Returns the synchronous profile enriched with native facts that Dart's
+  /// cross-platform system helpers do not expose.
+  ///
+  /// In particular, system_info2 does not implement physical-memory detection
+  /// for iOS. ProcessInfo on the native side reports the real device RAM.
+  static Future<DeviceProfile> detectAsync() async {
+    final profile = detect();
+    if (kIsWeb || !Platform.isIOS) return profile;
+    try {
+      final ramBytes = await _nativeChannel.invokeMethod<int>(
+        'physicalMemoryBytes',
+      );
+      if (ramBytes != null && ramBytes > 0) {
+        return DeviceProfile(
+          type: profile.type,
+          ramBytes: ramBytes,
+          name: profile.name,
+          platform: profile.platform,
+        );
+      }
+    } on PlatformException {
+      // Retain the conservative synchronous fallback.
+    } on MissingPluginException {
+      // Unit tests and older native shells do not expose this channel.
+    }
+    return profile;
   }
 
   static int _physicalMemoryBytes() {

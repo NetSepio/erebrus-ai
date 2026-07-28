@@ -401,6 +401,7 @@ class Recommendation {
 Recommendation recommendModel(
   DeviceProfile device, {
   List<CatalogEntry>? catalog,
+  Map<String, ModelVariant>? preferredVariants,
 }) {
   final entries = catalog ?? modelCatalog;
   if (entries.isEmpty) {
@@ -419,15 +420,26 @@ Recommendation recommendModel(
   }
 
   final maxRamGB =
-      device.ramGB * (device.type == DeviceType.mobile ? 0.45 : 0.7);
+      device.ramGB * (device.type == DeviceType.mobile ? 0.60 : 0.70);
   final targetPlatform = device.platform.toLowerCase();
+  final applePlatform =
+      targetPlatform.startsWith('ios-') || targetPlatform.startsWith('macos-');
 
   final allowedTiers = <String>{};
   final preferredTiers = <String>{};
   if (device.type == DeviceType.mobile) {
-    allowedTiers.addAll(const ['mobile', 'tablet', 'flagship_mobile']);
-    preferredTiers.addAll(const ['mobile', 'tablet']);
-    if (device.ramGB >= 10) preferredTiers.add('flagship_mobile');
+    allowedTiers.addAll(const ['mobile', 'tablet']);
+    if (device.ramGB >= 8) allowedTiers.add('high_end_mobile');
+    if (device.ramGB >= 12) allowedTiers.add('flagship_mobile');
+    if (device.ramGB >= 10) {
+      preferredTiers.addAll(const [
+        'high_end_mobile',
+        'flagship_mobile',
+        'tablet',
+      ]);
+    } else {
+      preferredTiers.addAll(const ['mobile', 'tablet']);
+    }
   } else {
     allowedTiers.addAll(const [
       'mobile',
@@ -464,9 +476,46 @@ Recommendation recommendModel(
       e.status.toLowerCase() != 'deprecated' &&
       e.status.toLowerCase() != 'removed';
 
+  ModelVariant? effectiveVariant(CatalogEntry entry) {
+    final planned = preferredVariants?[entry.id];
+    if (planned != null) return planned;
+    final candidates = entry.variants
+        .where((variant) => variant.isActive)
+        .where((variant) => variant.supportsPlatform(targetPlatform))
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      int backendPriority(ModelVariant variant) {
+        if (applePlatform && variant.format.toLowerCase() == 'mlx') return 2;
+        if (variant.format.toLowerCase() == 'gguf') return 1;
+        return 0;
+      }
+
+      final backendOrder = backendPriority(b).compareTo(backendPriority(a));
+      if (backendOrder != 0) return backendOrder;
+      return a.recommendedRamGB.compareTo(b.recommendedRamGB);
+    });
+    return candidates.first;
+  }
+
+  double mobileTargetParameters() {
+    if (device.ramGB < 2) return 0.15;
+    if (device.ramGB < 4) return 0.5;
+    if (device.ramGB < 6) return 0.8;
+    if (device.ramGB < 8) return 1.5;
+    if (device.ramGB < 10) return 2;
+    return 4;
+  }
+
   final scored = entries.map((e) {
-    final recRam = e.recRamGB > 0 ? e.recRamGB : e.ramGB;
-    final minRam = e.minRamGB > 0 ? e.minRamGB : recRam * 0.8;
+    final variant = effectiveVariant(e);
+    final recRam =
+        variant?.recommendedRamGB != null && variant!.recommendedRamGB > 0
+        ? variant.recommendedRamGB
+        : (e.recRamGB > 0 ? e.recRamGB : e.ramGB);
+    final minRam = variant?.minimumRamGB != null && variant!.minimumRamGB > 0
+        ? variant.minimumRamGB
+        : (e.minRamGB > 0 ? e.minRamGB : recRam * 0.8);
     final fitsRecommended = recRam <= maxRamGB;
     final fitsMinimum = minRam <= maxRamGB;
     final viable =
@@ -475,15 +524,40 @@ Recommendation recommendModel(
     var score = 0.0;
     if (viable && fitsRecommended) score += 1000;
     if (viable && fitsMinimum) score += 500;
-    if (e.tiers.any((t) => preferredTiers.contains(t))) score += 200;
-    if (e.featured) score += 100;
-    if (e.recommendedTier.isNotEmpty &&
-        preferredTiers.contains(e.recommendedTier)) {
-      score += 150;
+    if (device.type == DeviceType.mobile) {
+      final highEnd = e.tiers.contains('high_end_mobile');
+      final flagship = e.tiers.contains('flagship_mobile');
+      if (device.ramGB >= 10 && highEnd) score += 350;
+      if (device.ramGB >= 12 && flagship) score += 250;
+      if (device.ramGB < 10 &&
+          e.tiers.any((tier) => tier == 'mobile' || tier == 'tablet')) {
+        score += 200;
+      }
+      if (device.ramGB >= 10 && e.recommendedTier == 'high_end_mobile') {
+        score += 150;
+      }
+      final targetParameters = mobileTargetParameters();
+      if (e.parameterB > 0 && targetParameters > 0) {
+        final ratio = e.parameterB / targetParameters;
+        score += ratio <= 1 ? 300 * ratio : 300 - (250 * (ratio - 1));
+      }
+      if (applePlatform && variant?.format.toLowerCase() == 'mlx') {
+        score += 250;
+      } else if (variant?.format.toLowerCase() == 'gguf') {
+        score += 50;
+      }
+      if (e.sortOrder > 0) score -= e.sortOrder * 0.1;
+    } else {
+      if (e.tiers.any((t) => preferredTiers.contains(t))) score += 200;
+      if (e.featured) score += 100;
+      if (e.recommendedTier.isNotEmpty &&
+          preferredTiers.contains(e.recommendedTier)) {
+        score += 150;
+      }
+      if (fitsRecommended) score += e.parameterB * 10;
+      if (fitsMinimum) score += e.parameterB * 5;
+      if (e.sortOrder > 0) score -= e.sortOrder * 0.5;
     }
-    if (fitsRecommended) score += e.parameterB * 10;
-    if (fitsMinimum) score += e.parameterB * 5;
-    if (e.sortOrder > 0) score -= e.sortOrder * 0.5;
 
     return _ScoredEntry(e, score, viable, fitsRecommended, fitsMinimum);
   }).toList();

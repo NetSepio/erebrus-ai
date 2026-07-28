@@ -340,13 +340,17 @@ class _LocalListState extends State<_LocalList> {
   final Map<String, ModelVariant> _preferredVariants = {};
   final Map<String, BackendKind> _preferredBackends = {};
   List<BackendCapabilities> _capabilities = const [];
-  late final DeviceProfile _device;
+  late DeviceProfile _device;
 
   @override
   void initState() {
     super.initState();
-    _device = DeviceInfoService.detect();
-    _catalogFuture = _loadCatalog();
+    _catalogFuture = _initializeCatalog();
+  }
+
+  Future<List<CatalogEntry>> _initializeCatalog() async {
+    _device = await DeviceInfoService.detectAsync();
+    return _loadCatalog();
   }
 
   Future<List<CatalogEntry>> _loadCatalog() async {
