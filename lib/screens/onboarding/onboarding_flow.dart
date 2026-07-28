@@ -923,13 +923,20 @@ class _DeviceInfoChip extends StatelessWidget {
           Container(width: 1, height: 16, color: AppColors.stroke),
           const SizedBox(width: 10),
           Text(
-            '${profile.ramGB.toStringAsFixed(1)} GB RAM',
+            '${_formatRamGB(profile.ramGB)} GB RAM',
             style: AppText.mono(11, color: AppColors.textTertiary),
           ),
         ],
       ),
     );
   }
+}
+
+String _formatRamGB(double ramGB) {
+  final rounded = ramGB.roundToDouble();
+  return (ramGB - rounded).abs() < 0.05
+      ? rounded.toInt().toString()
+      : ramGB.toStringAsFixed(1);
 }
 
 class _AltModelCard extends StatelessWidget {

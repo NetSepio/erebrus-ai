@@ -32,7 +32,7 @@ class DeviceInfoService {
   static DeviceProfile detect() {
     var ramBytes = 8 * 1024 * 1024 * 1024; // 8 GB fallback
     try {
-      ramBytes = SysInfo.getTotalPhysicalMemory();
+      ramBytes = _physicalMemoryBytes();
     } catch (_) {
       // Keep fallback.
     }
@@ -89,6 +89,61 @@ class DeviceInfoService {
       name: name,
       platform: platform,
     );
+  }
+
+  static int _physicalMemoryBytes() {
+    if (!kIsWeb && Platform.isMacOS) {
+      // system_info2 4.1.0 multiplies hw.memsize (already expressed in bytes)
+      // by hw.pagesize on macOS. Read the kernel value directly until that
+      // upstream implementation is corrected.
+      try {
+        final result = Process.runSync('/usr/sbin/sysctl', const [
+          '-n',
+          'hw.memsize',
+        ]);
+        if (result.exitCode == 0) {
+          final bytes = int.tryParse(result.stdout.toString().trim());
+          if (bytes != null && bytes > 0) return bytes;
+        }
+      } catch (_) {
+        // Fall back to the package result and repair its known unit error.
+      }
+    }
+
+    final reportedBytes = SysInfo.getTotalPhysicalMemory();
+    if (!kIsWeb && Platform.isMacOS) {
+      var pageSizeBytes = 16 * 1024;
+      try {
+        final result = Process.runSync('/usr/sbin/sysctl', const [
+          '-n',
+          'hw.pagesize',
+        ]);
+        if (result.exitCode == 0) {
+          pageSizeBytes =
+              int.tryParse(result.stdout.toString().trim()) ?? pageSizeBytes;
+        }
+      } catch (_) {
+        // Apple Silicon uses 16 KB pages; the direct hw.memsize path above
+        // handles Intel Macs whenever sysctl is available.
+      }
+      return normalizeMacOSMemoryBytes(
+        reportedBytes,
+        pageSizeBytes: pageSizeBytes,
+      );
+    }
+    return reportedBytes;
+  }
+
+  @visibleForTesting
+  static int normalizeMacOSMemoryBytes(
+    int reportedBytes, {
+    int pageSizeBytes = 16 * 1024,
+  }) {
+    const plausibleConsumerMacMaximum = 1024 * 1024 * 1024 * 1024; // 1 TB
+    if (reportedBytes > plausibleConsumerMacMaximum && pageSizeBytes > 0) {
+      return reportedBytes ~/ pageSizeBytes;
+    }
+    return reportedBytes;
   }
 
   static String _systemInfoOsName({required String fallback}) {

@@ -204,6 +204,63 @@ void main() {
     );
   });
 
+  test('24 GB Mac recommends Qwen3.5 9B over minimum-fit 20B models', () {
+    const mac = DeviceProfile(
+      type: DeviceType.desktop,
+      ramBytes: 24 * 1024 * 1024 * 1024,
+      name: 'MacBook Pro',
+      platform: 'macos-arm64',
+    );
+    const catalog = [
+      CatalogEntry(
+        id: 'qwen3.5-9b',
+        family: 'Qwen3.5',
+        name: 'Qwen3.5 9B',
+        quant: 'Q4_K_M',
+        sizeBytes: 6 * 1024 * 1024 * 1024,
+        parameterB: 9,
+        minRamGB: 10,
+        recRamGB: 16,
+        platforms: ['macos-arm64'],
+        tiers: ['laptop', 'desktop'],
+        recommendedTier: 'laptop',
+        featured: true,
+        sortOrder: 130,
+      ),
+      CatalogEntry(
+        id: 'gpt-oss-20b',
+        family: 'GPT-OSS',
+        name: 'GPT-OSS 20B',
+        quant: 'MXFP4',
+        sizeBytes: 11 * 1024 * 1024 * 1024,
+        parameterB: 20,
+        minRamGB: 16,
+        recRamGB: 24,
+        platforms: ['macos-arm64'],
+        tiers: ['desktop', 'gpu'],
+        recommendedTier: 'desktop',
+        featured: true,
+        sortOrder: 200,
+      ),
+      CatalogEntry(
+        id: 'mistral-small-3.1-24b-instruct',
+        family: 'Mistral',
+        name: 'Mistral Small 3.1 24B Instruct',
+        quant: 'UD-IQ2_M',
+        sizeBytes: 8 * 1024 * 1024 * 1024,
+        parameterB: 24,
+        minRamGB: 14,
+        recRamGB: 24,
+        platforms: ['macos-arm64'],
+        tiers: ['desktop', 'gpu'],
+        recommendedTier: 'desktop',
+        sortOrder: 160,
+      ),
+    ];
+
+    expect(recommendModel(mac, catalog: catalog).recommended.id, 'qwen3.5-9b');
+  });
+
   test('Nano catalog includes a complete verified Apple MLX package', () {
     final entry = modelCatalog.first;
     final mlx = entry.variants.singleWhere(
