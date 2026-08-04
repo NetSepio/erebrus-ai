@@ -1264,7 +1264,7 @@ class _OrganizationRow extends StatelessWidget {
                     style: AppText.grotesk(14.5, weight: FontWeight.w600),
                   ),
                   Text(
-                    org.role,
+                    '${org.role} · ${org.planLabel}',
                     style: AppText.mono(11, color: AppColors.textTertiary),
                   ),
                 ],

@@ -1,3 +1,5 @@
+import '../plan_label.dart';
+
 /// An Erebrus AI organization / workspace.
 class AiOrg {
   const AiOrg({
@@ -47,4 +49,5 @@ class AiOrg {
   };
 
   bool get isAdmin => role == 'admin' || role == 'owner';
+  String get planLabel => erebrusPlanLabel(plan);
 }
