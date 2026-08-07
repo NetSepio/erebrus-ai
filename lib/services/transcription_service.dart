@@ -67,6 +67,10 @@ class TranscriptionService extends ChangeNotifier {
   bool _playing = false;
   bool _initialized = false;
   bool _usingWhisper = false;
+  bool _cancelRequested = false;
+  String? _activeAudioPath;
+  WhisperCppBackend? _whisperBackend;
+  Future<void> _draftCheckpoint = Future.value();
 
   TranscriptionUiState get state => _state;
   Duration get elapsed => _elapsed;
@@ -86,6 +90,13 @@ class TranscriptionService extends ChangeNotifier {
   TranscriptionSession? get current => _current;
   Duration get playbackPosition => _playbackPosition;
   bool get isPlaying => _playing;
+  bool get isCapturing =>
+      _state == TranscriptionUiState.recording ||
+      _state == TranscriptionUiState.paused;
+  bool get isBusy =>
+      _state == TranscriptionUiState.preparing ||
+      _state == TranscriptionUiState.finalizing;
+  bool get hasUnfinishedRecording => isCapturing || isBusy;
   TranscriptionBackendKind get activeBackend => _usingWhisper
       ? TranscriptionBackendKind.whisperCpp
       : TranscriptionBackendKind.speechAnalyzer;
@@ -127,10 +138,8 @@ class TranscriptionService extends ChangeNotifier {
       speech.probe(locale: locale);
 
   Future<void> start({String locale = 'en-US'}) async {
-    if (_state == TranscriptionUiState.recording ||
-        _state == TranscriptionUiState.paused) {
-      return;
-    }
+    if (hasUnfinishedRecording) return;
+    await stopPlayback();
     _state = TranscriptionUiState.preparing;
     _error = '';
     _locale = locale;
@@ -139,7 +148,11 @@ class TranscriptionService extends ChangeNotifier {
     _elapsed = Duration.zero;
     _recordingClock
       ..reset()
-      ..start();
+      ..stop();
+    _cancelRequested = false;
+    _activeAudioPath = null;
+    _whisperBackend = null;
+    _current = null;
     notifyListeners();
 
     try {
@@ -147,6 +160,8 @@ class TranscriptionService extends ChangeNotifier {
       final directory = await _repository.createSessionDirectory(sessionId);
       _activeSessionId = sessionId;
       _startedAt = DateTime.now().toUtc();
+      await _saveDraft(status: TranscriptionSessionStatus.recording);
+      _throwIfCancelled();
       SpeechAnalyzerProbe? speechProbe;
       try {
         speechProbe = await speech.probe(locale: locale);
@@ -157,13 +172,18 @@ class TranscriptionService extends ChangeNotifier {
           speechProbe?.available == true &&
           speechProbe?.localeSupported == true;
       _usingWhisper = !useSpeechAnalyzer;
+      await _saveDraft(status: TranscriptionSessionStatus.recording);
       if (useSpeechAnalyzer) {
         await _subscription?.cancel();
         _subscription = speech.events.listen(
           _handleEvent,
-          onError: (Object error) => _fail(error.toString()),
+          onError: (Object error) =>
+              unawaited(_failAndCleanup(error.toString())),
         );
-        await speech.start(sessionDirectory: directory.path, locale: locale);
+        _activeAudioPath = await speech.start(
+          sessionDirectory: directory.path,
+          locale: locale,
+        );
       } else {
         final modelPath = await WhisperModelManager.instance.installedPath();
         if (modelPath == null) {
@@ -175,16 +195,23 @@ class TranscriptionService extends ChangeNotifier {
           throw StateError('Microphone permission is required');
         }
         await InferenceService.instance.unload();
+        _activeAudioPath = p.join(directory.path, 'audio.wav');
         await _recorder.start(
           const RecordConfig(
             encoder: AudioEncoder.wav,
             sampleRate: 16000,
             numChannels: 1,
           ),
-          path: p.join(directory.path, 'audio.wav'),
+          path: _activeAudioPath!,
         );
       }
+      _throwIfCancelled();
+      _startedAt = DateTime.now().toUtc();
+      _recordingClock
+        ..reset()
+        ..start();
       _state = TranscriptionUiState.recording;
+      await _saveDraft(status: TranscriptionSessionStatus.recording);
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (_state == TranscriptionUiState.recording) {
           _elapsed = _recordingClock.elapsed;
@@ -192,34 +219,45 @@ class TranscriptionService extends ChangeNotifier {
         }
       });
       notifyListeners();
+    } on _TranscriptionCancelled {
+      await _discardActiveSession();
     } on Object catch (error) {
-      _fail(error.toString());
+      await _failAndCleanup(error.toString());
     }
   }
 
   Future<void> pause() async {
     if (_state != TranscriptionUiState.recording) return;
-    if (_usingWhisper) {
-      await _recorder.pause();
-    } else {
-      await speech.pause();
+    try {
+      if (_usingWhisper) {
+        await _recorder.pause();
+      } else {
+        await speech.pause();
+      }
+      _recordingClock.stop();
+      _elapsed = _recordingClock.elapsed;
+      _state = TranscriptionUiState.paused;
+      await _saveDraft(status: TranscriptionSessionStatus.recording);
+      notifyListeners();
+    } on Object catch (error) {
+      await _failAndCleanup(error.toString());
     }
-    _recordingClock.stop();
-    _elapsed = _recordingClock.elapsed;
-    _state = TranscriptionUiState.paused;
-    notifyListeners();
   }
 
   Future<void> resume() async {
     if (_state != TranscriptionUiState.paused) return;
-    if (_usingWhisper) {
-      await _recorder.resume();
-    } else {
-      await speech.resume();
+    try {
+      if (_usingWhisper) {
+        await _recorder.resume();
+      } else {
+        await speech.resume();
+      }
+      _recordingClock.start();
+      _state = TranscriptionUiState.recording;
+      notifyListeners();
+    } on Object catch (error) {
+      await _failAndCleanup(error.toString());
     }
-    _recordingClock.start();
-    _state = TranscriptionUiState.recording;
-    notifyListeners();
   }
 
   Future<TranscriptionSession?> stop() async {
@@ -238,6 +276,7 @@ class TranscriptionService extends ChangeNotifier {
       if (sessionId == null || createdAt == null) {
         throw StateError('The transcription session identity was lost');
       }
+      await _saveDraft(status: TranscriptionSessionStatus.finalizing);
       late final String raw;
       late final String audioPath;
       var backend = TranscriptionBackendKind.speechAnalyzer;
@@ -254,10 +293,12 @@ class TranscriptionService extends ChangeNotifier {
           throw StateError('The verified Whisper model is unavailable');
         }
         final whisperBackend = WhisperCppBackend(modelPath: modelPath);
+        _whisperBackend = whisperBackend;
         await whisperBackend.prepare(TranscriptionConfig(locale: _locale));
         await for (final event in whisperBackend.transcribe(
           AudioInput.file(audioPath),
         )) {
+          _throwIfCancelled();
           switch (event) {
             case TranscriptionSegmentUpdated(:final segment):
               _segments.add(segment);
@@ -269,6 +310,7 @@ class TranscriptionService extends ChangeNotifier {
           }
         }
         final result = await whisperBackend.finish();
+        _whisperBackend = null;
         raw = result.text;
         backend = TranscriptionBackendKind.whisperCpp;
         backendVersion = 'whisper.cpp 1.8.3';
@@ -295,28 +337,41 @@ class TranscriptionService extends ChangeNotifier {
         audioChannels: _usingWhisper ? 1 : 0,
       );
       _partialText = '';
+      _activeSessionId = null;
+      _activeAudioPath = null;
       _state = TranscriptionUiState.complete;
       notifyListeners();
       return _current;
+    } on _TranscriptionCancelled {
+      await _discardActiveSession();
+      return null;
     } on Object catch (error) {
-      _fail(error.toString());
+      await _failAndCleanup(error.toString());
       return null;
     }
   }
 
   Future<void> cancel() async {
+    if (!hasUnfinishedRecording) return;
+    _cancelRequested = true;
     _ticker?.cancel();
     await _subscription?.cancel();
     _subscription = null;
-    if (_usingWhisper) {
-      await _recorder.cancel();
-    } else {
-      await speech.cancel();
+    await _whisperBackend?.cancel();
+    try {
+      if (_usingWhisper) {
+        await _recorder.cancel();
+      } else {
+        await speech.cancel();
+      }
+    } on Object {
+      // The native session may already have completed while cancellation won.
     }
-    _reset();
+    await _discardActiveSession();
   }
 
-  void selectSession(TranscriptionSession session) {
+  Future<void> selectSession(TranscriptionSession session) async {
+    await stopPlayback();
     _current = session;
     _state = TranscriptionUiState.complete;
     notifyListeners();
@@ -344,6 +399,15 @@ class TranscriptionService extends ChangeNotifier {
     }
   }
 
+  Future<void> stopPlayback() async {
+    if (_playing || _audioPlayer.state == PlayerState.paused) {
+      await _audioPlayer.stop();
+    }
+    _playbackPosition = Duration.zero;
+    _playing = false;
+    notifyListeners();
+  }
+
   Future<void> shareCurrent(TranscriptionShareKind kind) async {
     final current = _current;
     if (current == null) return;
@@ -365,6 +429,7 @@ class TranscriptionService extends ChangeNotifier {
   Future<void> deleteCurrent({bool keepAudio = false}) async {
     final current = _current;
     if (current == null) return;
+    await stopPlayback();
     await _repository.delete(current.id, keepAudio: keepAudio);
     _current = _repository.sessions.firstOrNull;
     _state = _current == null
@@ -373,7 +438,10 @@ class TranscriptionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void newSession() => _reset();
+  Future<void> newSession() async {
+    await stopPlayback();
+    _reset();
+  }
 
   void _handleEvent(SpeechTranscriptionEvent event) {
     switch (event.type) {
@@ -390,9 +458,10 @@ class TranscriptionService extends ChangeNotifier {
         );
         _segments.add(segment);
         _partialText = '';
+        _queueDraftCheckpoint();
         break;
       case 'error':
-        _fail(event.message);
+        unawaited(_failAndCleanup(event.message));
         break;
       default:
         break;
@@ -400,12 +469,79 @@ class TranscriptionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _fail(String message) {
+  Future<void> _failAndCleanup(String message) async {
     _ticker?.cancel();
     _recordingClock.stop();
+    _elapsed = _recordingClock.elapsed;
+    await _subscription?.cancel();
+    _subscription = null;
+    try {
+      if (_usingWhisper) {
+        await _whisperBackend?.cancel();
+        _whisperBackend = null;
+        final stoppedPath = await _recorder.stop();
+        _activeAudioPath ??= stoppedPath;
+      } else {
+        await speech.cancel();
+      }
+    } on Object {
+      // Preserve the original failure; recovery still inspects the draft dir.
+    }
     _error = message;
     _state = TranscriptionUiState.failed;
+    await _saveDraft(
+      status: TranscriptionSessionStatus.failed,
+      failureCode: message,
+      includeAudio: true,
+    );
     notifyListeners();
+  }
+
+  Future<void> _saveDraft({
+    required TranscriptionSessionStatus status,
+    String? failureCode,
+    bool includeAudio = false,
+  }) async {
+    final sessionId = _activeSessionId;
+    final createdAt = _startedAt;
+    if (sessionId == null || createdAt == null) return;
+    final saved = await _repository.saveDraft(
+      sessionId: sessionId,
+      createdAt: createdAt,
+      duration: _elapsed,
+      locale: _locale,
+      status: status,
+      backend: activeBackend,
+      backendVersion: _usingWhisper ? 'whisper.cpp 1.8.3' : 'SpeechAnalyzer',
+      rawTranscript: finalizedText,
+      segments: _segments,
+      audioPath: includeAudio ? _activeAudioPath : null,
+      failureCode: failureCode,
+    );
+    if (_activeSessionId == sessionId &&
+        _state != TranscriptionUiState.complete) {
+      _current = saved;
+    }
+  }
+
+  void _queueDraftCheckpoint() {
+    _draftCheckpoint = _draftCheckpoint
+        .then((_) => _saveDraft(status: TranscriptionSessionStatus.recording))
+        .onError((error, _) {
+          debugPrint('[Transcription] draft checkpoint failed: $error');
+        });
+  }
+
+  Future<void> _discardActiveSession() async {
+    final sessionId = _activeSessionId;
+    if (sessionId != null) {
+      await _repository.delete(sessionId);
+    }
+    _reset();
+  }
+
+  void _throwIfCancelled() {
+    if (_cancelRequested) throw const _TranscriptionCancelled();
   }
 
   void _reset() {
@@ -418,6 +554,9 @@ class TranscriptionService extends ChangeNotifier {
     _partialText = '';
     _error = '';
     _activeSessionId = null;
+    _activeAudioPath = null;
+    _whisperBackend = null;
+    _cancelRequested = false;
     _startedAt = null;
     _elapsed = Duration.zero;
     _current = null;
@@ -438,4 +577,8 @@ class TranscriptionService extends ChangeNotifier {
     unawaited(_recorder.dispose());
     super.dispose();
   }
+}
+
+class _TranscriptionCancelled implements Exception {
+  const _TranscriptionCancelled();
 }

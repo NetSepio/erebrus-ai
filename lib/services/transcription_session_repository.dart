@@ -31,14 +31,18 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     await for (final entity in root.list()) {
       if (entity is! Directory) continue;
       final file = File(p.join(entity.path, 'session.json'));
-      if (!await file.exists()) continue;
-      try {
-        final decoded =
-            jsonDecode(await file.readAsString()) as Map<String, Object?>;
-        _sessions.add(TranscriptionSession.fromJson(decoded));
-      } on Object {
-        // A malformed session is ignored but its evidence remains on disk.
+      TranscriptionSession? session;
+      if (await file.exists()) {
+        try {
+          final decoded =
+              jsonDecode(await file.readAsString()) as Map<String, Object?>;
+          session = TranscriptionSession.fromJson(decoded);
+        } on Object {
+          // Preserve the directory and try to recover its audio below.
+        }
       }
+      session = await _recoverInterrupted(entity, session);
+      if (session != null) _sessions.add(session);
     }
     _sessions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await _rebuildSearchIndex();
@@ -129,6 +133,59 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     final directory = Directory(p.join(root.path, _safeId(sessionId)));
     await directory.create(recursive: true);
     return directory;
+  }
+
+  Future<TranscriptionSession> saveDraft({
+    required String sessionId,
+    required DateTime createdAt,
+    required Duration duration,
+    required String locale,
+    required TranscriptionSessionStatus status,
+    required TranscriptionBackendKind backend,
+    required String backendVersion,
+    required String rawTranscript,
+    required List<TranscriptSegment> segments,
+    String? audioPath,
+    String? failureCode,
+  }) async {
+    final directory = await createSessionDirectory(sessionId);
+    TranscriptionAudioMetadata? audio;
+    if (audioPath != null && audioPath.isNotEmpty) {
+      final file = File(audioPath);
+      if (await file.exists()) {
+        audio = await _audioMetadata(
+          file,
+          codec: backend == TranscriptionBackendKind.whisperCpp ? 'pcm' : '',
+          sampleRate: backend == TranscriptionBackendKind.whisperCpp
+              ? 16000
+              : 0,
+          channels: backend == TranscriptionBackendKind.whisperCpp ? 1 : 0,
+        );
+      }
+    }
+    final session = TranscriptionSession(
+      id: sessionId,
+      createdAt: createdAt.toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      durationMilliseconds: duration.inMilliseconds,
+      status: status,
+      backend: backend,
+      backendVersion: backendVersion,
+      locale: locale,
+      assetVersion: backend == TranscriptionBackendKind.speechAnalyzer
+          ? 'system-managed'
+          : 'verified-local',
+      audio: audio,
+      rawTranscript: rawTranscript,
+      segments: segments
+          .where((segment) => segment.isFinal)
+          .map(StoredTranscriptSegment.fromTranscript)
+          .toList(growable: false),
+      failureCode: failureCode,
+    );
+    await _writeSession(directory, session);
+    await _replace(session);
+    return session;
   }
 
   Future<TranscriptionSession> finalize({
@@ -322,6 +379,68 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     _searchDocuments[session.id] = _searchDocument(session);
     await _writeSearchIndex();
     notifyListeners();
+  }
+
+  Future<TranscriptionSession?> _recoverInterrupted(
+    Directory directory,
+    TranscriptionSession? session,
+  ) async {
+    if (session != null &&
+        session.status != TranscriptionSessionStatus.recording &&
+        session.status != TranscriptionSessionStatus.finalizing) {
+      return session;
+    }
+    File? audioFile;
+    await for (final entity in directory.list()) {
+      if (entity is File && _isAudio(entity.path)) {
+        audioFile = entity;
+        break;
+      }
+    }
+    if (session == null && audioFile == null) {
+      // Empty preparation directories have no recoverable user evidence.
+      await directory.delete(recursive: true);
+      return null;
+    }
+    final stat = audioFile == null
+        ? await directory.stat()
+        : await audioFile.stat();
+    final id = session?.id ?? p.basename(directory.path);
+    final backend =
+        session?.backend ??
+        (p.extension(audioFile?.path ?? '').toLowerCase() == '.wav'
+            ? TranscriptionBackendKind.whisperCpp
+            : TranscriptionBackendKind.speechAnalyzer);
+    final recovered = TranscriptionSession(
+      id: id,
+      createdAt: session?.createdAt ?? stat.modified.toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      durationMilliseconds: session?.durationMilliseconds ?? 0,
+      status: TranscriptionSessionStatus.failed,
+      backend: backend,
+      backendVersion: session?.backendVersion ?? 'recovered',
+      locale: session?.locale ?? 'auto',
+      assetVersion: session?.assetVersion ?? 'recovered',
+      audio: audioFile == null
+          ? session?.audio
+          : await _audioMetadata(
+              audioFile,
+              codec: backend == TranscriptionBackendKind.whisperCpp
+                  ? 'pcm'
+                  : '',
+              sampleRate: backend == TranscriptionBackendKind.whisperCpp
+                  ? 16000
+                  : 0,
+              channels: backend == TranscriptionBackendKind.whisperCpp ? 1 : 0,
+            ),
+      rawTranscript: session?.rawTranscript ?? '',
+      editedTranscript: session?.editedTranscript,
+      segments: session?.segments ?? const [],
+      analysisChatIds: session?.analysisChatIds ?? const [],
+      failureCode: 'interrupted_recording',
+    );
+    await _writeSession(directory, recovered);
+    return recovered;
   }
 
   Future<void> _rebuildSearchIndex() async {

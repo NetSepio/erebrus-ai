@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:erebrus_ai/data/transcription_session.dart';
 import 'package:erebrus_ai/services/transcription_contract.dart';
 import 'package:erebrus_ai/services/transcription_session_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,4 +166,58 @@ void main() {
       expect(await root.list().isEmpty, isTrue);
     },
   );
+
+  test('interrupted draft is recovered with transcript and audio', () async {
+    final directory = await repository.createSessionDirectory('interrupted');
+    final audio = File('${directory.path}/audio.wav');
+    await audio.writeAsBytes([1, 2, 3, 4]);
+    await repository.saveDraft(
+      sessionId: 'interrupted',
+      createdAt: DateTime.utc(2026, 8, 7),
+      duration: const Duration(seconds: 12),
+      locale: 'en-US',
+      status: TranscriptionSessionStatus.recording,
+      backend: TranscriptionBackendKind.whisperCpp,
+      backendVersion: 'whisper.cpp 1.8.3',
+      rawTranscript: 'checkpointed words',
+      segments: const [
+        TranscriptSegment(
+          id: 'checkpoint',
+          text: 'checkpointed words',
+          start: Duration.zero,
+          end: Duration(seconds: 2),
+          isFinal: true,
+        ),
+      ],
+    );
+
+    final restored = TranscriptionSessionRepository(
+      rootDirectoryProvider: () async => root,
+    );
+    await restored.load();
+    final recovered = restored.sessions.single;
+    expect(recovered.status, TranscriptionSessionStatus.failed);
+    expect(recovered.failureCode, 'interrupted_recording');
+    expect(recovered.rawTranscript, 'checkpointed words');
+    expect(recovered.audio?.relativePath, 'audio.wav');
+    expect(await restored.audioPath(recovered), audio.path);
+    restored.dispose();
+  });
+
+  test('orphan audio without a manifest is recovered', () async {
+    final directory = await repository.createSessionDirectory('orphan');
+    final audio = File('${directory.path}/capture.caf');
+    await audio.writeAsBytes([9, 8, 7]);
+
+    final restored = TranscriptionSessionRepository(
+      rootDirectoryProvider: () async => root,
+    );
+    await restored.load();
+    final recovered = restored.sessions.single;
+    expect(recovered.id, 'orphan');
+    expect(recovered.status, TranscriptionSessionStatus.failed);
+    expect(recovered.audio?.relativePath, 'capture.caf');
+    expect(File('${directory.path}/session.json').existsSync(), isTrue);
+    restored.dispose();
+  });
 }

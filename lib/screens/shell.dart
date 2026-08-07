@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../state/app_state.dart';
 import '../navigation/shell_tab.dart';
 import '../services/inference_service.dart';
+import '../services/transcription_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import '../widgets/ere_controls.dart';
@@ -59,14 +60,79 @@ class _ShellState extends State<Shell> {
     _tab = widget.initialTab;
   }
 
-  void _setTab(ShellTab tab) {
+  Future<void> _setTab(ShellTab tab) async {
     if (_tab == tab) return;
     final previousTab = _tab;
+    final transcription = TranscriptionService.instance;
+    if (previousTab == ShellTab.transcribe &&
+        tab != ShellTab.transcribe &&
+        transcription.hasUnfinishedRecording) {
+      final action = await _confirmLeavingTranscription(transcription);
+      if (!mounted || action == null) return;
+      switch (action) {
+        case _LeaveTranscriptionAction.keepRecording:
+          break;
+        case _LeaveTranscriptionAction.stopAndSave:
+          await transcription.stop();
+        case _LeaveTranscriptionAction.discard:
+          await transcription.cancel();
+      }
+    }
+    if (previousTab == ShellTab.transcribe && tab != ShellTab.transcribe) {
+      await transcription.stopPlayback();
+    }
+    if (!mounted) return;
     setState(() => _tab = tab);
     if (shouldReleaseChatModel(from: previousTab, to: tab)) {
       unawaited(_releaseChatModel());
     }
   }
+
+  Future<_LeaveTranscriptionAction?> _confirmLeavingTranscription(
+    TranscriptionService service,
+  ) => showDialog<_LeaveTranscriptionAction>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Text(
+        service.isCapturing ? 'Recording is active' : 'Transcription is busy',
+      ),
+      content: Text(
+        service.isCapturing
+            ? 'Keep recording in the background, stop and save before leaving, or discard this recording.'
+            : 'Final preparation or processing is still running. Keep it running or discard this session.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('STAY HERE'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(context, _LeaveTranscriptionAction.discard),
+          child: const Text('DISCARD'),
+        ),
+        if (service.isCapturing)
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _LeaveTranscriptionAction.stopAndSave),
+            child: const Text('STOP & SAVE'),
+          )
+        else
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _LeaveTranscriptionAction.keepRecording),
+            child: const Text('KEEP RUNNING'),
+          ),
+        if (service.isCapturing)
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, _LeaveTranscriptionAction.keepRecording),
+            child: const Text('KEEP RECORDING'),
+          ),
+      ],
+    ),
+  );
 
   Future<void> _releaseChatModel() async {
     final inference = InferenceService.instance;
@@ -83,7 +149,10 @@ class _ShellState extends State<Shell> {
     index: _tab.index,
     children: [
       ChatScreen(wide: wide),
-      TranscribeScreen(wide: wide, onOpenChat: () => _setTab(ShellTab.chat)),
+      TranscribeScreen(
+        wide: wide,
+        onOpenChat: () => unawaited(_setTab(ShellTab.chat)),
+      ),
       ModelsScreen(
         wide: wide,
         initialSubTab: widget.initialTab == ShellTab.models ? 1 : 0,
@@ -94,41 +163,112 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
-    // ignore: deprecated_member_use
-    return WillPopScope(
-      onWillPop: () async {
-        if (_tab != ShellTab.chat) {
-          _setTab(ShellTab.chat);
-          return false;
-        }
-        return true;
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= kDesktopBreakpoint;
-          if (wide) {
-            return Scaffold(
-              backgroundColor: AppColors.bg,
-              body: SafeArea(
-                bottom: false,
-                child: Row(
-                  children: [
-                    _Sidebar(tab: _tab, onTab: _setTab),
-                    Expanded(child: _body(true)),
-                  ],
+    return AnimatedBuilder(
+      animation: TranscriptionService.instance,
+      builder: (context, _) {
+        // ignore: deprecated_member_use
+        return WillPopScope(
+          onWillPop: () async {
+            if (_tab != ShellTab.chat) {
+              await _setTab(ShellTab.chat);
+              return false;
+            }
+            return true;
+          },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= kDesktopBreakpoint;
+              if (wide) {
+                return Scaffold(
+                  backgroundColor: AppColors.bg,
+                  body: SafeArea(
+                    bottom: false,
+                    child: Row(
+                      children: [
+                        _Sidebar(
+                          tab: _tab,
+                          onTab: (tab) => unawaited(_setTab(tab)),
+                        ),
+                        Expanded(child: _bodyWithRecordingIndicator(true)),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return Scaffold(
+                backgroundColor: AppColors.bg,
+                body: SafeArea(
+                  bottom: false,
+                  child: _bodyWithRecordingIndicator(false),
                 ),
-              ),
-            );
-          }
-          return Scaffold(
-            backgroundColor: AppColors.bg,
-            body: SafeArea(bottom: false, child: _body(false)),
-            bottomNavigationBar: _BottomNav(tab: _tab, onTab: _setTab),
-          );
-        },
-      ),
+                bottomNavigationBar: _BottomNav(
+                  tab: _tab,
+                  onTab: (tab) => unawaited(_setTab(tab)),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
+
+  Widget _bodyWithRecordingIndicator(bool wide) {
+    final service = TranscriptionService.instance;
+    return Stack(
+      children: [
+        _body(wide),
+        if (_tab != ShellTab.transcribe && service.hasUnfinishedRecording)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: GestureDetector(
+              onTap: () => unawaited(_setTab(ShellTab.transcribe)),
+              child: Semantics(
+                button: true,
+                label: 'Return to active transcription',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withA(0.14),
+                    border: Border.all(color: AppColors.danger.withA(0.45)),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const GlowDot(color: AppColors.danger, glow: true),
+                      const SizedBox(width: 7),
+                      Text(
+                        service.isCapturing
+                            ? 'RECORDING · ${_shellDuration(service.elapsed)}'
+                            : 'TRANSCRIPTION BUSY',
+                        style: AppText.mono(
+                          10,
+                          weight: FontWeight.w600,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+enum _LeaveTranscriptionAction { keepRecording, stopAndSave, discard }
+
+String _shellDuration(Duration duration) {
+  final minutes = duration.inMinutes.toString().padLeft(2, '0');
+  final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
 }
 
 // ─── Desktop sidebar ─────────────────────────────────────────────────────────

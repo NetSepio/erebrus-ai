@@ -39,7 +39,8 @@ class TranscribeScreen extends StatefulWidget {
   State<TranscribeScreen> createState() => _TranscribeScreenState();
 }
 
-class _TranscribeScreenState extends State<TranscribeScreen> {
+class _TranscribeScreenState extends State<TranscribeScreen>
+    with WidgetsBindingObserver {
   final _service = TranscriptionService.instance;
   bool _speechReady = false;
   bool _whisperReady = false;
@@ -48,9 +49,28 @@ class _TranscribeScreenState extends State<TranscribeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _service.initialize();
     TranscriptPromptTemplateService.instance.load();
     _refreshReadiness();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!(Platform.isIOS || Platform.isAndroid)) return;
+    if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.paused) &&
+        _service.state == TranscriptionUiState.recording) {
+      // Never leave the microphone recording invisibly after the app is
+      // backgrounded. Resuming remains an explicit user action.
+      _service.pause();
+    }
   }
 
   Future<void> _refreshReadiness() async {
