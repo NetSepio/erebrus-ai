@@ -63,6 +63,7 @@ class TranscriptionService extends ChangeNotifier {
 
   StreamSubscription<SpeechTranscriptionEvent>? _subscription;
   StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
   Timer? _ticker;
   DateTime? _startedAt;
@@ -74,6 +75,8 @@ class TranscriptionService extends ChangeNotifier {
   String? _activeSessionId;
   TranscriptionSession? _current;
   Duration _playbackPosition = Duration.zero;
+  Duration _playbackDuration = Duration.zero;
+  double _playbackSpeed = 1;
   bool _playing = false;
   bool _initialized = false;
   bool _usingWhisper = false;
@@ -99,6 +102,8 @@ class TranscriptionService extends ChangeNotifier {
   List<TranscriptionSession> get sessions => _repository.sessions;
   TranscriptionSession? get current => _current;
   Duration get playbackPosition => _playbackPosition;
+  Duration get playbackDuration => _playbackDuration;
+  double get playbackSpeed => _playbackSpeed;
   bool get isPlaying => _playing;
   bool get isCapturing =>
       _state == TranscriptionUiState.recording ||
@@ -131,6 +136,10 @@ class TranscriptionService extends ChangeNotifier {
     _initialized = true;
     _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
       _playbackPosition = position;
+      notifyListeners();
+    });
+    _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
+      _playbackDuration = duration;
       notifyListeners();
     });
     _playerStateSubscription = _audioPlayer.onPlayerStateChanged.listen((
@@ -409,6 +418,7 @@ class TranscriptionService extends ChangeNotifier {
     if (_playing) {
       await _audioPlayer.pause();
     } else {
+      await _audioPlayer.setPlaybackRate(_playbackSpeed);
       await _audioPlayer.play(
         DeviceFileSource(path),
         ctx: transcriptionPlaybackAudioContext(),
@@ -416,16 +426,38 @@ class TranscriptionService extends ChangeNotifier {
     }
   }
 
+  Future<void> seekCurrent(Duration position) async {
+    final duration = _playbackDuration.inMilliseconds > 0
+        ? _playbackDuration
+        : Duration(milliseconds: _current?.durationMilliseconds ?? 0);
+    final clamped = Duration(
+      milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds),
+    );
+    await _audioPlayer.seek(clamped);
+    _playbackPosition = clamped;
+    notifyListeners();
+  }
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    _playbackSpeed = speed.clamp(0.5, 2.0);
+    await _audioPlayer.setPlaybackRate(_playbackSpeed);
+    notifyListeners();
+  }
+
   Future<void> stopPlayback() async {
     if (_playing || _audioPlayer.state == PlayerState.paused) {
       await _audioPlayer.stop();
     }
     _playbackPosition = Duration.zero;
+    _playbackDuration = Duration.zero;
     _playing = false;
     notifyListeners();
   }
 
-  Future<void> shareCurrent(TranscriptionShareKind kind) async {
+  Future<void> shareCurrent(
+    TranscriptionShareKind kind, {
+    ui.Rect? sharePositionOrigin,
+  }) async {
     final current = _current;
     if (current == null) return;
     final audioPath = await _repository.audioPath(current);
@@ -439,8 +471,16 @@ class TranscriptionService extends ChangeNotifier {
         subject: 'Erebrus transcription',
         text: includeTranscript ? current.effectiveTranscript : null,
         files: includeAudio ? [XFile(audioPath!)] : null,
+        sharePositionOrigin: sharePositionOrigin,
       ),
     );
+  }
+
+  Future<void> linkAnalysisChat(String chatId) async {
+    final current = _current;
+    if (current == null || chatId.isEmpty) return;
+    _current = await _repository.addAnalysisChat(current, chatId);
+    notifyListeners();
   }
 
   Future<void> deleteCurrent({bool keepAudio = false}) async {
@@ -589,6 +629,7 @@ class TranscriptionService extends ChangeNotifier {
     _ticker?.cancel();
     unawaited(_subscription?.cancel());
     unawaited(_positionSubscription?.cancel());
+    unawaited(_durationSubscription?.cancel());
     unawaited(_playerStateSubscription?.cancel());
     unawaited(_audioPlayer.dispose());
     unawaited(_recorder.dispose());

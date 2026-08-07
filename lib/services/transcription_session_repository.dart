@@ -267,6 +267,35 @@ class TranscriptionSessionRepository extends ChangeNotifier {
     return updated;
   }
 
+  Future<TranscriptionSession> addAnalysisChat(
+    TranscriptionSession session,
+    String chatId,
+  ) async {
+    if (session.analysisChatIds.contains(chatId)) return session;
+    final updated = TranscriptionSession(
+      schemaVersion: session.schemaVersion,
+      id: session.id,
+      createdAt: session.createdAt,
+      updatedAt: DateTime.now().toUtc(),
+      durationMilliseconds: session.durationMilliseconds,
+      status: session.status,
+      backend: session.backend,
+      backendVersion: session.backendVersion,
+      locale: session.locale,
+      assetVersion: session.assetVersion,
+      audio: session.audio,
+      rawTranscript: session.rawTranscript,
+      editedTranscript: session.editedTranscript,
+      segments: session.segments,
+      analysisChatIds: [...session.analysisChatIds, chatId],
+      failureCode: session.failureCode,
+    );
+    final directory = await createSessionDirectory(session.id);
+    await _writeSession(directory, updated);
+    await _replace(updated);
+    return updated;
+  }
+
   Future<void> delete(String sessionId, {bool keepAudio = false}) async {
     final root = await _rootDirectoryProvider();
     final directory = Directory(p.join(root.path, _safeId(sessionId)));

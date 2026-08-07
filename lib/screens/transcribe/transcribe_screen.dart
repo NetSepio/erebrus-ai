@@ -165,13 +165,16 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   }
 
   Future<void> _analyze(TranscriptionSession session) async {
+    await _service.stopPlayback();
+    if (!mounted) return;
     final prompt = await showDialog<String>(
       context: context,
       builder: (context) =>
           _AnalysisPromptDialog(transcript: session.effectiveTranscript),
     );
     if (prompt == null || prompt.isEmpty) return;
-    await ChatService.instance.prepareDraft(prompt);
+    final chatId = await ChatService.instance.prepareDraft(prompt);
+    await _service.linkAnalysisChat(chatId);
     widget.onOpenChat();
   }
 }
@@ -480,16 +483,22 @@ class _RecorderPane extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 Container(
-                  constraints: const BoxConstraints(minHeight: 180),
+                  constraints: const BoxConstraints(
+                    minHeight: 180,
+                    maxHeight: 380,
+                  ),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: AppColors.bgElevated,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: current != null && !busy
-                      ? _StoredTranscript(
-                          session: current,
-                          position: service.playbackPosition,
+                      ? SingleChildScrollView(
+                          child: _StoredTranscript(
+                            session: current,
+                            position: service.playbackPosition,
+                            onSeek: service.seekCurrent,
+                          ),
                         )
                       : _LiveTranscript(service: service),
                 ),
@@ -813,13 +822,27 @@ class _WhisperRuntimeCard extends StatelessWidget {
   }
 }
 
-class _LiveTranscript extends StatelessWidget {
+class _LiveTranscript extends StatefulWidget {
   const _LiveTranscript({required this.service});
 
   final TranscriptionService service;
 
   @override
+  State<_LiveTranscript> createState() => _LiveTranscriptState();
+}
+
+class _LiveTranscriptState extends State<_LiveTranscript> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final service = widget.service;
     if (service.visibleTranscript.isEmpty) {
       return Center(
         child: Text(
@@ -830,32 +853,47 @@ class _LiveTranscript extends StatelessWidget {
         ),
       );
     }
-    return RichText(
-      text: TextSpan(
-        style: AppText.grotesk(15, height: 1.6),
-        children: [
-          TextSpan(text: service.finalizedText),
-          if (service.partialText.isNotEmpty)
-            TextSpan(
-              text:
-                  '${service.finalizedText.isEmpty ? '' : ' '}${service.partialText}',
-              style: AppText.grotesk(
-                15,
-                color: AppColors.textMuted,
-                height: 1.6,
-              ),
-            ),
-        ],
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+    return SingleChildScrollView(
+      controller: _scrollController,
+      child: SelectionArea(
+        child: RichText(
+          text: TextSpan(
+            style: AppText.grotesk(15, height: 1.6),
+            children: [
+              TextSpan(text: service.finalizedText),
+              if (service.partialText.isNotEmpty)
+                TextSpan(
+                  text:
+                      '${service.finalizedText.isEmpty ? '' : ' '}${service.partialText}',
+                  style: AppText.grotesk(
+                    15,
+                    color: AppColors.textMuted,
+                    height: 1.6,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _StoredTranscript extends StatelessWidget {
-  const _StoredTranscript({required this.session, required this.position});
+  const _StoredTranscript({
+    required this.session,
+    required this.position,
+    required this.onSeek,
+  });
 
   final TranscriptionSession session;
   final Duration position;
+  final ValueChanged<Duration> onSeek;
 
   @override
   Widget build(BuildContext context) {
@@ -878,16 +916,26 @@ class _StoredTranscript extends StatelessWidget {
       runSpacing: 5,
       children: [
         for (final segment in session.segments)
-          Text(
-            segment.text,
-            style: AppText.grotesk(
-              15,
-              height: 1.5,
-              color:
-                  position.inMilliseconds >= segment.startMilliseconds &&
-                      position.inMilliseconds <= segment.endMilliseconds
-                  ? AppColors.accent
-                  : AppColors.textPrimary,
+          Semantics(
+            button: true,
+            label:
+                'Play from ${_duration(Duration(milliseconds: segment.startMilliseconds))}',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () =>
+                  onSeek(Duration(milliseconds: segment.startMilliseconds)),
+              child: Text(
+                segment.text,
+                style: AppText.grotesk(
+                  15,
+                  height: 1.5,
+                  color:
+                      position.inMilliseconds >= segment.startMilliseconds &&
+                          position.inMilliseconds <= segment.endMilliseconds
+                      ? AppColors.accent
+                      : AppColors.textPrimary,
+                ),
+              ),
             ),
           ),
       ],
@@ -1033,65 +1081,150 @@ class _SessionActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 9,
-      runSpacing: 9,
+    final playbackDuration = service.playbackDuration.inMilliseconds > 0
+        ? service.playbackDuration
+        : Duration(milliseconds: session.durationMilliseconds);
+    final maxMilliseconds = playbackDuration.inMilliseconds.clamp(1, 1 << 31);
+    final positionMilliseconds = service.playbackPosition.inMilliseconds.clamp(
+      0,
+      maxMilliseconds,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (session.hasTranscript)
-          AccentChip('ANALYZE', icon: Symbols.auto_awesome, onTap: onAnalyze),
-        AccentChip(
-          service.isPlaying ? 'PAUSE AUDIO' : 'PLAY AUDIO',
-          icon: service.isPlaying ? Symbols.pause : Symbols.play_arrow,
-          onTap: () => _guard(context, service.playCurrent),
-        ),
-        if (session.hasTranscript)
-          AccentChip('EDIT', icon: Symbols.edit, onTap: () => _edit(context)),
-        if (session.hasTranscript &&
-            session.editState == TranscriptEditState.edited)
-          AccentChip(
-            'VIEW RAW',
-            icon: Symbols.difference,
-            onTap: () => _showRaw(context),
-          ),
-        if (session.hasTranscript)
-          AccentChip(
-            'COPY',
-            icon: Symbols.content_copy,
-            onTap: () async {
-              await Clipboard.setData(
-                ClipboardData(text: session.effectiveTranscript),
-              );
-            },
-          ),
-        PopupMenuButton<TranscriptionShareKind>(
-          color: AppColors.surface,
-          onSelected: (kind) =>
-              _guard(context, () => service.shareCurrent(kind)),
-          itemBuilder: (_) => [
-            if (session.hasTranscript)
-              const PopupMenuItem(
-                value: TranscriptionShareKind.transcript,
-                child: Text('Transcript'),
-              ),
-            PopupMenuItem(
-              value: TranscriptionShareKind.audio,
-              child: Text('Audio'),
+        if (session.audio != null) ...[
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.stroke),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: service.isPlaying ? 'Pause audio' : 'Play audio',
+                  onPressed: () => _guard(context, service.playCurrent),
+                  icon: Icon(
+                    service.isPlaying ? Symbols.pause : Symbols.play_arrow,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: positionMilliseconds.toDouble(),
+                    max: maxMilliseconds.toDouble(),
+                    onChanged: (value) => service.seekCurrent(
+                      Duration(milliseconds: value.round()),
+                    ),
+                  ),
+                ),
+                Text(
+                  '${_duration(service.playbackPosition)} / ${_duration(playbackDuration)}',
+                  style: AppText.mono(10, color: AppColors.textMuted),
+                ),
+                const SizedBox(width: 6),
+                PopupMenuButton<double>(
+                  tooltip: 'Playback speed',
+                  color: AppColors.surface,
+                  onSelected: service.setPlaybackSpeed,
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 0.75, child: Text('0.75×')),
+                    PopupMenuItem(value: 1, child: Text('1×')),
+                    PopupMenuItem(value: 1.25, child: Text('1.25×')),
+                    PopupMenuItem(value: 1.5, child: Text('1.5×')),
+                    PopupMenuItem(value: 2, child: Text('2×')),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      '${service.playbackSpeed.toStringAsFixed(service.playbackSpeed == 1 ? 0 : 2)}×',
+                      style: AppText.mono(10, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Wrap(
+          spacing: 9,
+          runSpacing: 9,
+          children: [
             if (session.hasTranscript)
-              const PopupMenuItem(
-                value: TranscriptionShareKind.both,
-                child: Text('Both'),
+              AccentChip(
+                'ANALYZE',
+                icon: Symbols.auto_awesome,
+                onTap: onAnalyze,
               ),
+            if (session.hasTranscript)
+              AccentChip(
+                'EDIT',
+                icon: Symbols.edit,
+                onTap: () => _edit(context),
+              ),
+            if (session.hasTranscript &&
+                session.editState == TranscriptEditState.edited)
+              AccentChip(
+                'COMPARE EDITS',
+                icon: Symbols.difference,
+                onTap: () => _showRaw(context),
+              ),
+            if (session.hasTranscript)
+              AccentChip(
+                'COPY',
+                icon: Symbols.content_copy,
+                onTap: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: session.effectiveTranscript),
+                  );
+                },
+              ),
+            Builder(
+              builder: (shareContext) =>
+                  PopupMenuButton<TranscriptionShareKind>(
+                    color: AppColors.surface,
+                    onSelected: (kind) => _guard(
+                      context,
+                      () => service.shareCurrent(
+                        kind,
+                        sharePositionOrigin: _shareOrigin(shareContext),
+                      ),
+                    ),
+                    itemBuilder: (_) => [
+                      if (session.hasTranscript)
+                        const PopupMenuItem(
+                          value: TranscriptionShareKind.transcript,
+                          child: Text('Transcript'),
+                        ),
+                      const PopupMenuItem(
+                        value: TranscriptionShareKind.audio,
+                        child: Text('Audio'),
+                      ),
+                      if (session.hasTranscript)
+                        const PopupMenuItem(
+                          value: TranscriptionShareKind.both,
+                          child: Text('Both'),
+                        ),
+                    ],
+                    child: const AccentChip('SHARE', icon: Symbols.share),
+                  ),
+            ),
+            AccentChip(
+              'DELETE',
+              icon: Symbols.delete,
+              onTap: () => _delete(context),
+            ),
           ],
-          child: const AccentChip('SHARE', icon: Symbols.share),
-        ),
-        AccentChip(
-          'DELETE',
-          icon: Symbols.delete,
-          onTap: () => _delete(context),
         ),
       ],
     );
+  }
+
+  Rect? _shareOrigin(BuildContext context) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
   }
 
   Future<void> _edit(BuildContext context) async {
@@ -1100,12 +1233,17 @@ class _SessionActions extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surface,
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         title: const Text('Edit transcript'),
-        content: TextField(
-          controller: controller,
-          minLines: 8,
-          maxLines: 18,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+        content: SizedBox(
+          width: 600,
+          child: TextField(
+            controller: controller,
+            minLines: 6,
+            maxLines: 16,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+          ),
         ),
         actions: [
           TextButton(
@@ -1129,12 +1267,35 @@ class _SessionActions extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Raw on-device transcript'),
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        title: const Text('Compare transcript edits'),
         content: SizedBox(
-          width: 540,
-          child: SelectableText(
-            session.rawTranscript,
-            style: AppText.grotesk(14, height: 1.55),
+          width: 760,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final raw = _ComparisonPane(
+                label: 'RAW · ON DEVICE',
+                text: session.rawTranscript,
+              );
+              final edited = _ComparisonPane(
+                label: 'YOUR EDIT',
+                text: session.effectiveTranscript,
+              );
+              if (constraints.maxWidth < 650) {
+                return Column(
+                  children: [raw, const SizedBox(height: 12), edited],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: raw),
+                  const SizedBox(width: 12),
+                  Expanded(child: edited),
+                ],
+              );
+            },
           ),
         ),
         actions: [
@@ -1187,6 +1348,33 @@ class _SessionActions extends StatelessWidget {
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
+  }
+}
+
+class _ComparisonPane extends StatelessWidget {
+  const _ComparisonPane({required this.label, required this.text});
+
+  final String label;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.bgElevated,
+        border: Border.all(color: AppColors.stroke),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label, style: AppText.sectionHeader()),
+          const SizedBox(height: 8),
+          SelectableText(text, style: AppText.grotesk(14, height: 1.55)),
+        ],
+      ),
+    );
   }
 }
 
@@ -1312,14 +1500,16 @@ class _SessionTile extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         title: Text(
           session.effectiveTranscript.isEmpty
-              ? 'Audio-only session'
+              ? 'Recording · ${_sessionDate(session.createdAt)}'
               : session.effectiveTranscript,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: AppText.grotesk(12.5, weight: FontWeight.w600),
         ),
         subtitle: Text(
-          '${session.locale} · ${_duration(Duration(milliseconds: session.durationMilliseconds))}',
+          '${_sessionDate(session.createdAt)} · ${session.locale} · '
+          '${_duration(Duration(milliseconds: session.durationMilliseconds))}'
+          '${session.analysisChatIds.isEmpty ? '' : ' · ${session.analysisChatIds.length} analysis draft${session.analysisChatIds.length == 1 ? '' : 's'}'}',
           style: AppText.mono(9.5, color: AppColors.textMuted),
         ),
         onTap: () => service.selectSession(session),
@@ -1339,10 +1529,32 @@ String _stateLabel(TranscriptionUiState state) => switch (state) {
 };
 
 String _duration(Duration duration) {
+  final hours = duration.inHours;
   final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return '$minutes:$seconds';
+  return hours > 0
+      ? '${hours.toString().padLeft(2, '0')}:$minutes:$seconds'
+      : '$minutes:$seconds';
 }
 
-bool widgetIsWide(BuildContext context) =>
-    MediaQuery.sizeOf(context).width >= 900;
+String _sessionDate(DateTime value) {
+  final local = value.toLocal();
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final hour = local.hour.remainder(12) == 0 ? 12 : local.hour.remainder(12);
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour < 12 ? 'AM' : 'PM';
+  return '${months[local.month - 1]} ${local.day}, $hour:$minute $period';
+}

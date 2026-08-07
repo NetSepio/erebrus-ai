@@ -48,12 +48,14 @@ void main() {
         audioChannels: 1,
       );
       final edited = await repository.saveEdit(session, 'corrected words');
+      final linked = await repository.addAnalysisChat(edited, 'chat-123');
 
-      expect(edited.rawTranscript, 'raw words');
-      expect(edited.effectiveTranscript, 'corrected words');
-      expect(edited.audio?.sha256, isNotEmpty);
-      expect(edited.audio?.sampleRate, 16000);
-      expect(edited.audio?.channels, 1);
+      expect(linked.rawTranscript, 'raw words');
+      expect(linked.effectiveTranscript, 'corrected words');
+      expect(linked.analysisChatIds, ['chat-123']);
+      expect(linked.audio?.sha256, isNotEmpty);
+      expect(linked.audio?.sampleRate, 16000);
+      expect(linked.audio?.channels, 1);
       expect(File('${directory.path}/session.json').existsSync(), isTrue);
       expect(
         File('${directory.path}/transcript.raw.json').existsSync(),
@@ -73,6 +75,7 @@ void main() {
       );
       await restored.load();
       expect(restored.sessions.single.effectiveTranscript, 'corrected words');
+      expect(restored.sessions.single.analysisChatIds, ['chat-123']);
       restored.dispose();
     },
   );

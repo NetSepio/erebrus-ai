@@ -100,10 +100,11 @@ class ChatService extends ChangeNotifier {
     await _persist(session.id);
   }
 
-  Future<void> prepareDraft(String text) async {
+  Future<String> prepareDraft(String text) async {
     await newSession();
     _pendingDraft = text;
     notifyListeners();
+    return _activeSessionId!;
   }
 
   String takePendingDraft() {
