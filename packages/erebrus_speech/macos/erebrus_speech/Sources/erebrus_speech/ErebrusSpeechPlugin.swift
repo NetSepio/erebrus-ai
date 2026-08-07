@@ -209,6 +209,7 @@ private enum SpeechBridgeError: LocalizedError {
   case unsupportedOperatingSystem
   case unsupportedLocale
   case unavailableAudioFormat
+  case invalidCaptureFormat
   case converterCreationFailed
   case bufferCreationFailed
   case conversionFailed(String)
@@ -219,6 +220,7 @@ private enum SpeechBridgeError: LocalizedError {
     case .unsupportedOperatingSystem: "SpeechAnalyzer requires macOS 26 or newer"
     case .unsupportedLocale: "The requested transcription locale is unsupported"
     case .unavailableAudioFormat: "No compatible SpeechAnalyzer audio format is installed"
+    case .invalidCaptureFormat: "The microphone did not provide a valid audio format"
     case .converterCreationFailed: "Could not create an audio converter"
     case .bufferCreationFailed: "Could not allocate a converted audio buffer"
     case .conversionFailed(let message): "Audio conversion failed: \(message)"
@@ -245,6 +247,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   private var transcript = ""
   private var stopped = false
   private var paused = false
+  private var configurationObserver: NSObjectProtocol?
 
   private init(
     audioURL: URL,
@@ -310,8 +313,23 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   }
 
   func start() throws {
+    installConfigurationObserver()
+    var engineStarted = false
+    defer {
+      if !engineStarted {
+        removeConfigurationObserver()
+      }
+    }
     let inputNode = engine.inputNode
     let captureFormat = inputNode.outputFormat(forBus: 0)
+    guard
+      captureFormat.sampleRate.isFinite,
+      captureFormat.sampleRate > 0,
+      captureFormat.channelCount > 0
+    else {
+      removeConfigurationObserver()
+      throw SpeechBridgeError.invalidCaptureFormat
+    }
     audioFile = try AVAudioFile(
       forWriting: audioURL,
       settings: captureFormat.settings,
@@ -355,7 +373,14 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
       self?.accept(buffer)
     }
     engine.prepare()
-    try engine.start()
+    do {
+      try engine.start()
+    } catch {
+      inputNode.removeTap(onBus: 0)
+      removeConfigurationObserver()
+      throw error
+    }
+    engineStarted = true
     emit(["type": "started", "audio_path": audioURL.path])
   }
 
@@ -364,6 +389,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
       return ["audio_path": audioURL.path, "transcript": transcript]
     }
     stopped = true
+    removeConfigurationObserver()
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     inputBuilder.finish()
@@ -391,6 +417,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   func cancel() async {
     guard !stopped else { return }
     stopped = true
+    removeConfigurationObserver()
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     inputBuilder.finish()
@@ -399,6 +426,29 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     await analyzer.cancelAndFinishNow()
     audioFile = nil
     emit(["type": "cancelled", "audio_path": audioURL.path])
+  }
+
+  private func installConfigurationObserver() {
+    configurationObserver = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange,
+      object: engine,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self, !stopped else { return }
+      engine.pause()
+      paused = true
+      emit([
+        "type": "error",
+        "audio_path": audioURL.path,
+        "message": "The audio input changed. The partial recording was saved; start a new session to continue.",
+      ])
+    }
+  }
+
+  private func removeConfigurationObserver() {
+    guard let configurationObserver else { return }
+    NotificationCenter.default.removeObserver(configurationObserver)
+    self.configurationObserver = nil
   }
 
   private func accept(_ buffer: AVAudioPCMBuffer) {

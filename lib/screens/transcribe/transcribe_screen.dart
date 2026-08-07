@@ -502,7 +502,9 @@ class _RecorderPane extends StatelessWidget {
                         )
                       : _LiveTranscript(service: service),
                 ),
-                if (service.state == TranscriptionUiState.failed) ...[
+                if (service.state == TranscriptionUiState.failed ||
+                    (service.state == TranscriptionUiState.paused &&
+                        service.error.isNotEmpty)) ...[
                   const SizedBox(height: 12),
                   Text(
                     service.error,

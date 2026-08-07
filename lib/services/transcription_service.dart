@@ -278,6 +278,7 @@ class TranscriptionService extends ChangeNotifier {
       }
       _recordingClock.start();
       _state = TranscriptionUiState.recording;
+      _error = '';
       notifyListeners();
     } on Object catch (error) {
       await _failAndCleanup(error.toString());
@@ -519,6 +520,15 @@ class TranscriptionService extends ChangeNotifier {
         break;
       case 'error':
         unawaited(_failAndCleanup(event.message));
+        break;
+      case 'interrupted':
+        if (_state == TranscriptionUiState.recording) {
+          _recordingClock.stop();
+          _elapsed = _recordingClock.elapsed;
+          _state = TranscriptionUiState.paused;
+          _error = event.message;
+          _queueDraftCheckpoint();
+        }
         break;
       default:
         break;

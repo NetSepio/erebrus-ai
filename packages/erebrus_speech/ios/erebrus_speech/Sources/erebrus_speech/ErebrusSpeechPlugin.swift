@@ -250,6 +250,8 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   private var previousAudioCategory: AVAudioSession.Category?
   private var previousAudioMode: AVAudioSession.Mode?
   private var previousAudioOptions: AVAudioSession.CategoryOptions = []
+  private var interruptionObserver: NSObjectProtocol?
+  private var routeChangeObserver: NSObjectProtocol?
 
   private init(
     audioURL: URL,
@@ -321,6 +323,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
     previousAudioOptions = audioSession.categoryOptions
     try audioSession.setCategory(.record, mode: .measurement)
     try audioSession.setActive(true)
+    installAudioSessionObservers(audioSession)
     var engineStarted = false
     defer {
       if !engineStarted {
@@ -438,6 +441,7 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
   }
 
   private func restoreAudioSession() {
+    removeAudioSessionObservers()
     let audioSession = AVAudioSession.sharedInstance()
     try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     guard let category = previousAudioCategory, let mode = previousAudioMode else {
@@ -448,6 +452,65 @@ private final class SpeechAnalyzerCaptureSession: @unchecked Sendable {
       mode: mode,
       options: previousAudioOptions
     )
+  }
+
+  private func installAudioSessionObservers(_ audioSession: AVAudioSession) {
+    let center = NotificationCenter.default
+    interruptionObserver = center.addObserver(
+      forName: AVAudioSession.interruptionNotification,
+      object: audioSession,
+      queue: .main
+    ) { [weak self] notification in
+      guard
+        let self,
+        let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+        AVAudioSession.InterruptionType(rawValue: rawType) == .began,
+        !stopped
+      else { return }
+      if !paused {
+        engine.pause()
+        paused = true
+      }
+      emit([
+        "type": "interrupted",
+        "audio_path": audioURL.path,
+        "message": "Recording paused by an audio interruption",
+      ])
+    }
+    routeChangeObserver = center.addObserver(
+      forName: AVAudioSession.routeChangeNotification,
+      object: audioSession,
+      queue: .main
+    ) { [weak self] notification in
+      guard
+        let self,
+        let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+        let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason),
+        reason == .oldDeviceUnavailable,
+        !stopped
+      else { return }
+      if !paused {
+        engine.pause()
+        paused = true
+      }
+      emit([
+        "type": "interrupted",
+        "audio_path": audioURL.path,
+        "message": "Recording paused because the audio input changed",
+      ])
+    }
+  }
+
+  private func removeAudioSessionObservers() {
+    let center = NotificationCenter.default
+    if let interruptionObserver {
+      center.removeObserver(interruptionObserver)
+      self.interruptionObserver = nil
+    }
+    if let routeChangeObserver {
+      center.removeObserver(routeChangeObserver)
+      self.routeChangeObserver = nil
+    }
   }
 
   private func accept(_ buffer: AVAudioPCMBuffer) {

@@ -141,12 +141,6 @@ class _SignInPageState extends State<SignInPage> {
                   primary: true,
                   onTap: auth.openWebSignIn,
                 ),
-                const SizedBox(height: 11),
-                _AuthButton(
-                  label: 'Paste sign-in token',
-                  icon: Symbols.content_paste,
-                  onTap: () => _showPasteSheet(auth),
-                ),
                 const SizedBox(height: 14),
                 Text(
                   'Opens ${RuntimeConfig.erebrusWebOrigin}/auth in your browser.\nAfter sign-in, you’ll return here automatically.',
@@ -243,15 +237,6 @@ class _SignInPageState extends State<SignInPage> {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => _EmailLoginSheet(auth: auth),
-    );
-  }
-
-  Future<void> _showPasteSheet(WalletAuthController auth) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => _PasteTokenSheet(auth: auth),
     );
   }
 }
@@ -611,70 +596,6 @@ class _EmailLoginSheetState extends State<_EmailLoginSheet> {
   }
 }
 
-class _PasteTokenSheet extends StatefulWidget {
-  const _PasteTokenSheet({required this.auth});
-  final WalletAuthController auth;
-
-  @override
-  State<_PasteTokenSheet> createState() => _PasteTokenSheetState();
-}
-
-class _PasteTokenSheetState extends State<_PasteTokenSheet> {
-  final _controller = TextEditingController();
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      24,
-      22,
-      24,
-      MediaQuery.viewInsetsOf(context).bottom + 28,
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Paste sign-in token',
-          style: AppText.grotesk(20, weight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Paste the PASETO or complete erebrusai:// callback URL.',
-          style: AppText.grotesk(13, color: AppColors.textTertiary),
-        ),
-        const SizedBox(height: 18),
-        TextField(controller: _controller, minLines: 2, maxLines: 4),
-        const SizedBox(height: 14),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
-          child: Text(_busy ? 'Signing in…' : 'Sign in'),
-        ),
-        TextButton(
-          onPressed: widget.auth.openWebSignIn,
-          child: const Text('Open Erebrus sign-in in browser'),
-        ),
-      ],
-    ),
-  );
-
-  Future<void> _submit() async {
-    setState(() => _busy = true);
-    await widget.auth.signInWithPastedCredential(_controller.text);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (widget.auth.isAuthenticated) Navigator.of(context).pop();
-  }
-}
-
 class _LoadingOverlay extends StatefulWidget {
   const _LoadingOverlay({required this.auth});
   final WalletAuthController auth;
@@ -713,10 +634,29 @@ class _LoadingOverlayState extends State<_LoadingOverlay> {
             const SizedBox(height: 16),
             Text(
               widget.auth.awaitingWebCallback
-                  ? 'Waiting for browser sign-in…'
+                  ? 'Waiting for browser sign-in'
                   : 'Signing in…',
               style: AppText.grotesk(14, color: AppColors.textSecondary),
             ),
+            if (widget.auth.awaitingWebCallback) ...[
+              const SizedBox(height: 7),
+              Text(
+                'Complete sign-in in your browser. You’ll return here automatically.',
+                textAlign: TextAlign.center,
+                style: AppText.grotesk(12, color: AppColors.textTertiary),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                'Browser didn’t return?',
+                style: AppText.grotesk(12.5, color: AppColors.textFaint),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: widget.auth.signInFromClipboard,
+                icon: const Icon(Symbols.content_paste_go, size: 18),
+                label: const Text('Paste token from clipboard'),
+              ),
+            ],
             if (_showCancel) ...[
               const SizedBox(height: 12),
               TextButton(
