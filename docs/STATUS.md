@@ -39,7 +39,7 @@ What works today vs what is still in progress. Updated as the MVP evolves.
 | Model download | Not started | Catalog + resumable download. |
 | OpenAI-compatible API | Not started | Local server exposes `/v1/models` and `/v1/chat/completions`. |
 | mDNS service (`_erebrus-ai._tcp`) | Not started | Desktop publishes, mobile browses. |
-| Desktop tray / background | Not started | `window_manager` + `tray_manager`. |
+| Desktop tray / background | Implemented | AI-specific menu-bar/system-tray icon with show, hide, and clean quit actions. |
 | Android foreground service | Not started | Keep server alive in background. |
 
 ---

@@ -54,6 +54,8 @@ dependencies:
   record: ^7.1.1
   erebrus_turboquant:
     path: third_party/erebrus_turboquant
+  tray_manager: ^0.5.3
+  window_manager: ^0.5.1
 
 dependency_overrides:
   # Upstream 0.7.3 decodes each token independently and crashes when a UTF-8

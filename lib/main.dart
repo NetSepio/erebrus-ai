@@ -8,6 +8,8 @@ import 'auth/deep_link_handler.dart';
 import 'auth/runtime_config.dart';
 import 'auth/wallet_auth_controller.dart';
 import 'org/org_state.dart';
+import 'platform/desktop_shell.dart';
+import 'platform/platform_capabilities.dart';
 import 'services/chat_service.dart';
 import 'services/backend_probe_service.dart';
 import 'services/model_download_service.dart';
@@ -42,7 +44,8 @@ Future<void> main() async {
   DeepLinkHandler.initListener();
   DeepLinkHandler.checkInitialLink();
 
-  runApp(ErebrusApp(auth: auth, orgState: orgState));
+  final app = ErebrusApp(auth: auth, orgState: orgState);
+  runApp(PlatformCapabilities.supportsTray ? DesktopShell(child: app) : app);
 
   // Scan existing downloads and start LAN discovery after the first frame
   // so heavy file/network work does not block the initial UI paint.
