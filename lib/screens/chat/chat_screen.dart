@@ -601,26 +601,26 @@ class _MessageTile extends StatelessWidget {
         else
           AnimatedBuilder(
             animation: SpeechService.instance,
-            builder: (context, _) => Row(
+            builder: (context, _) => Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _MessageAction(
                   icon: Symbols.content_copy,
                   label: 'Copy',
                   onTap: () => _copy(context),
                 ),
-                const SizedBox(width: 12),
                 _MessageAction(
                   icon: Symbols.refresh,
                   label: 'Regenerate',
                   onTap: () => _regenerate(context),
                 ),
-                const SizedBox(width: 12),
                 _MessageAction(
                   icon: Symbols.share,
                   label: 'Share',
                   onTap: () => _share(context),
                 ),
-                const SizedBox(width: 12),
                 _MessageAction(
                   icon: SpeechService.instance.isSpeakingMessage(message.id)
                       ? Symbols.stop_circle
@@ -631,9 +631,10 @@ class _MessageTile extends StatelessWidget {
                   active: SpeechService.instance.isSpeakingMessage(message.id),
                   onTap: () => _speak(context),
                 ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
+                if (message.meta?.isNotEmpty == true ||
+                    message.tokensPerSecond != null ||
+                    message.truncated)
+                  Text(
                     [
                       message.meta ?? '',
                       if (message.tokensPerSecond != null)
@@ -643,7 +644,6 @@ class _MessageTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: AppText.mono(10, color: AppColors.textFaint),
                   ),
-                ),
               ],
             ),
           ),
@@ -958,12 +958,15 @@ class _ComposerState extends State<_Composer> {
                       color: AppColors.success,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      'ON-DEVICE · NOTHING LEAVES YOUR PHONE',
-                      style: AppText.mono(
-                        9.5,
-                        color: AppColors.textFaint,
-                        lsEm: 0.08,
+                    Flexible(
+                      child: Text(
+                        'ON-DEVICE · NOTHING LEAVES YOUR PHONE',
+                        textAlign: TextAlign.center,
+                        style: AppText.mono(
+                          9.5,
+                          color: AppColors.textFaint,
+                          lsEm: 0.08,
+                        ),
                       ),
                     ),
                   ],

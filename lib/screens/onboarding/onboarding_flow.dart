@@ -127,51 +127,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   onPageChanged: (i) => setState(() => _page = i),
                   itemBuilder: (context, i) {
                     final page = _pages[i];
-                    return Column(
-                      children: [
-                        Expanded(
-                          child: Center(
-                            child: OnboardingIllustration(page.art),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                page.kicker,
-                                style: AppText.mono(
-                                  12,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.accent,
-                                  lsEm: 0.18,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                page.headline,
-                                style: AppText.grotesk(
-                                  30,
-                                  weight: FontWeight.w600,
-                                  lsEm: -0.02,
-                                  height: 1.12,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                page.body,
-                                style: AppText.grotesk(
-                                  15,
-                                  color: AppColors.textSecondary,
-                                  height: 1.55,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
+                    return _StoryPage(page: page);
                   },
                 ),
               ),
@@ -245,6 +201,81 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _StoryPage extends StatelessWidget {
+  const _StoryPage({required this.page});
+
+  final _Page page;
+
+  Widget _art({double? height}) {
+    final art = Padding(
+      padding: const EdgeInsets.all(12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: OnboardingIllustration(page.art),
+        ),
+      ),
+    );
+    return height == null ? art : SizedBox(height: height, child: art);
+  }
+
+  Widget _copy() => Padding(
+    padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          page.kicker,
+          style: AppText.mono(
+            12,
+            weight: FontWeight.w600,
+            color: AppColors.accent,
+            lsEm: 0.18,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          page.headline,
+          style: AppText.grotesk(
+            30,
+            weight: FontWeight.w600,
+            lsEm: -0.02,
+            height: 1.12,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          page.body,
+          style: AppText.grotesk(
+            15,
+            color: AppColors.textSecondary,
+            height: 1.55,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight < 520) {
+          return SingleChildScrollView(
+            child: Column(children: [_art(height: 150), _copy()]),
+          );
+        }
+        return Column(
+          children: [
+            Expanded(child: _art()),
+            _copy(),
+          ],
+        );
+      },
     );
   }
 }

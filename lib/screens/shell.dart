@@ -16,8 +16,12 @@ import 'models/models_screen.dart';
 import 'settings/settings_screen.dart';
 import 'transcribe/transcribe_screen.dart';
 
-/// Responsive app shell — 224px sidebar at ≥900dp, bottom nav below.
-const kDesktopBreakpoint = 900.0;
+/// Responsive app shell — 224px sidebar at ≥1024dp, bottom nav below.
+// The desktop shell reserves 224 px for navigation and Chat reserves another
+// 252 px for sessions. Below 1024 px that leaves too little room for the
+// conversation controls, so keep the compact shell until a usable desktop
+// content width is available.
+const kDesktopBreakpoint = 1024.0;
 
 class _NavItem {
   const _NavItem(this.tab, this.label, this.icon);

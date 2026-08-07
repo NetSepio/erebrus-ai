@@ -53,13 +53,16 @@ void main() {
     WalletAuthController? auth,
     OrgState? orgState,
     double topPadding = 0,
+    double textScaleFactor = 1,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     tester.view.padding = FakeViewPadding(top: topPadding);
+    tester.platformDispatcher.textScaleFactorTestValue = textScaleFactor;
     addTearDown(() {
       tester.view.reset();
       tester.view.resetPadding();
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
     });
     final controller = auth ?? WalletAuthController();
     await tester.pumpWidget(
@@ -277,6 +280,122 @@ void main() {
       await tester.tap(find.text('CONTINUE AS GUEST'));
       await tester.pumpAndSettle();
       expect(find.text('Unlock private models & workspaces'), findsOneWidget);
+    });
+  });
+
+  group('responsive edge cases', () {
+    testWidgets('compact phone onboarding and primary tabs do not overflow', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpApp(tester, const Size(320, 568));
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('SKIP'));
+      await tester.pumpAndSettle();
+      expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      SharedPreferences.setMockInitialValues({
+        'onboarding_complete': true,
+        'default_model_id': 'smollm2-135m-instruct',
+        'default_model_variant_id': 'smollm2-135m-instruct-gguf-q8_0',
+      });
+      await pumpApp(tester, const Size(320, 568));
+      expect(find.text('CHAT'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('TRANSCRIBE'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Transcribe'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Models'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('SETTINGS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Settings'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('large text phone shell remains usable', (tester) async {
+      await pumpApp(tester, const Size(320, 568), textScaleFactor: 1.4);
+      expect(find.text('CHAT'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('TRANSCRIBE'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Transcribe'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Models'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('SETTINGS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Settings'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('narrow desktop uses compact navigation without overflow', (
+      tester,
+    ) async {
+      await pumpApp(tester, const Size(900, 600));
+      expect(find.text('CHAT'), findsOneWidget);
+      expect(find.text('SESSIONS'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('TRANSCRIBE'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Transcribe'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Models'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('minimum desktop width renders every primary screen', (
+      tester,
+    ) async {
+      await pumpApp(tester, const Size(1024, 640));
+      expect(find.text('SESSIONS'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('TRANSCRIBE'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Transcribe'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Models'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('SETTINGS'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Settings'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('large text onboarding remains usable', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpApp(tester, const Size(320, 568), textScaleFactor: 1.4);
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('SKIP'));
+      await tester.pumpAndSettle();
+      expect(find.text('04 / INSTALL YOUR ON-DEVICE AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }
