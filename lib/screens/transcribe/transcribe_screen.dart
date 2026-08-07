@@ -19,7 +19,22 @@ bool shouldShowWhisperRuntime({
   required bool checking,
   required bool speechReady,
   required bool whisperReady,
-}) => !checking && !speechReady && whisperReady;
+}) => !checking && !speechReady;
+
+const transcriptionLocales = <String, String>{
+  'auto': 'Auto (device language)',
+  'en-US': 'English (US)',
+  'en-GB': 'English (UK)',
+  'es-ES': 'Spanish',
+  'fr-FR': 'French',
+  'de-DE': 'German',
+  'hi-IN': 'Hindi',
+  'ja-JP': 'Japanese',
+  'ko-KR': 'Korean',
+  'zh-CN': 'Chinese (Simplified)',
+  'pt-BR': 'Portuguese (Brazil)',
+  'ar-SA': 'Arabic',
+};
 
 @visibleForTesting
 Widget analysisPromptDialogForTest(String transcript) =>
@@ -45,6 +60,7 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   bool _speechReady = false;
   bool _whisperReady = false;
   bool _checkingReadiness = true;
+  String _selectedLocale = 'auto';
 
   @override
   void initState() {
@@ -86,7 +102,7 @@ class _TranscribeScreenState extends State<TranscribeScreen>
     }
     var speechReady = false;
     try {
-      final probe = await _service.probe();
+      final probe = await _service.probe(locale: _selectedLocale);
       speechReady = probe.available && probe.localeSupported;
     } on Object {
       speechReady = false;
@@ -105,6 +121,8 @@ class _TranscribeScreenState extends State<TranscribeScreen>
     try {
       await WhisperModelManager.instance.install();
       await _refreshReadiness();
+    } on WhisperDownloadCancelled {
+      await _refreshReadiness();
     } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -116,7 +134,7 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _service,
+      animation: Listenable.merge([_service, WhisperModelManager.instance]),
       builder: (context, _) {
         final content = _RecorderPane(
           service: _service,
@@ -125,6 +143,12 @@ class _TranscribeScreenState extends State<TranscribeScreen>
           speechReady: _speechReady,
           whisperReady: _whisperReady,
           onSetup: _setupTranscription,
+          wide: widget.wide,
+          locale: _selectedLocale,
+          onLocaleChanged: (locale) {
+            setState(() => _selectedLocale = locale);
+            _refreshReadiness();
+          },
         );
         if (widget.wide) {
           return Row(
@@ -326,6 +350,9 @@ class _RecorderPane extends StatelessWidget {
     required this.speechReady,
     required this.whisperReady,
     required this.onSetup,
+    required this.wide,
+    required this.locale,
+    required this.onLocaleChanged,
   });
 
   final TranscriptionService service;
@@ -334,13 +361,15 @@ class _RecorderPane extends StatelessWidget {
   final bool speechReady;
   final bool whisperReady;
   final Future<void> Function() onSetup;
+  final bool wide;
+  final String locale;
+  final ValueChanged<String> onLocaleChanged;
 
   @override
   Widget build(BuildContext context) {
     final current = service.current;
-    final recording =
-        service.state == TranscriptionUiState.recording ||
-        service.state == TranscriptionUiState.paused;
+    final recording = service.isCapturing;
+    final busy = service.hasUnfinishedRecording;
     return SafeArea(
       bottom: false,
       child: ListView(
@@ -364,7 +393,7 @@ class _RecorderPane extends StatelessWidget {
                   ],
                 ),
               ),
-              if (current != null && !recording)
+              if (current != null && !busy)
                 GhostButton(
                   'NEW',
                   icon: Symbols.add,
@@ -380,6 +409,12 @@ class _RecorderPane extends StatelessWidget {
             onSetup: onSetup,
           ),
           const SizedBox(height: 12),
+          _LanguageSelector(
+            value: locale,
+            enabled: !busy,
+            onChanged: onLocaleChanged,
+          ),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -391,24 +426,48 @@ class _RecorderPane extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     GlowDot(
                       color: recording ? AppColors.danger : AppColors.success,
                       glow: recording,
                     ),
                     const SizedBox(width: 9),
-                    Text(
-                      '${_stateLabel(service.state)}'
-                      '${recording ? ' · ${service.activeBackend == TranscriptionBackendKind.whisperCpp ? 'WHISPER.CPP' : 'SPEECHANALYZER'}' : ''}',
-                      style: AppText.mono(
-                        11,
-                        weight: FontWeight.w600,
-                        color: recording
-                            ? AppColors.danger
-                            : AppColors.textSecondary,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _stateLabel(service.state),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.mono(
+                              11,
+                              weight: FontWeight.w600,
+                              color: recording
+                                  ? AppColors.danger
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                          if (busy) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              service.activeBackend ==
+                                      TranscriptionBackendKind.whisperCpp
+                                  ? 'WHISPER.CPP · ON DEVICE'
+                                  : 'SPEECHANALYZER · ON DEVICE',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.mono(
+                                9.5,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 12),
                     Text(
                       _duration(service.elapsed),
                       style: AppText.mono(
@@ -427,7 +486,7 @@ class _RecorderPane extends StatelessWidget {
                     color: AppColors.bgElevated,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: current != null && !recording
+                  child: current != null && !busy
                       ? _StoredTranscript(
                           session: current,
                           position: service.playbackPosition,
@@ -447,11 +506,12 @@ class _RecorderPane extends StatelessWidget {
                   ready: speechReady || whisperReady,
                   checking: checkingReadiness,
                   onSetup: onSetup,
+                  locale: locale,
                 ),
               ],
             ),
           ),
-          if (current != null && !recording) ...[
+          if (current != null && !busy) ...[
             const SizedBox(height: 14),
             _SessionActions(
               service: service,
@@ -484,7 +544,7 @@ class _RecorderPane extends StatelessWidget {
             whisperReady: whisperReady,
           ))
             const _WhisperRuntimeCard(),
-          if (!widgetIsWide(context) && service.sessions.isNotEmpty) ...[
+          if (!wide && service.sessions.isNotEmpty) ...[
             const SizedBox(height: 20),
             Text('RECENT SESSIONS', style: AppText.sectionHeader()),
             const SizedBox(height: 8),
@@ -511,15 +571,20 @@ class _TranscriptionReadinessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final manager = WhisperModelManager.instance;
     final ready = speechReady || whisperReady;
-    final title = checking
+    final title = manager.downloading
+        ? 'Downloading Whisper Tiny…'
+        : checking
         ? 'Checking transcription engine…'
         : speechReady
         ? 'SpeechAnalyzer ready'
         : whisperReady
         ? 'Whisper Tiny ready'
         : 'Transcription setup required';
-    final detail = checking
+    final detail = manager.downloading
+        ? '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}% of 74 MB · verified before activation'
+        : checking
         ? 'Verifying private on-device speech support.'
         : speechReady
         ? 'Uses Apple on-device speech assets. No chat model is required.'
@@ -542,7 +607,7 @@ class _TranscriptionReadinessCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (checking)
+          if (checking || manager.downloading)
             const SizedBox(
               width: 19,
               height: 19,
@@ -578,10 +643,50 @@ class _TranscriptionReadinessCard extends StatelessWidget {
               ],
             ),
           ),
-          if (!checking && !ready)
+          if (manager.downloading)
+            GhostButton(
+              'CANCEL',
+              icon: Symbols.close,
+              onTap: manager.cancelDownload,
+            )
+          else if (!checking && !ready)
             GhostButton('DOWNLOAD', icon: Symbols.download, onTap: onSetup),
         ],
       ),
+    );
+  }
+}
+
+class _LanguageSelector extends StatelessWidget {
+  const _LanguageSelector({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String value;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: const InputDecoration(
+        labelText: 'Spoken language',
+        helperText: 'Auto uses your device language; Whisper can auto-detect.',
+        prefixIcon: Icon(Symbols.language),
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (final entry in transcriptionLocales.entries)
+          DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+      ],
+      onChanged: enabled
+          ? (value) {
+              if (value != null) onChanged(value);
+            }
+          : null,
     );
   }
 }
@@ -657,13 +762,10 @@ class _WhisperRuntimeCard extends StatelessWidget {
                     size: 20,
                   )
                 else if (manager.downloading)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.accent,
-                    ),
+                  GhostButton(
+                    'CANCEL',
+                    icon: Symbols.close,
+                    onTap: manager.cancelDownload,
                   )
                 else
                   GhostButton(
@@ -685,6 +787,8 @@ class _WhisperRuntimeCard extends StatelessWidget {
   ) async {
     try {
       await manager.install();
+    } on WhisperDownloadCancelled {
+      return;
     } on Object catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
@@ -797,54 +901,122 @@ class _RecordingControls extends StatelessWidget {
     required this.ready,
     required this.checking,
     required this.onSetup,
+    required this.locale,
   });
 
   final TranscriptionService service;
   final bool ready;
   final bool checking;
   final Future<void> Function() onSetup;
+  final String locale;
 
   @override
   Widget build(BuildContext context) {
     return switch (service.state) {
-      TranscriptionUiState.recording => Row(
+      TranscriptionUiState.recording => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: GhostButton(
-              'PAUSE',
-              icon: Symbols.pause,
-              onTap: service.pause,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: GhostButton(
+                  'PAUSE',
+                  icon: Symbols.pause,
+                  onTap: service.pause,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: PrimaryCta('STOP & SAVE', onTap: service.stop)),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(child: PrimaryCta('STOP & SAVE', onTap: service.stop)),
+          const SizedBox(height: 9),
+          DangerGhostButton(
+            'DISCARD RECORDING',
+            icon: Symbols.delete,
+            onTap: () => _confirmDiscard(context),
+          ),
         ],
       ),
-      TranscriptionUiState.paused => Row(
+      TranscriptionUiState.paused => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: GhostButton(
-              'RESUME',
-              icon: Symbols.play_arrow,
-              onTap: service.resume,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: GhostButton(
+                  'RESUME',
+                  icon: Symbols.play_arrow,
+                  onTap: service.resume,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: PrimaryCta('STOP & SAVE', onTap: service.stop)),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(child: PrimaryCta('STOP & SAVE', onTap: service.stop)),
+          const SizedBox(height: 9),
+          DangerGhostButton(
+            'DISCARD RECORDING',
+            icon: Symbols.delete,
+            onTap: () => _confirmDiscard(context),
+          ),
         ],
       ),
-      TranscriptionUiState.preparing || TranscriptionUiState.finalizing =>
-        const Center(child: CircularProgressIndicator(color: AppColors.accent)),
+      TranscriptionUiState.preparing ||
+      TranscriptionUiState.finalizing => Column(
+        children: [
+          const LinearProgressIndicator(color: AppColors.accent),
+          const SizedBox(height: 10),
+          Text(
+            service.state == TranscriptionUiState.preparing
+                ? 'Preparing the private transcription engine…'
+                : service.activeBackend == TranscriptionBackendKind.whisperCpp
+                ? 'Transcribing the saved audio on device…'
+                : 'Saving transcript and audio…',
+            textAlign: TextAlign.center,
+            style: AppText.grotesk(12.5, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          DangerGhostButton(
+            'CANCEL & DISCARD',
+            icon: Symbols.close,
+            onTap: () => _confirmDiscard(context),
+          ),
+        ],
+      ),
       _ => PrimaryCta(
         ready ? 'START TRANSCRIPTION' : 'SET UP TRANSCRIPTION',
         enabled: !checking,
         onTap: checking
             ? null
             : ready
-            ? () => service.start()
+            ? () => service.start(locale: locale)
             : onSetup,
       ),
     };
+  }
+
+  Future<void> _confirmDiscard(BuildContext context) async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Discard this recording?'),
+        content: const Text(
+          'The unfinished transcript and its audio will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('KEEP RECORDING'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DISCARD'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true) await service.cancel();
   }
 }
 

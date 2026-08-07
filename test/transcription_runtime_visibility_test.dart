@@ -21,7 +21,7 @@ void main() {
     );
   });
 
-  test('fallback-only devices show an installed required Whisper runtime', () {
+  test('fallback-only devices always show Whisper setup status', () {
     expect(
       shouldShowWhisperRuntime(
         checking: false,
@@ -36,7 +36,7 @@ void main() {
         speechReady: false,
         whisperReady: false,
       ),
-      isFalse,
+      isTrue,
     );
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:erebrus_speech/erebrus_speech.dart';
@@ -32,6 +33,15 @@ enum TranscriptionShareKind { transcript, audio, both }
 AudioContext transcriptionPlaybackAudioContext() =>
     AudioContextConfig(route: AudioContextConfigRoute.speaker).build();
 
+@visibleForTesting
+String resolveTranscriptionLocale(String locale, {String? deviceLocale}) {
+  final requested = locale.trim();
+  if (requested.isNotEmpty && requested.toLowerCase() != 'auto') {
+    return requested;
+  }
+  return deviceLocale ?? ui.PlatformDispatcher.instance.locale.toLanguageTag();
+}
+
 class TranscriptionService extends ChangeNotifier {
   static final TranscriptionService instance = TranscriptionService();
 
@@ -58,7 +68,7 @@ class TranscriptionService extends ChangeNotifier {
   DateTime? _startedAt;
   Duration _elapsed = Duration.zero;
   TranscriptionUiState _state = TranscriptionUiState.ready;
-  String _locale = 'en-US';
+  String _locale = 'auto';
   String _partialText = '';
   String _error = '';
   String? _activeSessionId;
@@ -134,10 +144,10 @@ class TranscriptionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<SpeechAnalyzerProbe> probe({String locale = 'en-US'}) =>
-      speech.probe(locale: locale);
+  Future<SpeechAnalyzerProbe> probe({String locale = 'auto'}) =>
+      speech.probe(locale: resolveTranscriptionLocale(locale));
 
-  Future<void> start({String locale = 'en-US'}) async {
+  Future<void> start({String locale = 'auto'}) async {
     if (hasUnfinishedRecording) return;
     await stopPlayback();
     _state = TranscriptionUiState.preparing;
@@ -163,8 +173,9 @@ class TranscriptionService extends ChangeNotifier {
       await _saveDraft(status: TranscriptionSessionStatus.recording);
       _throwIfCancelled();
       SpeechAnalyzerProbe? speechProbe;
+      final resolvedLocale = resolveTranscriptionLocale(locale);
       try {
-        speechProbe = await speech.probe(locale: locale);
+        speechProbe = await speech.probe(locale: resolvedLocale);
       } on Object {
         speechProbe = null;
       }
@@ -174,6 +185,9 @@ class TranscriptionService extends ChangeNotifier {
       _usingWhisper = !useSpeechAnalyzer;
       await _saveDraft(status: TranscriptionSessionStatus.recording);
       if (useSpeechAnalyzer) {
+        _locale = speechProbe!.locale.isEmpty
+            ? resolvedLocale
+            : speechProbe.locale;
         await _subscription?.cancel();
         _subscription = speech.events.listen(
           _handleEvent,
@@ -182,9 +196,10 @@ class TranscriptionService extends ChangeNotifier {
         );
         _activeAudioPath = await speech.start(
           sessionDirectory: directory.path,
-          locale: locale,
+          locale: resolvedLocale,
         );
       } else {
+        _locale = locale.trim().isEmpty ? 'auto' : locale;
         final modelPath = await WhisperModelManager.instance.installedPath();
         if (modelPath == null) {
           throw StateError(
@@ -316,6 +331,7 @@ class TranscriptionService extends ChangeNotifier {
         backendVersion = 'whisper.cpp 1.8.3';
       } else {
         final result = await speech.stop();
+        _throwIfCancelled();
         await _subscription?.cancel();
         _subscription = null;
         audioPath = result.audioPath;
@@ -323,6 +339,7 @@ class TranscriptionService extends ChangeNotifier {
             ? finalizedText
             : result.transcript.trim();
       }
+      _throwIfCancelled();
       _current = await _repository.finalize(
         sessionId: sessionId,
         createdAt: createdAt,

@@ -59,6 +59,8 @@ class WhisperModelManager extends ChangeNotifier {
   Future<String?>? _verification;
   String? _activeRevision;
   bool _canRollback = false;
+  HttpClient? _activeClient;
+  bool _cancelRequested = false;
 
   bool get downloading => _downloading;
   int get receivedBytes => _receivedBytes;
@@ -114,12 +116,14 @@ class WhisperModelManager extends ChangeNotifier {
     _downloading = true;
     _receivedBytes = 0;
     _failure = '';
+    _cancelRequested = false;
     notifyListeners();
     await PowerService.instance.startDownload('Whisper Tiny');
 
     final staging = File('${destination.path}.part');
     final previous = File('${destination.path}.previous');
     final client = _httpClientProvider();
+    _activeClient = client;
     IOSink? sink;
     try {
       if (await staging.exists()) await staging.delete();
@@ -132,10 +136,12 @@ class WhisperModelManager extends ChangeNotifier {
       }
       sink = staging.openWrite();
       await for (final chunk in response) {
+        if (_cancelRequested) throw const WhisperDownloadCancelled();
         sink.add(chunk);
         _receivedBytes = _receivedBytes + chunk.length;
         notifyListeners();
       }
+      if (_cancelRequested) throw const WhisperDownloadCancelled();
       await sink.close();
       sink = null;
       final size = await staging.length();
@@ -183,16 +189,28 @@ class WhisperModelManager extends ChangeNotifier {
       _verification = Future<String?>.value(destination.path);
       return destination.path;
     } on Object catch (error) {
+      if (_cancelRequested) {
+        _failure = '';
+        if (await staging.exists()) await staging.delete();
+        throw const WhisperDownloadCancelled();
+      }
       _failure = error.toString();
       if (await staging.exists()) await staging.delete();
       rethrow;
     } finally {
       await sink?.close();
       client.close(force: true);
+      _activeClient = null;
       _downloading = false;
       await PowerService.instance.stopDownload();
       notifyListeners();
     }
+  }
+
+  void cancelDownload() {
+    if (!_downloading) return;
+    _cancelRequested = true;
+    _activeClient?.close(force: true);
   }
 
   Future<bool> rollback() async {
@@ -286,4 +304,11 @@ class WhisperModelManager extends ChangeNotifier {
     'size_bytes': spec.sizeBytes,
     'sha256': spec.sha256,
   };
+}
+
+class WhisperDownloadCancelled implements Exception {
+  const WhisperDownloadCancelled();
+
+  @override
+  String toString() => 'Whisper model download cancelled';
 }
