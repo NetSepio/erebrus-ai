@@ -10,6 +10,7 @@ import '../../services/transcript_prompt_template_service.dart';
 import '../../services/transcription_contract.dart';
 import '../../services/transcription_service.dart';
 import '../../services/whisper_model_manager.dart';
+import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
@@ -45,10 +46,12 @@ class TranscribeScreen extends StatefulWidget {
     super.key,
     required this.wide,
     required this.onOpenChat,
+    required this.onOpenModels,
   });
 
   final bool wide;
   final VoidCallback onOpenChat;
+  final VoidCallback onOpenModels;
 
   @override
   State<TranscribeScreen> createState() => _TranscribeScreenState();
@@ -167,6 +170,31 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   Future<void> _analyze(TranscriptionSession session) async {
     await _service.stopPlayback();
     if (!mounted) return;
+    if (!AppScope.of(context).isSelectedModelReady) {
+      final chooseModel = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text('Download a chat model first'),
+          content: const Text(
+            'Transcription does not need a chat model, but Analyze does. '
+            'Choose a downloaded model before preparing the analysis draft.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('NOT NOW'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('CHOOSE MODEL'),
+            ),
+          ],
+        ),
+      );
+      if (chooseModel == true) widget.onOpenModels();
+      return;
+    }
     final prompt = await showDialog<String>(
       context: context,
       builder: (context) =>

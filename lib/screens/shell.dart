@@ -152,6 +152,7 @@ class _ShellState extends State<Shell> {
       TranscribeScreen(
         wide: wide,
         onOpenChat: () => unawaited(_setTab(ShellTab.chat)),
+        onOpenModels: () => unawaited(_setTab(ShellTab.models)),
       ),
       ModelsScreen(
         wide: wide,
