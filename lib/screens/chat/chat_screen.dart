@@ -12,6 +12,7 @@ import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
+import '../../widgets/spark_logo.dart';
 import 'pickers.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -252,12 +253,7 @@ class _ChatPane extends StatelessWidget {
                     ChatService.instance.activeSessionId,
                   );
                   if (messages.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'Start a conversation',
-                        style: AppText.grotesk(14, color: AppColors.textMuted),
-                      ),
-                    );
+                    return _EmptyChatState(wide: wide);
                   }
                   return ListView.separated(
                     padding: EdgeInsets.fromLTRB(
@@ -291,8 +287,9 @@ class _DesktopHeader extends StatelessWidget {
     final app = AppScope.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.stroke)),
+      decoration: BoxDecoration(
+        color: AppColors.bgElevated.withA(0.72),
+        border: const Border(bottom: BorderSide(color: AppColors.stroke)),
       ),
       child: Row(
         children: [
@@ -386,6 +383,127 @@ class _DesktopHeader extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyChatState extends StatelessWidget {
+  const _EmptyChatState({required this.wide});
+
+  final bool wide;
+
+  static const _suggestions = [
+    ('SUMMARIZE', 'Summarize the key ideas from this text: '),
+    ('BRAINSTORM', 'Help me brainstorm practical approaches for '),
+    ('EXPLAIN', 'Explain this clearly, with a concrete example: '),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(horizontal: wide ? 28 : 20, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const LogoTile(size: 46, radius: 14, glow: true),
+            const SizedBox(height: 20),
+            Text(
+              'Your private AI workspace',
+              textAlign: TextAlign.center,
+              style: AppText.grotesk(
+                wide ? 24 : 20,
+                weight: FontWeight.w600,
+                lsEm: -0.02,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Text(
+                'Ask, write, or reason with a model that stays on this device.',
+                textAlign: TextAlign.center,
+                style: AppText.grotesk(
+                  13,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+            ),
+            if (wide) ...[
+              const SizedBox(height: 26),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final suggestion in _suggestions)
+                    _SuggestionCard(
+                      label: suggestion.$1,
+                      prompt: suggestion.$2,
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 20),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.lock, size: 13, color: AppColors.success),
+                const SizedBox(width: 6),
+                Text(
+                  'LOCAL BY DEFAULT',
+                  style: AppText.mono(
+                    9.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                    lsEm: 0.1,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionCard extends StatelessWidget {
+  const _SuggestionCard({required this.label, required this.prompt});
+
+  final String label;
+  final String prompt;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => ChatService.instance.prepareDraft(prompt),
+      child: Container(
+        width: 176,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withA(0.82),
+          border: Border.all(color: AppColors.strokeHi),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Text(
+              label,
+              style: AppText.mono(
+                9.5,
+                weight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                lsEm: 0.08,
+              ),
+            ),
+            const Spacer(),
+            const Icon(Symbols.north_east, size: 15, color: AppColors.accent),
+          ],
+        ),
       ),
     );
   }

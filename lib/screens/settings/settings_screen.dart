@@ -32,7 +32,12 @@ class SettingsScreen extends StatelessWidget {
     final app = AppScope.of(context);
     final children = <Widget>[
       Text('Settings', style: AppText.screenTitle()),
-      SizedBox(height: wide ? 18 : 14),
+      const SizedBox(height: 4),
+      Text(
+        'Control local inference, privacy, voice, and device storage.',
+        style: AppText.grotesk(13, color: AppColors.textSecondary),
+      ),
+      SizedBox(height: wide ? 22 : 16),
       if (app.signedIn) ...[
         const _AccountCard(),
         const SizedBox(height: 14),
@@ -249,9 +254,9 @@ class SettingsScreen extends StatelessWidget {
     if (wide) {
       return Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 24),
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
             children: children,
           ),
         ),

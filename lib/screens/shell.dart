@@ -17,12 +17,24 @@ import 'models/models_screen.dart';
 import 'settings/settings_screen.dart';
 import 'transcribe/transcribe_screen.dart';
 
-/// Responsive app shell — 224px sidebar at ≥1024dp, bottom nav below.
-// The desktop shell reserves 224 px for navigation and Chat reserves another
-// 252 px for sessions. Below 1024 px that leaves too little room for the
-// conversation controls, so keep the compact shell until a usable desktop
-// content width is available.
-const kDesktopBreakpoint = 1024.0;
+/// Phones keep bottom navigation. Tablet and desktop windows use a compact
+/// left rail, which expands into a workspace sidebar only when room permits.
+const kDesktopNavigationBreakpoint = 720.0;
+const kWideContentBreakpoint = 1024.0;
+const kExpandedSidebarBreakpoint = 1200.0;
+
+enum ShellNavigationMode { bottom, compactRail, expandedSidebar }
+
+@visibleForTesting
+ShellNavigationMode shellNavigationModeForWidth(double width) {
+  if (width >= kExpandedSidebarBreakpoint) {
+    return ShellNavigationMode.expandedSidebar;
+  }
+  if (width >= kDesktopNavigationBreakpoint) {
+    return ShellNavigationMode.compactRail;
+  }
+  return ShellNavigationMode.bottom;
+}
 
 class _NavItem {
   const _NavItem(this.tab, this.label, this.icon);
@@ -178,8 +190,16 @@ class _ShellState extends State<Shell> {
           },
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= kDesktopBreakpoint;
-              if (wide) {
+              final navigationMode = shellNavigationModeForWidth(
+                constraints.maxWidth,
+              );
+              final desktopNavigation =
+                  navigationMode != ShellNavigationMode.bottom;
+              final expandedSidebar =
+                  navigationMode == ShellNavigationMode.expandedSidebar;
+              final wideContent =
+                  constraints.maxWidth >= kWideContentBreakpoint;
+              if (desktopNavigation) {
                 return Scaffold(
                   backgroundColor: AppColors.bg,
                   body: SafeArea(
@@ -188,9 +208,14 @@ class _ShellState extends State<Shell> {
                       children: [
                         _Sidebar(
                           tab: _tab,
+                          expanded: expandedSidebar,
                           onTab: (tab) => unawaited(_setTab(tab)),
                         ),
-                        Expanded(child: _bodyWithRecordingIndicator(true)),
+                        Expanded(
+                          child: _DesktopWorkspaceBackground(
+                            child: _bodyWithRecordingIndicator(wideContent),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -275,40 +300,65 @@ String _shellDuration(Duration duration) {
 // ─── Desktop sidebar ─────────────────────────────────────────────────────────
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.tab, required this.onTab});
+  const _Sidebar({
+    required this.tab,
+    required this.expanded,
+    required this.onTab,
+  });
 
   final ShellTab tab;
+  final bool expanded;
   final ValueChanged<ShellTab> onTab;
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    return Container(
-      width: 224,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      width: expanded ? 232 : 84,
       decoration: const BoxDecoration(
         color: AppColors.sidebar,
         border: Border(right: BorderSide(color: AppColors.stroke)),
       ),
-      padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+      padding: EdgeInsets.fromLTRB(
+        expanded ? 14 : 10,
+        18,
+        expanded ? 14 : 10,
+        16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 6),
-            child: LogoLockup(),
-          ),
-          const SizedBox(height: 26),
+          if (expanded)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: LogoLockup(tileSize: 28, fontSize: 12),
+            )
+          else
+            const Center(child: LogoTile(size: 34, radius: 10)),
+          SizedBox(height: expanded ? 30 : 24),
+          if (expanded) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text('WORKSPACE', style: AppText.sectionHeader(size: 9)),
+            ),
+            const SizedBox(height: 9),
+          ],
           for (final item in _navItems)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: EdgeInsets.only(bottom: expanded ? 4 : 7),
               child: _SidebarItem(
                 item: item,
                 active: item.tab == tab,
+                expanded: expanded,
                 onTap: () => onTab(item.tab),
               ),
             ),
           const Spacer(),
-          if (tab == ShellTab.settings)
+          if (!expanded)
+            _CompactNodeStatus(serving: app.serving)
+          else if (tab == ShellTab.settings)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Text(
@@ -333,45 +383,152 @@ class _SidebarItem extends StatelessWidget {
   const _SidebarItem({
     required this.item,
     required this.active,
+    required this.expanded,
     required this.onTap,
   });
 
   final _NavItem item;
   final bool active;
+  final bool expanded;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? AppColors.accent.withA(0.12) : null,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              item.icon,
-              size: 19,
-              fill: active ? 1 : 0,
-              color: active ? AppColors.accent : AppColors.textSecondary,
+    return Semantics(
+      button: true,
+      selected: active,
+      label: item.label,
+      child: Tooltip(
+        message: expanded ? '' : item.label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: EdgeInsets.symmetric(
+              horizontal: expanded ? 12 : 4,
+              vertical: expanded ? 11 : 9,
             ),
-            const SizedBox(width: 11),
-            Text(
-              item.label,
-              style: AppText.mono(
-                11,
-                weight: active ? FontWeight.w600 : FontWeight.w500,
-                color: active ? AppColors.accent : AppColors.textSecondary,
-                lsEm: 0.08,
+            decoration: BoxDecoration(
+              color: active ? AppColors.accent.withA(0.12) : Colors.transparent,
+              border: Border.all(
+                color: active
+                    ? AppColors.accent.withA(0.28)
+                    : Colors.transparent,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: expanded
+                ? Row(
+                    children: [
+                      _NavIcon(item: item, active: active),
+                      const SizedBox(width: 11),
+                      Text(item.label, style: _labelStyle()),
+                      if (active) ...[
+                        const Spacer(),
+                        Container(
+                          width: 4,
+                          height: 4,
+                          decoration: const BoxDecoration(
+                            color: AppColors.accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _NavIcon(item: item, active: active),
+                      const SizedBox(height: 5),
+                      Text(item.label, maxLines: 1, style: _labelStyle()),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  TextStyle _labelStyle() => AppText.mono(
+    expanded ? 11 : 8,
+    weight: active ? FontWeight.w600 : FontWeight.w500,
+    color: active ? AppColors.accent : AppColors.textSecondary,
+    lsEm: expanded ? 0.08 : 0.035,
+  );
+}
+
+class _NavIcon extends StatelessWidget {
+  const _NavIcon({required this.item, required this.active});
+
+  final _NavItem item;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => Icon(
+    item.icon,
+    size: 20,
+    fill: active ? 1 : 0,
+    color: active ? AppColors.accent : AppColors.textSecondary,
+  );
+}
+
+class _CompactNodeStatus extends StatelessWidget {
+  const _CompactNodeStatus({required this.serving});
+
+  final bool serving;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: serving ? 'Local node serving on LAN' : 'Local node paused',
+      child: Container(
+        height: 46,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.stroke),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        alignment: Alignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Symbols.dns, size: 21, color: AppColors.textSecondary),
+            Positioned(
+              right: -4,
+              bottom: -3,
+              child: GlowDot(
+                size: 7,
+                color: serving ? AppColors.success : AppColors.textMuted,
+                glow: serving,
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DesktopWorkspaceBackground extends StatelessWidget {
+  const _DesktopWorkspaceBackground({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.bg,
+        gradient: RadialGradient(
+          center: Alignment(0.75, -1.15),
+          radius: 1.2,
+          colors: [Color(0x171F1510), AppColors.bg],
+          stops: [0, 0.72],
+        ),
+      ),
+      child: child,
     );
   }
 }
