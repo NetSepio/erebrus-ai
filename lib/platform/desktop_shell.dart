@@ -23,10 +23,18 @@ class DesktopShell extends StatefulWidget {
 class _DesktopShellState extends State<DesktopShell>
     with TrayListener, WindowListener {
   static const _macOSTrayIcon = 'assets/icons/tray/tray_icon_template.png';
+  static const _macOSInactiveTrayIcon =
+      'assets/icons/tray/tray_icon_inactive.png';
   static const _windowsTrayIcon = 'assets/icons/tray/tray_icon.ico';
+  static const _windowsInactiveTrayIcon =
+      'assets/icons/tray/tray_icon_inactive.ico';
   static const _linuxTrayIcon = 'assets/icons/tray/tray_icon.png';
+  static const _linuxInactiveTrayIcon =
+      'assets/icons/tray/tray_icon_inactive_desktop.png';
 
   bool _initialized = false;
+  bool? _displayedActiveState;
+  Future<void> _stateUpdate = Future.value();
 
   @override
   void initState() {
@@ -34,6 +42,7 @@ class _DesktopShellState extends State<DesktopShell>
     if (!PlatformCapabilities.supportsTray) return;
     trayManager.addListener(this);
     windowManager.addListener(this);
+    InferenceService.instance.addListener(_onInferenceChanged);
     unawaited(_initialize());
   }
 
@@ -41,30 +50,7 @@ class _DesktopShellState extends State<DesktopShell>
     try {
       await windowManager.ensureInitialized();
       await windowManager.setPreventClose(true);
-
-      if (Platform.isMacOS) {
-        await trayManager.setIcon(
-          _macOSTrayIcon,
-          isTemplate: true,
-          iconSize: 18,
-        );
-      } else {
-        await trayManager.setIcon(
-          Platform.isWindows ? _windowsTrayIcon : _linuxTrayIcon,
-        );
-      }
-
-      await trayManager.setToolTip('Erebrus AI — private on-device AI');
-      await trayManager.setContextMenu(
-        Menu(
-          items: [
-            MenuItem(key: 'open', label: 'Open Erebrus AI'),
-            MenuItem(key: 'hide', label: 'Hide window'),
-            MenuItem.separator(),
-            MenuItem(key: 'quit', label: 'Quit Erebrus AI'),
-          ],
-        ),
-      );
+      await _syncInferenceState(force: true);
       _initialized = true;
       debugPrint('[Desktop] Erebrus AI tray ready');
     } on Object catch (error) {
@@ -77,6 +63,7 @@ class _DesktopShellState extends State<DesktopShell>
     if (PlatformCapabilities.supportsTray) {
       trayManager.removeListener(this);
       windowManager.removeListener(this);
+      InferenceService.instance.removeListener(_onInferenceChanged);
     }
     super.dispose();
   }
@@ -102,6 +89,54 @@ class _DesktopShellState extends State<DesktopShell>
   @override
   void onWindowClose() {
     if (_initialized) unawaited(windowManager.hide());
+  }
+
+  void _onInferenceChanged() {
+    if (!_initialized) return;
+    _stateUpdate = _stateUpdate.then((_) => _syncInferenceState()).onError((
+      error,
+      _,
+    ) {
+      debugPrint('[Desktop] tray state update failed: $error');
+    });
+  }
+
+  Future<void> _syncInferenceState({bool force = false}) async {
+    final active = InferenceService.instance.hasLoadedModel;
+    if (!force && _displayedActiveState == active) return;
+
+    if (Platform.isMacOS) {
+      await trayManager.setIcon(
+        active ? _macOSTrayIcon : _macOSInactiveTrayIcon,
+        isTemplate: active,
+        iconSize: 18,
+      );
+    } else if (Platform.isWindows) {
+      await trayManager.setIcon(
+        active ? _windowsTrayIcon : _windowsInactiveTrayIcon,
+      );
+    } else {
+      await trayManager.setIcon(
+        active ? _linuxTrayIcon : _linuxInactiveTrayIcon,
+      );
+    }
+
+    final status = active ? 'Model active' : 'No model loaded';
+    await trayManager.setToolTip('Erebrus AI — $status');
+    await trayManager.setContextMenu(
+      Menu(
+        items: [
+          MenuItem(key: 'status', label: status, disabled: true),
+          MenuItem.separator(),
+          MenuItem(key: 'open', label: 'Open Erebrus AI'),
+          MenuItem(key: 'hide', label: 'Hide window'),
+          MenuItem.separator(),
+          MenuItem(key: 'quit', label: 'Quit Erebrus AI'),
+        ],
+      ),
+    );
+    _displayedActiveState = active;
+    debugPrint('[Desktop] tray state: ${active ? 'active' : 'inactive'}');
   }
 
   Future<void> _showWindow() async {

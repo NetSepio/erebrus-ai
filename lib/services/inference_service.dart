@@ -41,6 +41,8 @@ class InferenceService extends ChangeNotifier {
   bool _lastOutputWasTruncated = false;
 
   String? get activeModelId => _activeModelId;
+  bool get hasLoadedModel =>
+      _activeModelId != null && _coordinator.activeBackend != null;
   bool get isGenerating => _generating;
   double? get currentTokensPerSecond => _currentTokensPerSecond;
   double? get lastTokensPerSecond => _lastTokensPerSecond;
@@ -188,6 +190,7 @@ class InferenceService extends ChangeNotifier {
               '[Inference] ${backend.catalogName} ready in '
               '${loadDuration.inMilliseconds} ms',
             );
+            notifyListeners();
           case InferenceToken(:final text):
             tokenCount++;
             if (text.isNotEmpty) yield text;
