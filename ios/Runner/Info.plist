@@ -22,10 +22,39 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.erebrus.ai</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>erebrusai</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_erebrusai._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Erebrus AI uses the camera to scan QR codes when connecting a wallet or pairing another device.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Erebrus AI does not use your location for maps, tracking, or advertising. A location permission string is required because integrated libraries may reference location APIs while you use wallet sign-in or related features.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Erebrus AI accesses your photo library only when you choose an image or file to import, such as a QR code for wallet pairing or a document for a local session.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Erebrus AI uses Apple on-device speech recognition to transcribe your audio privately.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -49,45 +78,16 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.erebrus.ai</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>erebrusai</string>
-			</array>
-		</dict>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Erebrus AI uses the camera to scan QR codes when connecting a wallet or pairing another device.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Erebrus AI may use your approximate location only while the app is in use to support local network discovery and wallet connection features provided by integrated services.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Erebrus AI accesses your photo library only when you choose an image or file to import, such as a QR code for wallet pairing or a document for a local session.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Erebrus AI uses Apple on-device speech recognition to transcribe your audio privately.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_erebrusai._tcp</string>
-	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

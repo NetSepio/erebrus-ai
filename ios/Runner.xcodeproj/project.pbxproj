@@ -338,26 +338,6 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		B7E4A91C2F6D4E0A9C3B15D8 /* Copy Prebuilt Framework dSYMs */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Copy Prebuilt Framework dSYMs";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${SRCROOT}/../scripts/copy-prebuilt-dsyms.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 		96D59F7F769B20EFD40508C1 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -394,6 +374,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Pin SPM package to Runner iOS deployment target (erebrus_mlx/speech need 17+).\nPKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n";
+		};
+		B7E4A91C2F6D4E0A9C3B15D8 /* Copy Prebuilt Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Prebuilt Framework dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/../scripts/copy-prebuilt-dsyms.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 
