@@ -244,6 +244,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				798E079C13868D494E258D4A /* [CP] Embed Pods Frameworks */,
+				B7E4A91C2F6D4E0A9C3B15D8 /* Copy Prebuilt Framework dSYMs */,
 			);
 			buildRules = (
 			);
@@ -385,6 +386,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		B7E4A91C2F6D4E0A9C3B15D8 /* Copy Prebuilt Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Prebuilt Framework dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/../scripts/copy-prebuilt-dsyms.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		E13BA149065D15776595A252 /* [CP] Check Pods Manifest.lock */ = {

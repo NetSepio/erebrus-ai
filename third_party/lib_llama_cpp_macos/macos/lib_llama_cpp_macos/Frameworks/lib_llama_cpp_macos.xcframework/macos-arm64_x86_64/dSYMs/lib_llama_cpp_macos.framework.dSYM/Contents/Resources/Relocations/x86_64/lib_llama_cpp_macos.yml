@@ -1,0 +1,5 @@
+---
+triple:          'x86_64-apple-darwin'
+binary-path:     'third_party/lib_llama_cpp_macos/macos/lib_llama_cpp_macos/Frameworks/lib_llama_cpp_macos.xcframework/macos-arm64_x86_64/lib_llama_cpp_macos.framework/Versions/A/lib_llama_cpp_macos'
+relocations:     []
+...

@@ -18,7 +18,12 @@ Pod::Spec.new do |s|
 
   if File.exist?(prebuilt_framework)
     s.vendored_frameworks = 'lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework'
-    s.preserve_paths = 'lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework'
+    # Include companion dSYMs so App Store archives can resolve UUIDs for the
+    # stripped Metal prebuilt (see scripts/copy-prebuilt-dsyms.sh).
+    s.preserve_paths = [
+      'lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework',
+      'lib_llama_cpp_ios/Frameworks/lib_llama_cpp_ios.xcframework/**/dSYMs',
+    ]
     s.pod_target_xcconfig = {
       'DEFINES_MODULE' => 'YES',
       'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386'
