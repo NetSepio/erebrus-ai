@@ -39,6 +39,9 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Release packaging output (scripts/build-all-release.sh)
+/dist/
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
