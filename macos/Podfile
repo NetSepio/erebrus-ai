@@ -35,6 +35,23 @@ target 'Runner' do
   end
 end
 
+# Flutter regenerates FlutterGeneratedPluginSwiftPackage at an older macOS pin;
+# erebrus_mlx / erebrus_speech require 14.0 (same as platform :osx above).
+def ensure_spm_macos_platform(version = '14.0')
+  manifest = File.expand_path(
+    'Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift',
+    __dir__
+  )
+  return unless File.exist?(manifest)
+
+  desired = %(.macOS("#{version}"))
+  contents = File.read(manifest)
+  return if contents.include?(desired)
+
+  updated = contents.gsub(/\.macOS\("[0-9.]+"\)/, desired)
+  File.write(manifest, updated) if updated != contents
+end
+
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
@@ -48,6 +65,7 @@ post_install do |installer|
       configuration.build_settings[
         'TOOLCHAINS'
       ] = 'com.apple.dt.toolchain.XcodeDefault'
+      configuration.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0'
     end
 
     # whisper_ggml_plus 1.5.2 globally includes ARM kernels and excludes x86
@@ -78,4 +96,6 @@ post_install do |installer|
       end
     end
   end
+
+  ensure_spm_macos_platform('14.0')
 end

@@ -114,6 +114,27 @@ copy_artifact() {
   ok "artifact → ${dest##${ROOT_DIR}/} ($(du -h "${dest}" | awk '{print $1}'))"
 }
 
+# Flutter regenerates FlutterGeneratedPluginSwiftPackage at tool defaults
+# (.iOS("13.0") / .macOS("10.15")). erebrus_mlx / erebrus_speech need iOS 17
+# and macOS 14 (same as Runner). Pin after pub get / before Apple builds.
+ensure_spm_platform_versions() {
+  local ios_min="${EREBRUS_IOS_MIN:-17.0}"
+  local macos_min="${EREBRUS_MACOS_MIN:-14.0}"
+  local ios_pkg="${ROOT_DIR}/ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
+  local macos_pkg="${ROOT_DIR}/macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
+
+  if [[ -f "${ios_pkg}" ]] && ! grep -qF ".iOS(\"${ios_min}\")" "${ios_pkg}"; then
+    sed -i.bak -E "s/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"${ios_min}\")/g" "${ios_pkg}"
+    rm -f "${ios_pkg}.bak"
+    ok "SPM iOS package pin → ${ios_min}"
+  fi
+  if [[ -f "${macos_pkg}" ]] && ! grep -qF ".macOS(\"${macos_min}\")" "${macos_pkg}"; then
+    sed -i.bak -E "s/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"${macos_min}\")/g" "${macos_pkg}"
+    rm -f "${macos_pkg}.bak"
+    ok "SPM macOS package pin → ${macos_min}"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
@@ -135,6 +156,7 @@ preflight() {
   info "host=$(host_os)  version=${VERSION_NAME}+${VERSION_CODE}  out=dist/"
   info "flutter pub get"
   flutter pub get
+  ensure_spm_platform_versions
 
   if [[ "${SKIP_TESTS}" -eq 0 ]]; then
     info "flutter analyze"
@@ -193,6 +215,7 @@ build_ios() {
 
   info "iOS IPA (App Store / TestFlight)"
   require_cmd xcodebuild
+  ensure_spm_platform_versions
 
   local define_args
   define_args="$(dart_define_args)"
@@ -252,6 +275,7 @@ build_macos() {
 
   info "macOS release .app"
   require_cmd xcodebuild
+  ensure_spm_platform_versions
 
   local define_args
   define_args="$(dart_define_args)"

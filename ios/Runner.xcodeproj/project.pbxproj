@@ -393,7 +393,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+			shellScript = "# Pin SPM package to Runner iOS deployment target (erebrus_mlx/speech need 17+).\nPKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

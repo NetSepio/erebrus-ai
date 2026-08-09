@@ -349,7 +349,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "echo \"$PRODUCT_NAME.app\" > \"$PROJECT_DIR\"/Flutter/ephemeral/.app_filename && \"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh embed\n";
+			shellScript = "# Pin SPM package to Runner macOS deployment target (erebrus_mlx/speech need 14+).\nPKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"14.0\")/g' \"$PKG\"; fi\necho \"$PRODUCT_NAME.app\" > \"$PROJECT_DIR\"/Flutter/ephemeral/.app_filename && \"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh embed\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"14.0\")/g' \"$PKG\"; fi\n";
 		};
 		33CC111E2044C6BF0003C045 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -369,7 +369,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+			shellScript = "PKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"14.0\")/g' \"$PKG\"; fi\n\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"14.0\")/g' \"$PKG\"; fi\n";
 		};
 		798E079C13868D494E258D4A /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
