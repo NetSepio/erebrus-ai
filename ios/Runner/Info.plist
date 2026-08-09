@@ -64,10 +64,16 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Erebrus AI uses the camera to scan QR codes when connecting a wallet or pairing another device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Erebrus AI may use your approximate location only while the app is in use to support local network discovery and wallet connection features provided by integrated services.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Erebrus AI accesses your photo library only when you choose an image or file to import, such as a QR code for wallet pairing or a document for a local session.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Erebrus AI uses Apple on-device speech recognition to transcribe your audio privately.</string>
 	<key>NSBonjourServices</key>
