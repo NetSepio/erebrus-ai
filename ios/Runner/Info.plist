@@ -47,6 +47,12 @@
 	<string>Erebrus AI uses the camera to scan QR codes when connecting a wallet or pairing another device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Erebrus AI needs local network access so nearby devices can discover and use this node.</string>
+	<!-- Location keys: app code does not request location; linked SDKs (e.g. permission_handler / wallet stacks)
+	     reference Core Location symbols so App Store validation requires purpose strings for each API class. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Erebrus AI does not track your location in the background or for advertising. This description is required because integrated libraries may reference location APIs; the app does not use location for maps or continuous tracking.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Erebrus AI does not track your location in the background or for advertising. This description is required because integrated libraries may reference location APIs; the app does not use location for maps or continuous tracking.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Erebrus AI does not use your location for maps, tracking, or advertising. A location permission string is required because integrated libraries may reference location APIs while you use wallet sign-in or related features.</string>
 	<key>NSMicrophoneUsageDescription</key>

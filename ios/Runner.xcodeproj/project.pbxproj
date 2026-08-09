@@ -373,7 +373,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Pin SPM package to Runner iOS deployment target (erebrus_mlx/speech need 17+).\nPKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\nif [ -f \"$PKG\" ]; then sed -i '' -E 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; fi\n";
+			shellScript = "# Pin SPM package to Runner iOS 17+ (erebrus_mlx/speech). Flutter regenerates this at 13.0.\nPKG=\"${SRCROOT}/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift\"\npin_spm() { [ -f \"$PKG\" ] && /usr/bin/perl -pi -e 's/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"17.0\")/g' \"$PKG\"; }\npin_spm\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\npin_spm\n";
 		};
 		B7E4A91C2F6D4E0A9C3B15D8 /* Copy Prebuilt Framework dSYMs */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -514,7 +514,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.erebrus.ai;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -700,7 +700,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.erebrus.ai;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -726,7 +726,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.erebrus.ai;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
