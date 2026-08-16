@@ -30,6 +30,17 @@
 	<string>MainMenu</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Erebrus AI records audio only while you transcribe and saves it with the local session when requested.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_erebrusai._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Erebrus AI uses the local network to advertise this node and discover models shared by nearby Erebrus AI devices.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

@@ -12,6 +12,7 @@ import '../../services/inference_memory_policy.dart';
 import '../../services/inference_planner.dart';
 import '../../services/inference_readiness_service.dart';
 import '../../services/inference_service.dart';
+import '../../services/local_server_service.dart';
 import '../../services/model_download_service.dart';
 import '../../services/model_package_service.dart';
 import '../../services/node_discovery_service.dart';
@@ -65,8 +66,9 @@ class _ModelsScreenState extends State<ModelsScreen> {
     return NodeDiscoveryService.instance.nodes.length;
   }
 
-  String get _browsingLabel =>
-      'BROWSING _EREBRUSAI._TCP · $_networkCount NODES FOUND';
+  String get _browsingLabel => NodeDiscoveryService.instance.lastError != null
+      ? 'DISCOVERY NEEDS ATTENTION · TAP RESCAN'
+      : 'BROWSING _EREBRUSAI._TCP · $_networkCount NODES FOUND';
 
   List<String> get _segmentItems => [
     'LOCAL · ${{...ModelDownloadService.instance.completed, ...ModelPackageService.instance.installed.where((record) => record.runnable).map((record) => record.modelId)}.length}',
@@ -84,6 +86,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
         NodeDiscoveryService.instance,
         ModelDownloadService.instance,
         ModelPackageService.instance,
+        LocalServerService.instance,
       ]),
       builder: (context, _) {
         return widget.wide ? _buildWide(context) : _buildNarrow(context);
@@ -442,6 +445,7 @@ class _LocalListState extends State<_LocalList> {
       animation: Listenable.merge([
         ModelDownloadService.instance,
         ModelPackageService.instance,
+        LocalServerService.instance,
       ]),
       builder: (context, _) {
         return FutureBuilder<List<CatalogEntry>>(
@@ -579,6 +583,7 @@ class _LocalListState extends State<_LocalList> {
     );
     return _LocalModelCard(
       model: model,
+      shared: LocalServerService.instance.sharedModelIds.contains(entry.id),
       onTap: status == ModelStatus.loaded
           ? () => app.selectModel(
               entry.name,
@@ -845,6 +850,7 @@ class _LocalModelCard extends StatelessWidget {
     this.onVariants,
     this.onCancel,
     this.variantCount = 0,
+    this.shared = false,
   });
 
   final MockModel model;
@@ -855,6 +861,7 @@ class _LocalModelCard extends StatelessWidget {
   final VoidCallback? onVariants;
   final VoidCallback? onCancel;
   final int variantCount;
+  final bool shared;
 
   @override
   Widget build(BuildContext context) {
@@ -958,6 +965,26 @@ class _LocalModelCard extends StatelessWidget {
                 ],
               ),
             ],
+            if (shared) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Symbols.wifi, size: 14, color: AppColors.success),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      '${model.name.toUpperCase()} IS SHARED ON YOUR LOCAL NETWORK',
+                      style: AppText.mono(
+                        9.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.success,
+                        lsEm: 0.04,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (variantCount > 1 && onVariants != null) ...[
               const SizedBox(height: 10),
               Align(
@@ -999,7 +1026,9 @@ class _NetworkStripCard extends StatelessWidget {
           (sum, node) => sum + node.models.length,
         );
         final subtitle = discovered.isEmpty
-            ? (NodeDiscoveryService.instance.isRunning
+            ? (NodeDiscoveryService.instance.lastError != null
+                  ? NodeDiscoveryService.instance.lastError!.toUpperCase()
+                  : NodeDiscoveryService.instance.isRunning
                   ? 'SCANNING _EREBRUSAI._TCP'
                   : 'DISCOVERY IS NOT RUNNING')
             : '${discovered.map((n) => n.name.toUpperCase()).take(2).join(' · ')} · $modelCount MODELS';
@@ -1060,7 +1089,7 @@ class _NetworkList extends StatelessWidget {
         .map(
           (node) => MockNode(
             node.name,
-            '${node.host}:${node.port} · MDNS · ${node.isLoadingModels ? 'LOADING MODELS' : 'ONLINE'}',
+            '${node.host}:${node.port} · MDNS · ${node.error ?? (node.isLoadingModels ? 'LOADING MODELS' : 'ONLINE')}',
             Symbols.device_hub,
             node.models
                 .map(
@@ -1104,6 +1133,12 @@ class _NetworkList extends StatelessWidget {
             : const EdgeInsets.fromLTRB(20, 0, 20, 16);
 
         final children = <Widget>[
+          if (NodeDiscoveryService.instance.lastError != null) ...[
+            _DiscoveryErrorCard(
+              message: NodeDiscoveryService.instance.lastError!,
+            ),
+            const SizedBox(height: 14),
+          ],
           for (final node in filteredNodes) ...[
             _NodeCard(node: node),
             const SizedBox(height: 14),
@@ -1148,6 +1183,49 @@ class _NetworkList extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _DiscoveryErrorCard extends StatelessWidget {
+  const _DiscoveryErrorCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warn.withA(0.07),
+        border: Border.all(color: AppColors.warn.withA(0.3)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Icon(Symbols.wifi_off, size: 20, color: AppColors.warn),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              message,
+              style: AppText.grotesk(
+                12.5,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GhostButton(
+            'RESCAN',
+            icon: Symbols.refresh,
+            onTap: () async {
+              await NodeDiscoveryService.instance.stop();
+              await NodeDiscoveryService.instance.start();
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NodeCard extends StatelessWidget {

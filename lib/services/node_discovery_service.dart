@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart';
 
+import 'local_server_service.dart';
 import 'mdns_config.dart';
 
 /// Discovers Erebrus AI nodes advertising `_erebrusai._tcp` on the LAN.
@@ -17,9 +18,13 @@ class NodeDiscoveryService extends ChangeNotifier {
   BonsoirDiscovery? _discovery;
   StreamSubscription<BonsoirDiscoveryEvent>? _subscription;
   bool _running = false;
+  String? _localNodeId;
+  Set<String> _localAddresses = const {};
+  String? _lastError;
 
   List<DiscoveredNode> get nodes => List.unmodifiable(_nodes);
   bool get isRunning => _running;
+  String? get lastError => _lastError;
 
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
@@ -27,9 +32,13 @@ class NodeDiscoveryService extends ChangeNotifier {
   Future<void> start() async {
     if (_running || kIsWeb || _inTest) return;
     _running = true;
+    _lastError = null;
     notifyListeners();
 
     try {
+      final identity = await loadMdnsNodeIdentity();
+      _localNodeId = identity.id;
+      _localAddresses = await _readLocalAddresses();
       _discovery = BonsoirDiscovery(type: kErebrusAiMdnsType);
       await _discovery!.initialize();
       _subscription = _discovery!.eventStream?.listen(
@@ -41,6 +50,7 @@ class NodeDiscoveryService extends ChangeNotifier {
       debugPrint('[Discovery] start failed: $error');
       await _disposeDiscovery();
       _running = false;
+      _lastError = _friendlyDiscoveryError(error);
       notifyListeners();
     }
   }
@@ -50,6 +60,7 @@ class NodeDiscoveryService extends ChangeNotifier {
     await _disposeDiscovery();
     _nodes.clear();
     _running = false;
+    _lastError = null;
     notifyListeners();
   }
 
@@ -66,7 +77,13 @@ class NodeDiscoveryService extends ChangeNotifier {
 
   void _onDiscoveryError(Object error, StackTrace stackTrace) {
     debugPrint('[Discovery] stream failed: $error');
+    unawaited(_handleDiscoveryFailure(error));
+  }
+
+  Future<void> _handleDiscoveryFailure(Object error) async {
+    await _disposeDiscovery();
     _running = false;
+    _lastError = _friendlyDiscoveryError(error);
     notifyListeners();
   }
 
@@ -85,14 +102,34 @@ class NodeDiscoveryService extends ChangeNotifier {
   }
 
   void _addOrUpdate(BonsoirService service) {
-    final host = service.hostAddress ?? '127.0.0.1';
+    final nodeId = service.attributes[kMdnsNodeIdAttribute]?.trim() ?? '';
+
+    final host =
+        preferredMdnsHost(service.hostAddresses) ??
+        service.hostname?.replaceFirst(RegExp(r'\.$'), '');
+    if (host == null || host.isEmpty) {
+      debugPrint('[Discovery] resolved ${service.name} without a usable host');
+      return;
+    }
+    if (isOwnMdnsService(
+      advertisedNodeId: nodeId,
+      localNodeId: _localNodeId ?? '',
+      host: host,
+      advertisedPort: service.port,
+      localPort: LocalServerService.instance.port,
+      localServerRunning: LocalServerService.instance.isRunning,
+      localAddresses: _localAddresses,
+    )) {
+      return;
+    }
     final node = DiscoveredNode(
+      id: nodeId.isEmpty ? '${service.name}@$host:${service.port}' : nodeId,
       name: service.name,
       host: host,
       port: service.port,
       isLoadingModels: true,
     );
-    _nodes.removeWhere((n) => n.name == node.name && n.host == node.host);
+    _nodes.removeWhere((candidate) => candidate.id == node.id);
     _nodes.add(node);
     notifyListeners();
     unawaited(_loadModels(node));
@@ -100,11 +137,12 @@ class NodeDiscoveryService extends ChangeNotifier {
 
   Future<void> _loadModels(DiscoveredNode node) async {
     var models = const <DiscoveredNodeModel>[];
+    String? failure;
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 4);
       try {
-        final request = await client.getUrl(Uri.parse('${node.url}/v1/models'));
+        final request = await client.getUrl(node.modelListUri);
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
         final response = await request.close();
         if (response.statusCode == HttpStatus.ok) {
@@ -124,55 +162,106 @@ class NodeDiscoveryService extends ChangeNotifier {
                 .where((model) => model.id.isNotEmpty)
                 .toList();
           }
+        } else {
+          failure = 'Model list returned HTTP ${response.statusCode}';
         }
       } finally {
         client.close(force: true);
       }
     } catch (error) {
       debugPrint('[Discovery] model listing failed for ${node.url}: $error');
+      failure = 'Node found, but its model list is unreachable';
     }
 
-    final index = _nodes.indexWhere(
-      (item) => item.name == node.name && item.host == node.host,
-    );
+    final index = _nodes.indexWhere((item) => item.id == node.id);
     if (index < 0) return;
-    _nodes[index] = node.copyWith(models: models, isLoadingModels: false);
+    _nodes[index] = node.copyWith(
+      models: models,
+      isLoadingModels: false,
+      error: failure,
+    );
     notifyListeners();
   }
 
   void _remove(BonsoirService service) {
-    _nodes.removeWhere((n) => n.name == service.name);
+    final nodeId = service.attributes[kMdnsNodeIdAttribute]?.trim() ?? '';
+    _nodes.removeWhere(
+      (node) =>
+          nodeId.isNotEmpty ? node.id == nodeId : node.name == service.name,
+    );
     notifyListeners();
+  }
+
+  Future<Set<String>> _readLocalAddresses() async {
+    final addresses = <String>{'127.0.0.1', '::1'};
+    try {
+      for (final interface in await NetworkInterface.list(
+        includeLoopback: true,
+      )) {
+        addresses.addAll(interface.addresses.map((address) => address.address));
+      }
+    } on Object catch (error) {
+      debugPrint('[Discovery] local address lookup failed: $error');
+    }
+    return addresses;
+  }
+
+  String _friendlyDiscoveryError(Object error) {
+    final message = error.toString();
+    final lower = message.toLowerCase();
+    if (lower.contains('defunctconnection') || lower.contains('-65569')) {
+      return 'Bonjour restarted its network connection. Tap Rescan to try again.';
+    }
+    if (lower.contains('denied') ||
+        lower.contains('policy') ||
+        lower.contains('-65570')) {
+      return 'Local network access is disabled. Enable it in system settings, then rescan.';
+    }
+    return 'Local network discovery failed. Check Wi-Fi access and tap Rescan.';
   }
 }
 
 /// A node discovered on the local network.
 class DiscoveredNode {
   const DiscoveredNode({
+    required this.id,
     required this.name,
     required this.host,
     required this.port,
     this.models = const [],
     this.isLoadingModels = false,
+    this.error,
   });
 
+  final String id;
   final String name;
   final String host;
   final int port;
   final List<DiscoveredNodeModel> models;
   final bool isLoadingModels;
+  final String? error;
 
-  String get url => 'http://$host:$port';
+  String get url => Uri(scheme: 'http', host: host, port: port).toString();
+
+  Uri get modelListUri => Uri(
+    scheme: 'http',
+    host: host,
+    port: port,
+    pathSegments: const ['v1', 'models'],
+  );
 
   DiscoveredNode copyWith({
     List<DiscoveredNodeModel>? models,
     bool? isLoadingModels,
+    String? error,
   }) => DiscoveredNode(
+    id: id,
     name: name,
     host: host,
     port: port,
     models: models ?? this.models,
     isLoadingModels: isLoadingModels ?? this.isLoadingModels,
+    error: error,
   );
 
   @override

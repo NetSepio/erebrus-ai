@@ -15,6 +15,9 @@ import 'mdns_config.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
 
+bool isPublicLocalServerMetadataRequest(String method, String path) =>
+    method == 'GET' && (path == 'health' || path == 'v1/models');
+
 /// A real OpenAI-compatible HTTP server that runs on the device.
 ///
 /// This is the concrete replacement for the mocked "serving on LAN" state.
@@ -32,6 +35,7 @@ class LocalServerService extends ChangeNotifier {
   BonsoirBroadcast? _broadcast;
   String? _apiKey;
   String? _baseUrl;
+  MdnsNodeIdentity? _identity;
   int _port = 11434;
 
   /// Whether the server is currently accepting connections.
@@ -56,12 +60,23 @@ class LocalServerService extends ChangeNotifier {
   /// Best-effort URL for this node, e.g. `http://192.168.1.42:11434`.
   String? get baseUrl => _baseUrl;
 
+  /// Models whose metadata is intentionally visible to peers while serving.
+  Set<String> get sharedModelIds => isRunning ? _servableModelIds : const {};
+
+  Set<String> get _servableModelIds => {
+    ...ModelDownloadService.instance.completed,
+    ...ModelPackageService.instance.installed
+        .where((record) => record.runnable)
+        .map((record) => record.modelId),
+  };
+
   /// Starts the HTTP server and begins mDNS advertising.
   Future<void> start({int port = 11434}) async {
     if (_server != null) return;
     _port = port;
 
     await apiKey;
+    _identity = await loadMdnsNodeIdentity();
     try {
       _server = await shelf_io.serve(
         _handler,
@@ -114,7 +129,7 @@ class LocalServerService extends ChangeNotifier {
     }
 
     if (method == 'GET' && path == 'v1/models') {
-      final ids = ModelDownloadService.instance.completed;
+      final ids = _servableModelIds;
       final byId = {for (final e in CatalogService.entries) e.id: e};
       final models = ids
           .map(
@@ -262,10 +277,16 @@ class LocalServerService extends ChangeNotifier {
 
   Future<void> _startBroadcast(int port) async {
     try {
+      final identity = _identity ?? await loadMdnsNodeIdentity();
       final service = BonsoirService(
-        name: 'Erebrus AI',
+        name: identity.displayName,
         type: kErebrusAiMdnsType,
         port: port,
+        attributes: {
+          kMdnsNodeIdAttribute: identity.id,
+          kMdnsProtocolAttribute: kMdnsProtocolVersion,
+          'models': '${_servableModelIds.length}',
+        },
       );
       _broadcast = BonsoirBroadcast(service: service);
       await _broadcast!.initialize();
@@ -314,7 +335,12 @@ class LocalServerService extends ChangeNotifier {
 
   static Middleware _authMiddleware(String apiKey) =>
       (Handler inner) => (Request request) async {
-        if (request.url.path == 'health') return inner(request);
+        if (isPublicLocalServerMetadataRequest(
+          request.method,
+          request.url.path,
+        )) {
+          return inner(request);
+        }
         final auth = request.headers['authorization'] ?? '';
         if (!auth.startsWith('Bearer ') || auth.substring(7).trim() != apiKey) {
           return Response.unauthorized(

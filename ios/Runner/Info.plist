@@ -43,6 +43,11 @@
 	<array>
 		<string>_erebrusai._tcp</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Erebrus AI uses the camera to scan QR codes when connecting a wallet or pairing another device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
