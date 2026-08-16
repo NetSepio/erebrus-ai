@@ -39,7 +39,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   flutter_local_notifications: 7062189aabf7f50938a7b8b6614ffa97656eb0bf
   flutter_tts: 64651204e5d276ffea5a910f942d5e9785a96085
-  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   macos_secure_bookmarks: cff041c4b377fa00941bb901aaec4d27fac5edf2
   sign_in_with_apple: a9e97e744e8edc36aefc2723111f652102a7a727
   whisper_ggml_plus: a2850325fefbf944927e2d132241c9f6fbbac27f
