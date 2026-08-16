@@ -89,5 +89,18 @@ void main() {
       expect(node.modelListUri.host, 'fe80::1234');
       expect(node.modelListUri.toString(), contains('[fe80::1234]'));
     });
+
+    test('renders structured model capabilities received from a peer', () {
+      const model = DiscoveredNodeModel(
+        id: 'peer-model',
+        name: 'Private Gemma',
+        parameterB: 4,
+        architecture: 'gemma',
+        format: 'mlx',
+        quantization: '4bit',
+      );
+
+      expect(model.spec, '4B · 4bit · MLX · gemma');
+    });
   });
 }

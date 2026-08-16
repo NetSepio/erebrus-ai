@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/catalog_service.dart';
 import 'inference_service.dart';
+import 'imported_model_service.dart';
 import 'mdns_config.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
@@ -68,6 +69,7 @@ class LocalServerService extends ChangeNotifier {
     ...ModelPackageService.instance.installed
         .where((record) => record.runnable)
         .map((record) => record.modelId),
+    ...ImportedModelService.instance.models.map((record) => record.id),
   };
 
   /// Starts the HTTP server and begins mDNS advertising.
@@ -131,17 +133,22 @@ class LocalServerService extends ChangeNotifier {
     if (method == 'GET' && path == 'v1/models') {
       final ids = _servableModelIds;
       final byId = {for (final e in CatalogService.entries) e.id: e};
-      final models = ids
-          .map(
-            (id) => {
-              'id': id,
-              'object': 'model',
-              'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-              'owned_by': 'erebrus-ai',
-              'name': byId[id]?.name ?? id,
-            },
-          )
-          .toList();
+      final models = ids.map((id) {
+        final imported = ImportedModelService.instance.byId(id);
+        final catalog = byId[id];
+        return {
+          'id': id,
+          'object': 'model',
+          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'owned_by': imported == null ? 'erebrus-ai' : 'local-user',
+          'name': imported?.name ?? catalog?.name ?? id,
+          'parameter_b': imported?.parameterB ?? catalog?.parameterB ?? 0,
+          'architecture': imported?.architecture ?? catalog?.family ?? '',
+          'format':
+              imported?.format ?? catalog?.preferredVariant?.format ?? 'gguf',
+          'quantization': imported?.quantization ?? catalog?.quant ?? '',
+        };
+      }).toList();
       return _jsonResponse({'object': 'list', 'data': models});
     }
 
@@ -159,7 +166,8 @@ class LocalServerService extends ChangeNotifier {
     final stream = payload['stream'] as bool? ?? true;
 
     if (!ModelDownloadService.instance.isDownloaded(modelId) &&
-        !ModelPackageService.instance.isModelRunnable(modelId)) {
+        !ModelPackageService.instance.isModelRunnable(modelId) &&
+        !ImportedModelService.instance.contains(modelId)) {
       return Response(
         503,
         body: json.encode({

@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/catalog_service.dart';
+import '../../data/imported_model.dart';
 import '../../data/mock_data.dart';
 import '../../data/model_catalog.dart';
 import '../../services/backend_probe_service.dart';
@@ -12,6 +15,7 @@ import '../../services/inference_memory_policy.dart';
 import '../../services/inference_planner.dart';
 import '../../services/inference_readiness_service.dart';
 import '../../services/inference_service.dart';
+import '../../services/imported_model_service.dart';
 import '../../services/local_server_service.dart';
 import '../../services/model_download_service.dart';
 import '../../services/model_package_service.dart';
@@ -71,13 +75,14 @@ class _ModelsScreenState extends State<ModelsScreen> {
       : 'BROWSING _EREBRUSAI._TCP · $_networkCount NODES FOUND';
 
   List<String> get _segmentItems => [
-    'LOCAL · ${{...ModelDownloadService.instance.completed, ...ModelPackageService.instance.installed.where((record) => record.runnable).map((record) => record.modelId)}.length}',
+    'LOCAL · ${{...ModelDownloadService.instance.completed, ...ModelPackageService.instance.installed.where((record) => record.runnable).map((record) => record.modelId), ...ImportedModelService.instance.models.map((record) => record.id)}.length}',
     'NETWORK · $_networkCount',
   ];
 
   int get _downloadedBytes =>
       ModelDownloadService.instance.downloadedBytes +
-      ModelPackageService.instance.downloadedBytes;
+      ModelPackageService.instance.downloadedBytes +
+      ImportedModelService.instance.storedBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +91,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
         NodeDiscoveryService.instance,
         ModelDownloadService.instance,
         ModelPackageService.instance,
+        ImportedModelService.instance,
         LocalServerService.instance,
       ]),
       builder: (context, _) {
@@ -132,6 +138,14 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 ),
               ),
               const SizedBox(width: 16),
+              if (_tab == 0) ...[
+                GhostButton(
+                  'IMPORT',
+                  icon: Symbols.upload_file,
+                  onTap: () => _showImportOptions(context),
+                ),
+                const SizedBox(width: 10),
+              ],
               _SearchField(controller: _searchController, onChanged: _setQuery),
             ],
           ),
@@ -216,15 +230,24 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 const SizedBox(height: 12),
                 if (_tab == 0) ...[
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'STORAGE · ${formatBytes(_downloadedBytes)} USED',
-                        style: AppText.mono(
-                          10,
-                          color: AppColors.textMuted,
-                          lsEm: 0.08,
+                      Expanded(
+                        child: Text(
+                          'STORAGE · ${formatBytes(_downloadedBytes)} USED',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.mono(
+                            10,
+                            color: AppColors.textMuted,
+                            lsEm: 0.08,
+                          ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      GhostButton(
+                        'IMPORT',
+                        icon: Symbols.upload_file,
+                        onTap: () => _showImportOptions(context),
                       ),
                     ],
                   ),
@@ -276,6 +299,320 @@ class _ModelsScreenState extends State<ModelsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showImportOptions(BuildContext context) async {
+    final format = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Import local model', style: AppText.screenTitle(size: 22)),
+              const SizedBox(height: 8),
+              Text(
+                'Erebrus validates the package before registering it. Imported files never leave this device unless LAN sharing is enabled.',
+                style: AppText.grotesk(
+                  13,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Symbols.description,
+                  color: AppColors.accent,
+                ),
+                title: const Text('GGUF model file'),
+                subtitle: const Text(
+                  'Portable llama.cpp model · macOS, iOS, Android and desktop',
+                ),
+                trailing: const Icon(Symbols.chevron_right),
+                onTap: () => Navigator.pop(sheetContext, 'gguf'),
+              ),
+              if (Platform.isMacOS &&
+                  DeviceInfoService.detect().platform == 'macos-arm64')
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Symbols.folder_special,
+                    color: AppColors.accent,
+                  ),
+                  title: const Text('MLX model directory'),
+                  subtitle: const Text(
+                    'Apple-silicon package with config, tokenizer and SafeTensors',
+                  ),
+                  trailing: const Icon(Symbols.chevron_right),
+                  onTap: () => Navigator.pop(sheetContext, 'mlx'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (format == null || !context.mounted) return;
+    try {
+      ImportedModelDraft draft;
+      if (format == 'gguf') {
+        final result = await FilePicker.pickFiles(
+          dialogTitle: 'Choose a GGUF model',
+          type: FileType.custom,
+          allowedExtensions: const ['gguf'],
+          allowMultiple: false,
+          withData: false,
+        );
+        final path = result?.files.single.path;
+        if (path == null || path.isEmpty) return;
+        draft = await ImportedModelService.instance.inspectGguf(path);
+      } else {
+        final path = await FilePicker.getDirectoryPath(
+          dialogTitle: 'Choose an MLX model directory',
+        );
+        if (path == null || path.isEmpty) return;
+        draft = await ImportedModelService.instance.inspectMlxDirectory(path);
+      }
+      if (!context.mounted) return;
+      final confirmation = await _confirmImport(context, draft);
+      if (confirmation == null) return;
+      if (!context.mounted) return;
+      final service = ImportedModelService.instance;
+      final operation = service.import(
+        confirmation.draft,
+        copyIntoApp: confirmation.copyIntoApp,
+      );
+      if (confirmation.copyIntoApp) {
+        unawaited(
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const _ImportProgressDialog(),
+          ),
+        );
+      }
+      ImportedModel imported;
+      try {
+        imported = await operation;
+      } finally {
+        if (confirmation.copyIntoApp && context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+      }
+      if (!context.mounted) return;
+      final app = AppScope.of(context);
+      app.selectModel(
+        imported.name,
+        imported.quantization.isEmpty
+            ? imported.format.toUpperCase()
+            : imported.quantization,
+        id: imported.id,
+        variantId: imported.variantId,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${imported.name} imported and selected')),
+      );
+    } on ImportedModelException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.code == 'import_cancelled'
+                ? 'Model import cancelled'
+                : 'Import failed: ${error.message}',
+          ),
+        ),
+      );
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $error')));
+    }
+  }
+
+  Future<_ImportConfirmation?> _confirmImport(
+    BuildContext context,
+    ImportedModelDraft draft,
+  ) async {
+    final name = TextEditingController(text: draft.name);
+    final parameters = TextEditingController(
+      text: draft.parameterB > 0
+          ? draft.parameterB
+                .toStringAsFixed(2)
+                .replaceFirst(RegExp(r'\.?0+$'), '')
+          : '',
+    );
+    final architecture = TextEditingController(text: draft.architecture);
+    final quantization = TextEditingController(text: draft.quantization);
+    var copyIntoApp = true;
+    final result = await showDialog<_ImportConfirmation>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Confirm imported model'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Model name'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: parameters,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Parameters (billions)',
+                      hintText: 'For example, 4 or 0.5',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: architecture,
+                    decoration: const InputDecoration(
+                      labelText: 'Architecture',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: quantization,
+                    decoration: const InputDecoration(
+                      labelText: 'Quantization',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${draft.format.toUpperCase()} · ${formatBytes(draft.sizeBytes)}',
+                    style: AppText.mono(10.5, color: AppColors.textMuted),
+                  ),
+                  if (Platform.isMacOS) ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: copyIntoApp,
+                      onChanged: (value) =>
+                          setDialogState(() => copyIntoApp = value),
+                      title: const Text('Copy into Erebrus storage'),
+                      subtitle: Text(
+                        copyIntoApp
+                            ? 'Safer if the original is moved or disconnected.'
+                            : 'Keep the original in place using a persistent macOS bookmark.',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final parsed = parameters.text.trim().isEmpty
+                    ? 0.0
+                    : double.tryParse(parameters.text.trim());
+                if (name.text.trim().isEmpty || parsed == null || parsed < 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Enter a name and a valid parameter count.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(
+                  dialogContext,
+                  _ImportConfirmation(
+                    draft: draft.copyWith(
+                      name: name.text.trim(),
+                      parameterB: parsed,
+                      architecture: architecture.text.trim(),
+                      quantization: quantization.text.trim(),
+                    ),
+                    copyIntoApp: copyIntoApp,
+                  ),
+                );
+              },
+              child: const Text('IMPORT'),
+            ),
+          ],
+        ),
+      ),
+    );
+    name.dispose();
+    parameters.dispose();
+    architecture.dispose();
+    quantization.dispose();
+    return result;
+  }
+}
+
+class _ImportConfirmation {
+  const _ImportConfirmation({required this.draft, required this.copyIntoApp});
+  final ImportedModelDraft draft;
+  final bool copyIntoApp;
+}
+
+class _ImportProgressDialog extends StatelessWidget {
+  const _ImportProgressDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: ImportedModelService.instance,
+      builder: (context, _) {
+        final service = ImportedModelService.instance;
+        return AlertDialog(
+          title: const Text('Copying model into Erebrus'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LinearProgressIndicator(
+                  value: service.copyTotalBytes > 0
+                      ? service.importProgress
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '${formatBytes(service.copiedBytes)} / ${formatBytes(service.copyTotalBytes)}',
+                  style: AppText.mono(10.5, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Keep Erebrus open until the copy completes.',
+                  style: AppText.grotesk(12.5, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: service.isImporting ? service.cancelImport : null,
+              child: const Text('CANCEL IMPORT'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -445,6 +782,7 @@ class _LocalListState extends State<_LocalList> {
       animation: Listenable.merge([
         ModelDownloadService.instance,
         ModelPackageService.instance,
+        ImportedModelService.instance,
         LocalServerService.instance,
       ]),
       builder: (context, _) {
@@ -463,6 +801,15 @@ class _LocalListState extends State<_LocalList> {
                 .toList();
             final filteredCatalog = catalog
                 .where((e) => q.isEmpty || e.matchesQuery(widget.query))
+                .toList();
+            final imported = ImportedModelService.instance.models
+                .where(
+                  (model) =>
+                      q.isEmpty ||
+                      model.name.toLowerCase().contains(q) ||
+                      model.architecture.toLowerCase().contains(q) ||
+                      model.format.toLowerCase().contains(q),
+                )
                 .toList();
             final onDevice = filteredCatalog
                 .where(
@@ -496,6 +843,13 @@ class _LocalListState extends State<_LocalList> {
             return ListView(
               padding: pad,
               children: [
+                if (imported.isNotEmpty) ...[
+                  const _ListSectionLabel('IMPORTED BY YOU'),
+                  for (final model in imported) ...[
+                    _importedCard(context, app, model),
+                    const SizedBox(height: 11),
+                  ],
+                ],
                 if (onDevice.isNotEmpty) ...[
                   _ListSectionLabel('ON THIS DEVICE'),
                   for (final entry in onDevice) ...[
@@ -544,6 +898,74 @@ class _LocalListState extends State<_LocalList> {
         );
       },
     );
+  }
+
+  Widget _importedCard(
+    BuildContext context,
+    AppState app,
+    ImportedModel imported,
+  ) {
+    final detail = [
+      if (imported.parameterLabel.isNotEmpty) imported.parameterLabel,
+      if (imported.quantization.isNotEmpty) imported.quantization,
+      imported.format.toUpperCase(),
+      imported.backend,
+      imported.reference ? 'REFERENCED' : formatBytes(imported.sizeBytes),
+    ].join(' · ');
+    return _LocalModelCard(
+      model: MockModel(
+        imported.name,
+        imported.name.isEmpty ? '?' : imported.name[0].toUpperCase(),
+        detail,
+        id: imported.id,
+        status: ModelStatus.loaded,
+        accent: app.selectedModelId == imported.id,
+      ),
+      shared: LocalServerService.instance.sharedModelIds.contains(imported.id),
+      onTap: () => app.selectModel(
+        imported.name,
+        imported.quantization.isEmpty
+            ? imported.format.toUpperCase()
+            : imported.quantization,
+        id: imported.id,
+        variantId: imported.variantId,
+      ),
+      onDelete: () => _deleteImported(context, app, imported),
+    );
+  }
+
+  Future<void> _deleteImported(
+    BuildContext context,
+    AppState app,
+    ImportedModel imported,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Remove ${imported.name}?'),
+        content: Text(
+          imported.reference
+              ? 'This removes the model from Erebrus. The original files will not be deleted.'
+              : 'This deletes Erebrus’s private copy. The original source file is not affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('REMOVE'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (InferenceService.instance.activeModelId == imported.id) {
+      await InferenceService.instance.unload();
+    }
+    await ImportedModelService.instance.remove(imported.id);
+    app.clearSelectedModelIf(imported.id);
   }
 
   Widget _catalogCard(BuildContext context, AppState app, CatalogEntry entry) {
@@ -849,6 +1271,7 @@ class _LocalModelCard extends StatelessWidget {
     this.onUpdate,
     this.onVariants,
     this.onCancel,
+    this.onDelete,
     this.variantCount = 0,
     this.shared = false,
   });
@@ -860,6 +1283,7 @@ class _LocalModelCard extends StatelessWidget {
   final VoidCallback? onUpdate;
   final VoidCallback? onVariants;
   final VoidCallback? onCancel;
+  final VoidCallback? onDelete;
   final int variantCount;
   final bool shared;
 
@@ -941,6 +1365,19 @@ class _LocalModelCard extends StatelessWidget {
                           )
                         : const StatusBadge('CATALOG'),
                 },
+                if (onDelete != null) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'Remove imported model',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Symbols.delete_outline,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
               ],
             ),
             if (model.status == ModelStatus.downloading) ...[
@@ -1096,7 +1533,7 @@ class _NetworkList extends StatelessWidget {
                   (model) => MockModel(
                     model.name,
                     model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
-                    model.id,
+                    model.spec.isEmpty ? model.id : model.spec,
                     id: model.id,
                   ),
                 )

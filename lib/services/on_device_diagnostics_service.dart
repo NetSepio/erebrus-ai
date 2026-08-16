@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'backend_probe_service.dart';
 import 'device_info_service.dart';
+import 'imported_model_service.dart';
 import 'model_package_service.dart';
 import 'transcription_session_repository.dart';
 import 'whisper_model_manager.dart';
@@ -23,6 +24,7 @@ class OnDeviceDiagnosticsService {
     final model = defaultVariantId.isEmpty
         ? null
         : ModelPackageService.instance.byVariantId(defaultVariantId);
+    final imported = ImportedModelService.instance.byId(defaultModelId);
     return {
       'schema_version': 1,
       'generated_at': DateTime.now().toUtc().toIso8601String(),
@@ -46,9 +48,11 @@ class OnDeviceDiagnosticsService {
       'default_model': {
         'model_id': defaultModelId,
         'variant_id': defaultVariantId,
-        'installed': model?.runnable == true,
-        'format': model?.format ?? '',
-        'backends': model?.backends ?? const <String>[],
+        'installed': model?.runnable == true || imported != null,
+        'format': model?.format ?? imported?.format ?? '',
+        'backends':
+            model?.backends ??
+            (imported == null ? const <String>[] : [imported.backend]),
       },
       'transcription': {
         'preferred': 'SpeechAnalyzer when runtime probe succeeds',

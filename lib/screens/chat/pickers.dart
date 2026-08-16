@@ -3,7 +3,9 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/catalog_entry.dart';
 import '../../data/catalog_service.dart';
+import '../../services/imported_model_service.dart';
 import '../../services/model_download_service.dart';
+import '../../services/model_package_service.dart';
 import '../../services/node_discovery_service.dart';
 import '../../services/persona_service.dart';
 import '../../state/app_state.dart';
@@ -21,13 +23,19 @@ void showModelPicker(BuildContext context) {
       .map((id) => byId[id])
       .whereType<CatalogEntry>()
       .toList();
+  final packaged = ModelPackageService.instance.installed
+      .where((model) => model.runnable)
+      .map((model) => (model: model, catalog: byId[model.modelId]))
+      .where((item) => item.catalog != null)
+      .toList();
+  final imported = ImportedModelService.instance.models;
   final nodes = NodeDiscoveryService.instance.nodes;
   _showPicker(
     context,
     title: 'SWITCH MODEL',
     children: [
       _PickerGroupLabel('ON THIS DEVICE'),
-      if (local.isEmpty)
+      if (local.isEmpty && packaged.isEmpty && imported.isEmpty)
         _PickerEmpty('No downloaded models')
       else
         for (final model in local)
@@ -45,6 +53,54 @@ void showModelPicker(BuildContext context) {
               Navigator.of(context).pop();
             },
           ),
+      for (final item in packaged)
+        if (!local.any((model) => model.id == item.model.modelId))
+          _PickerRow(
+            leading: LetterTile(
+              item.catalog!.letter,
+              accent: item.model.modelId == app.selectedModelId,
+            ),
+            title: item.catalog!.name,
+            meta:
+                '${item.model.format.toUpperCase()} · ${item.model.backends.join(' / ')}',
+            trailing: const StatusBadge('LOADED', dot: true),
+            selected: item.model.modelId == app.selectedModelId,
+            onTap: () {
+              app.selectModel(
+                item.catalog!.name,
+                item.model.format.toUpperCase(),
+                id: item.model.modelId,
+                variantId: item.model.variantId,
+              );
+              Navigator.of(context).pop();
+            },
+          ),
+      for (final model in imported)
+        _PickerRow(
+          leading: LetterTile(
+            model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+            accent: model.id == app.selectedModelId,
+          ),
+          title: model.name,
+          meta: [
+            if (model.parameterLabel.isNotEmpty) model.parameterLabel,
+            model.format.toUpperCase(),
+            model.backend,
+          ].join(' · '),
+          trailing: const StatusBadge('IMPORTED', dot: true),
+          selected: model.id == app.selectedModelId,
+          onTap: () {
+            app.selectModel(
+              model.name,
+              model.quantization.isEmpty
+                  ? model.format.toUpperCase()
+                  : model.quantization,
+              id: model.id,
+              variantId: model.variantId,
+            );
+            Navigator.of(context).pop();
+          },
+        ),
       for (final node in nodes) ...[
         _PickerGroupLabel(node.name.toUpperCase()),
         if (node.models.isEmpty)
@@ -57,7 +113,10 @@ void showModelPicker(BuildContext context) {
               model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
             ),
             title: model.name,
-            meta: '${node.host}:${node.port}',
+            meta: [
+              if (model.spec.isNotEmpty) model.spec,
+              '${node.host}:${node.port}',
+            ].join(' · '),
             trailing: const Icon(
               Symbols.wifi,
               size: 15,

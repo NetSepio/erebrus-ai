@@ -1,4 +1,6 @@
 import com.android.build.gradle.LibraryExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 allprojects {
     repositories {
@@ -16,6 +18,16 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
+
+    // file_picker 11 skips its Kotlin plugin on AGP 9 because it assumes
+    // built-in Kotlin. This app temporarily disables built-in Kotlin for older
+    // transitive plugins, so explicitly compile file_picker's Kotlin sources.
+    if (name == "file_picker") {
+        pluginManager.apply("org.jetbrains.kotlin.android")
+        tasks.withType<KotlinCompile>().configureEach {
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
 }
 
 // Reown pulls in coinbase_wallet_sdk, which ships with compileSdk 31 and missing

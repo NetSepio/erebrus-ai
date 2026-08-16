@@ -119,6 +119,14 @@ class StorageService {
     return dir;
   }
 
+  /// App-managed packages for models explicitly imported by the user. This is
+  /// intentionally independent of the configurable catalog-download folder.
+  Future<Directory> importedModelsDir() async {
+    final dir = Directory(p.join((await baseDir()).path, 'imported_models'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
   /// The resolved filesystem path of the current models directory (custom or
   /// default), suitable for display in Settings.
   Future<String> currentModelsDirectoryPath() async {

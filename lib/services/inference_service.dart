@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import '../data/catalog_entry.dart';
 import '../data/installed_model.dart';
+import '../data/imported_model.dart';
 import 'device_info_service.dart';
 import 'inference_contract.dart';
 import 'inference_coordinator.dart';
 import 'inference_memory_policy.dart';
+import 'imported_model_service.dart';
 import 'llama_cpp_backend.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
@@ -71,8 +73,9 @@ class InferenceService extends ChangeNotifier {
     final installed = ModelPackageService.instance.runnableVariantsForModelId(
       modelId,
     );
+    final imported = ImportedModelService.instance.byId(modelId);
     final legacyPath = await ModelDownloadService.instance.modelPath(modelId);
-    if (installed.isEmpty && legacyPath == null) {
+    if (installed.isEmpty && legacyPath == null && imported == null) {
       throw InferenceException(
         'Model "$modelId" is not downloaded. Download it from Models first.',
       );
@@ -130,6 +133,29 @@ class InferenceService extends ChangeNotifier {
                 packagePath: packagePath,
                 contextSize: memoryPlan.contextSize,
                 gpuLayerCount: memoryPlan.gpuLayerCount,
+              ),
+            ),
+          );
+        }
+      }
+      if (imported != null) {
+        final variant = _variantFromImported(imported, profile.platform);
+        final importedBackends = imported.format.toLowerCase() == 'mlx'
+            ? const [BackendKind.mlx]
+            : _desktopGgufBackends(profile.platform);
+        for (final backend in importedBackends) {
+          final backendMemoryPlan = memoryPolicy.plan(
+            device: profile,
+            backend: backend,
+          );
+          plans.add(
+            InferenceExecutionPlan(
+              backend: backend,
+              loadRequest: InferenceLoadRequest(
+                variant: variant,
+                packagePath: imported.path,
+                contextSize: backendMemoryPlan.contextSize,
+                gpuLayerCount: backendMemoryPlan.gpuLayerCount,
               ),
             ),
           );
@@ -317,6 +343,38 @@ class InferenceService extends ChangeNotifier {
       if (_supportsTurboQuantPlatform(platform))
         BackendKind.turboQuant.catalogName,
       BackendKind.llamaCpp.catalogName,
+    ],
+  );
+
+  static ModelVariant _variantFromImported(
+    ImportedModel model,
+    String platform,
+  ) => ModelVariant(
+    id: model.variantId,
+    modelId: model.id,
+    format: model.format,
+    quantization: model.quantization,
+    files: [
+      Artifact(
+        id: '${model.id}-model',
+        role: 'model',
+        format: model.format,
+        quantization: model.quantization,
+        filename: model.path,
+        repositoryId: '',
+        downloadUrl: '',
+        backend: model.backend,
+      ),
+    ],
+    platforms: [platform],
+    compatibleBackends: [
+      if (model.format.toLowerCase() == 'mlx')
+        BackendKind.mlx.catalogName
+      else ...[
+        if (_supportsTurboQuantPlatform(platform))
+          BackendKind.turboQuant.catalogName,
+        BackendKind.llamaCpp.catalogName,
+      ],
     ],
   );
 

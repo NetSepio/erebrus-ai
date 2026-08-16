@@ -266,6 +266,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('STORAGE · 0 MB USED'), findsOneWidget);
       expect(find.text('No Erebrus nodes discovered'), findsOneWidget);
+      await tester.tap(find.text('IMPORT'));
+      await tester.pumpAndSettle();
+      expect(find.text('Import local model'), findsOneWidget);
+      expect(find.text('GGUF model file'), findsOneWidget);
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('SETTINGS'));
       await tester.pump(const Duration(milliseconds: 300));

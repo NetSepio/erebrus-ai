@@ -157,6 +157,10 @@ class NodeDiscoveryService extends ChangeNotifier {
                   (item) => DiscoveredNodeModel(
                     id: (item['id'] ?? '').toString(),
                     name: (item['name'] ?? item['id'] ?? '').toString(),
+                    parameterB: (item['parameter_b'] as num?)?.toDouble() ?? 0,
+                    architecture: (item['architecture'] ?? '').toString(),
+                    format: (item['format'] ?? '').toString(),
+                    quantization: (item['quantization'] ?? '').toString(),
                   ),
                 )
                 .where((model) => model.id.isNotEmpty)
@@ -269,8 +273,29 @@ class DiscoveredNode {
 }
 
 class DiscoveredNodeModel {
-  const DiscoveredNodeModel({required this.id, required this.name});
+  const DiscoveredNodeModel({
+    required this.id,
+    required this.name,
+    this.parameterB = 0,
+    this.architecture = '',
+    this.format = '',
+    this.quantization = '',
+  });
 
   final String id;
   final String name;
+  final double parameterB;
+  final String architecture;
+  final String format;
+  final String quantization;
+
+  String get spec => [
+    if (parameterB > 0)
+      parameterB < 1
+          ? '${(parameterB * 1000).round()}M'
+          : '${parameterB.toStringAsFixed(parameterB % 1 == 0 ? 0 : 1)}B',
+    if (quantization.isNotEmpty) quantization,
+    if (format.isNotEmpty) format.toUpperCase(),
+    if (architecture.isNotEmpty) architecture,
+  ].join(' · ');
 }

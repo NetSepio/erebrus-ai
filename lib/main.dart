@@ -13,6 +13,7 @@ import 'platform/platform_capabilities.dart';
 import 'services/chat_service.dart';
 import 'services/backend_probe_service.dart';
 import 'services/model_download_service.dart';
+import 'services/imported_model_service.dart';
 import 'services/model_package_service.dart';
 import 'services/node_discovery_service.dart';
 import 'services/storage_service.dart';
@@ -35,6 +36,7 @@ Future<void> main() async {
   // bookmark) before scanning for downloaded models.
   await StorageService.instance.loadCustomModelsDirectory();
   await ModelPackageService.instance.loadIndex();
+  await ImportedModelService.instance.load();
   await TranscriptionSessionRepository.instance.load();
 
   final auth = WalletAuthController();

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/entitlement_state.dart';
 import '../services/model_download_service.dart';
+import '../services/imported_model_service.dart';
 import '../services/model_package_service.dart';
 import '../services/storage_service.dart';
 import '../navigation/shell_tab.dart';
@@ -73,7 +74,8 @@ class AppState extends ChangeNotifier {
                   ?.runnable ==
               true) ||
       (selectedModelId.isNotEmpty &&
-          ModelDownloadService.instance.isDownloaded(selectedModelId));
+          (ModelDownloadService.instance.isDownloaded(selectedModelId) ||
+              ImportedModelService.instance.contains(selectedModelId)));
 
   /// Onboarding is not complete until a default local package was selected
   /// after its download/readiness check succeeded.
@@ -254,6 +256,32 @@ class AppState extends ChangeNotifier {
     if (variantId != null) selectedModelVariantId = variantId;
     notifyListeners();
     unawaited(_persistActiveModel());
+  }
+
+  void clearSelectedModelIf(String modelId) {
+    var changed = false;
+    if (selectedModelId == modelId) {
+      selectedModel = 'Select model';
+      selectedModelId = '';
+      selectedModelVariantId = '';
+      selectedModelQuant = 'LOCAL';
+      changed = true;
+    }
+    if (defaultModelId == modelId) {
+      defaultModelId = '';
+      defaultModelVariantId = '';
+      unawaited(_clearPersistedDefaultModel());
+      changed = true;
+    }
+    if (!changed) return;
+    notifyListeners();
+    unawaited(_persistActiveModel());
+  }
+
+  Future<void> _clearPersistedDefaultModel() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove('default_model_id');
+    await preferences.remove('default_model_variant_id');
   }
 
   Future<void> setDefaultModel({
