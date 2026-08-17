@@ -49,13 +49,13 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   coinbase_wallet_sdk: 7ccd4e1a7940deba6ba9bd81beece999a2268c15
   CoinbaseWalletSDK: ea1f37512bbc69ebe07416e3b29bf840f5cc3152
-  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   flutter_foreground_task: 21ef182ab0a29a3005cc72cd70e5f45cb7f7f817
   flutter_local_notifications: df98d66e515e1ca797af436137b4459b160ad8c9
   flutter_tts: 91ad1884033cd95ef6e9338754adad54f01f090f
   sign_in_with_apple: f3bf75217ea4c2c8b91823f225d70230119b8440
   whisper_ggml_plus: bc246e13d703b406453fe5fac6ceda7ae2217092
 
-PODFILE CHECKSUM: 1c0068c66fd464135c348859598a0b0fbe86b382
+PODFILE CHECKSUM: 1a6b10623c897f7d960614c554d490dcf4630189
 
 COCOAPODS: 1.16.2
