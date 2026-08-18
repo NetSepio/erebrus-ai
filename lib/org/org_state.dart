@@ -14,6 +14,7 @@ import 'shared_model.dart';
 class OrgState extends ChangeNotifier {
   OrgState({required this._auth, OrgClient? client})
     : _client = client ?? OrgClient() {
+    _client.onUnauthorized = _auth.handleBearerUnauthorized;
     _auth.addListener(_onAuthChanged);
     _onAuthChanged();
   }

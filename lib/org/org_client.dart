@@ -7,10 +7,11 @@ import 'shared_model.dart';
 
 /// Thin HTTP client for Erebrus AI organization endpoints.
 class OrgClient {
-  OrgClient({String? gatewayUrl})
+  OrgClient({String? gatewayUrl, this.onUnauthorized})
     : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
+  Future<void> Function(String bearerToken)? onUnauthorized;
 
   /// `GET /api/v2/orgs` — requires bearer token.
   Future<List<AiOrg>> fetchOrganizations(String bearerToken) async {
@@ -86,7 +87,17 @@ class OrgClient {
       final res = await req.close();
       final text = await utf8.decodeStream(res);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw OrgException(_errorMessage(res.statusCode, text));
+        final error = _apiError(res.statusCode, text);
+        if (res.statusCode == HttpStatus.unauthorized &&
+            bearerToken != null &&
+            bearerToken.isNotEmpty) {
+          await onUnauthorized?.call(bearerToken);
+        }
+        throw OrgException(
+          error.message,
+          statusCode: res.statusCode,
+          code: error.code,
+        );
       }
       return jsonDecode(text);
     } on SocketException catch (e) {
@@ -115,7 +126,17 @@ class OrgClient {
       final res = await req.close();
       final text = await utf8.decodeStream(res);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw OrgException(_errorMessage(res.statusCode, text));
+        final error = _apiError(res.statusCode, text);
+        if (res.statusCode == HttpStatus.unauthorized &&
+            bearerToken != null &&
+            bearerToken.isNotEmpty) {
+          await onUnauthorized?.call(bearerToken);
+        }
+        throw OrgException(
+          error.message,
+          statusCode: res.statusCode,
+          code: error.code,
+        );
       }
       if (text.isEmpty) return const {};
       return jsonDecode(text);
@@ -126,15 +147,24 @@ class OrgClient {
     }
   }
 
-  static String _errorMessage(int status, String body) {
+  static _ApiError _apiError(int status, String body) {
     try {
       final j = jsonDecode(body);
       if (j is Map) {
-        final msg = j['error'] ?? j['message'] ?? j['detail'];
-        if (msg != null) return msg.toString();
+        final rawError = j['error'];
+        final msg = rawError is Map
+            ? rawError['message'] ?? j['message'] ?? j['detail']
+            : rawError ?? j['message'] ?? j['detail'];
+        final code = rawError is Map
+            ? rawError['code'] ?? j['code'] ?? j['error_code']
+            : j['code'] ?? j['error_code'];
+        if (msg != null) {
+          return _ApiError(msg.toString(), code?.toString());
+        }
+        return _ApiError('Gateway error ($status)', code?.toString());
       }
     } catch (_) {}
-    return 'Gateway error ($status)';
+    return _ApiError('Gateway error ($status)', null);
   }
 
   static String _normalizeBase(String url) {
@@ -146,9 +176,18 @@ class OrgClient {
 }
 
 class OrgException implements Exception {
-  OrgException(this.message);
+  OrgException(this.message, {this.statusCode, this.code});
   final String message;
+  final int? statusCode;
+  final String? code;
+  String? get errorCode => code;
 
   @override
   String toString() => message;
+}
+
+class _ApiError {
+  const _ApiError(this.message, this.code);
+  final String message;
+  final String? code;
 }

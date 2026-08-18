@@ -12,10 +12,11 @@ const kDefaultGatewayUrl = 'https://gateway.erebrus.io';
 
 /// Wallet auth + account data against the Erebrus gateway (v2).
 class GatewayAuthClient {
-  GatewayAuthClient({String? gatewayUrl})
+  GatewayAuthClient({String? gatewayUrl, this.onUnauthorized})
     : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
+  Future<void> Function(String bearerToken)? onUnauthorized;
 
   /// Start wallet login — `GET /api/v2/auth`.
   Future<AuthChallenge> fetchFlowId({
@@ -213,7 +214,17 @@ class GatewayAuthClient {
       final res = await req.close();
       final text = await utf8.decodeStream(res);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw AuthException(_errorMessage(res.statusCode, text));
+        final error = _apiError(res.statusCode, text);
+        if (res.statusCode == HttpStatus.unauthorized &&
+            bearerToken != null &&
+            bearerToken.isNotEmpty) {
+          await onUnauthorized?.call(bearerToken);
+        }
+        throw AuthException(
+          error.message,
+          statusCode: res.statusCode,
+          code: error.code,
+        );
       }
       return jsonDecode(text);
     } on SocketException catch (e) {
@@ -242,7 +253,17 @@ class GatewayAuthClient {
       final res = await req.close();
       final text = await utf8.decodeStream(res);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw AuthException(_errorMessage(res.statusCode, text));
+        final error = _apiError(res.statusCode, text);
+        if (res.statusCode == HttpStatus.unauthorized &&
+            bearerToken != null &&
+            bearerToken.isNotEmpty) {
+          await onUnauthorized?.call(bearerToken);
+        }
+        throw AuthException(
+          error.message,
+          statusCode: res.statusCode,
+          code: error.code,
+        );
       }
       if (text.isEmpty) return const {};
       final decoded = jsonDecode(text);
@@ -255,15 +276,24 @@ class GatewayAuthClient {
     }
   }
 
-  static String _errorMessage(int status, String body) {
+  static _ApiError _apiError(int status, String body) {
     try {
       final j = jsonDecode(body);
       if (j is Map) {
-        final msg = j['error'] ?? j['message'] ?? j['detail'];
-        if (msg != null) return msg.toString();
+        final rawError = j['error'];
+        final msg = rawError is Map
+            ? rawError['message'] ?? j['message'] ?? j['detail']
+            : rawError ?? j['message'] ?? j['detail'];
+        final code = rawError is Map
+            ? rawError['code'] ?? j['code'] ?? j['error_code']
+            : j['code'] ?? j['error_code'];
+        if (msg != null) {
+          return _ApiError(msg.toString(), code?.toString());
+        }
+        return _ApiError('Gateway error ($status)', code?.toString());
       }
     } catch (_) {}
-    return 'Gateway error ($status)';
+    return _ApiError('Gateway error ($status)', null);
   }
 
   static String _normalizeBase(String url) {
@@ -294,11 +324,20 @@ class AuthSession {
 }
 
 class AuthException implements Exception {
-  AuthException(this.message);
+  AuthException(this.message, {this.statusCode, this.code});
   final String message;
+  final int? statusCode;
+  final String? code;
+  String? get errorCode => code;
 
   @override
   String toString() => message;
+}
+
+class _ApiError {
+  const _ApiError(this.message, this.code);
+  final String message;
+  final String? code;
 }
 
 /// Which login methods the gateway has configured.

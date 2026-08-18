@@ -20,11 +20,15 @@ import 'solana_mobile_wallet.dart';
 import 'user_org_invite.dart';
 import 'user_profile.dart';
 
+const kSessionExpiredMessage = 'Your session expired. Please sign in again.';
+
 /// Wallet login via MWA on Solana Mobile, Reown elsewhere, and gateway v2 auth.
 class WalletAuthController extends ChangeNotifier {
   WalletAuthController({GatewayAuthClient? authClient, AuthSessionStore? store})
     : _authClient = authClient ?? GatewayAuthClient(),
-      _store = store ?? AuthSessionStore();
+      _store = store ?? AuthSessionStore() {
+    _authClient.onUnauthorized = handleBearerUnauthorized;
+  }
 
   final GatewayAuthClient _authClient;
   final AuthSessionStore _store;
@@ -57,6 +61,8 @@ class WalletAuthController extends ChangeNotifier {
 
   String? _token;
   String? _mwaAuthToken;
+  Future<void>? _revalidation;
+  int sessionExpiredRevision = 0;
 
   bool isSolanaMobileDevice = false;
 
@@ -99,10 +105,12 @@ class WalletAuthController extends ChangeNotifier {
         userId = stored.userId;
         role = stored.role;
         authMethod = stored.authMethod;
-        await refreshEntitlement();
+        await revalidateSession();
         await refreshProfile();
         await refreshAccountOrgInvites();
-        debugPrint('[Auth] restored session for ${stored.walletAddress}');
+        if (isAuthenticated) {
+          debugPrint('[Auth] restored session for ${stored.walletAddress}');
+        }
       } else {
         entitlement = EntitlementState.none;
       }
@@ -582,6 +590,75 @@ class WalletAuthController extends ChangeNotifier {
     awaitingWebCallback = false;
     DesktopWebAuth.clearPendingState();
     notifyListeners();
+  }
+
+  /// Revalidates the current bearer session without logging out for recoverable
+  /// authorization, network, or server failures. Authenticated 401 responses are
+  /// handled centrally by [handleBearerUnauthorized].
+  Future<void> revalidateSession() async {
+    final active = _revalidation;
+    if (active != null) {
+      await active;
+      return;
+    }
+    final token = _token;
+    if (token == null || token.isEmpty) return;
+
+    final operation = _revalidateToken(token);
+    _revalidation = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_revalidation, operation)) _revalidation = null;
+    }
+  }
+
+  Future<void> _revalidateToken(String token) async {
+    isLoadingEntitlement = true;
+    entitlementError = null;
+    notifyListeners();
+    try {
+      entitlement = await _authClient.fetchSubscription(token);
+    } on AuthException catch (e) {
+      // A bearer-authenticated 401 has already invalidated the session in the
+      // HTTP client. All other failures are recoverable and retain the token.
+      if (e.statusCode != 401) entitlementError = e.message;
+    } catch (e) {
+      entitlementError = e.toString();
+    } finally {
+      isLoadingEntitlement = false;
+      notifyListeners();
+    }
+  }
+
+  /// Invalidates only the session that supplied [rejectedToken]. Clearing the
+  /// in-memory token before awaiting storage makes concurrent 401s idempotent.
+  Future<void> handleBearerUnauthorized(String rejectedToken) async {
+    if (rejectedToken.isEmpty || _token != rejectedToken) return;
+
+    _token = null;
+    _mwaAuthToken = null;
+    walletAddress = '';
+    userId = '';
+    role = '';
+    authMethod = '';
+    entitlement = EntitlementState.none;
+    entitlementError = null;
+    userProfile = null;
+    profileError = null;
+    accountOrgInvites = [];
+    accountOrgInvitesError = null;
+    awaitingWebCallback = false;
+    authError = kSessionExpiredMessage;
+    sessionExpiredRevision++;
+    DesktopWebAuth.clearPendingState();
+    notifyListeners();
+
+    try {
+      await _store.clear();
+    } catch (e) {
+      debugPrint('[Auth] failed to clear expired persisted session: $e');
+    }
   }
 
   Future<void> refreshEntitlement() async {

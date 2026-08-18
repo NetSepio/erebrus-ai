@@ -19,13 +19,46 @@ class ErebrusApp extends StatefulWidget {
   State<ErebrusApp> createState() => _ErebrusAppState();
 }
 
-class _ErebrusAppState extends State<ErebrusApp> {
+class _ErebrusAppState extends State<ErebrusApp> with WidgetsBindingObserver {
   late final AppState _state;
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  late int _sessionExpiredRevision;
 
   @override
   void initState() {
     super.initState();
     _state = AppState(auth: widget.auth, orgState: widget.orgState);
+    _sessionExpiredRevision = 0;
+    widget.auth.addListener(_onAuthChanged);
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.auth.sessionExpiredRevision > 0) _onAuthChanged();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.auth.removeListener(_onAuthChanged);
+    _state.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.auth.revalidateSession();
+    }
+  }
+
+  void _onAuthChanged() {
+    final revision = widget.auth.sessionExpiredRevision;
+    if (revision == _sessionExpiredRevision) return;
+    _sessionExpiredRevision = revision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final messenger = _messengerKey.currentState;
+      messenger
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text(kSessionExpiredMessage)));
+    });
   }
 
   @override
@@ -33,6 +66,7 @@ class _ErebrusAppState extends State<ErebrusApp> {
     return AppScope(
       state: _state,
       child: MaterialApp(
+        scaffoldMessengerKey: _messengerKey,
         title: 'Erebrus AI',
         debugShowCheckedModeBanner: false,
         localizationsDelegates: const [
