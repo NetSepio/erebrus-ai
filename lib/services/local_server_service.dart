@@ -35,6 +35,7 @@ class LocalServerService extends ChangeNotifier {
   HttpServer? _server;
   BonsoirBroadcast? _broadcast;
   String? _apiKey;
+  String? _lanAccessToken;
   String? _baseUrl;
   MdnsNodeIdentity? _identity;
   int _port = 11434;
@@ -78,6 +79,11 @@ class LocalServerService extends ChangeNotifier {
     _port = port;
 
     await apiKey;
+    // This capability is intentionally short-lived. Peers discover it through
+    // the same local-only mDNS advertisement as the server, while manually
+    // paired clients can continue using the persistent API key.
+    _lanAccessToken =
+        'ere_lan_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}';
     _identity = await loadMdnsNodeIdentity();
     try {
       _server = await shelf_io.serve(
@@ -94,6 +100,7 @@ class LocalServerService extends ChangeNotifier {
       debugPrint('[Server] could not start: $e');
       _server = null;
       _baseUrl = null;
+      _lanAccessToken = null;
       rethrow;
     }
   }
@@ -105,14 +112,16 @@ class LocalServerService extends ChangeNotifier {
     await _server?.close();
     _server = null;
     _baseUrl = null;
+    _lanAccessToken = null;
     notifyListeners();
   }
 
   Handler get _handler {
     final key = _apiKey ?? '';
+    final lanAccessToken = _lanAccessToken;
     final pipeline = const Pipeline()
         .addMiddleware(_corsMiddleware)
-        .addMiddleware(_authMiddleware(key))
+        .addMiddleware(_authMiddleware(key, lanAccessToken: lanAccessToken))
         .addHandler(_router);
     return pipeline;
   }
@@ -164,6 +173,17 @@ class LocalServerService extends ChangeNotifier {
     final payload = json.decode(body) as Map<String, dynamic>? ?? {};
     final modelId = payload['model'] as String? ?? '';
     final stream = payload['stream'] as bool? ?? true;
+    final systemPrompt = _lastMessage(payload, role: 'system');
+    final maxOutputTokens = (payload['max_tokens'] as num?)?.toInt() ?? 768;
+    final temperature = (payload['temperature'] as num?)?.toDouble() ?? 0.7;
+    final topP = (payload['top_p'] as num?)?.toDouble() ?? 0.9;
+    final repeatPenalty =
+        (payload['repeat_penalty'] as num?)?.toDouble() ?? 1.1;
+    final stop = switch (payload['stop']) {
+      final String value => [value],
+      final List values => values.map((value) => value.toString()).toList(),
+      _ => const <String>[],
+    };
 
     if (!ModelDownloadService.instance.isDownloaded(modelId) &&
         !ModelPackageService.instance.isModelRunnable(modelId) &&
@@ -183,10 +203,16 @@ class LocalServerService extends ChangeNotifier {
     if (stream) {
       final id = 'chatcmpl-${const Uuid().v4()}';
       final created = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final prompt = _lastUserMessage(payload);
+      final prompt = _lastMessage(payload, role: 'user');
       final events = _streamCompletion(
         modelId: modelId,
         prompt: prompt,
+        systemPrompt: systemPrompt,
+        maxOutputTokens: maxOutputTokens,
+        temperature: temperature,
+        topP: topP,
+        repeatPenalty: repeatPenalty,
+        stop: stop,
         id: id,
         created: created,
       );
@@ -203,7 +229,16 @@ class LocalServerService extends ChangeNotifier {
 
     try {
       final text = await InferenceService.instance
-          .generate(modelId: modelId, prompt: _lastUserMessage(payload))
+          .generate(
+            modelId: modelId,
+            prompt: _lastMessage(payload, role: 'user'),
+            systemPrompt: systemPrompt,
+            maxOutputTokens: maxOutputTokens,
+            temperature: temperature,
+            topP: topP,
+            repeatPenalty: repeatPenalty,
+            stop: stop,
+          )
           .join();
       return _jsonResponse({
         'id': 'chatcmpl-${const Uuid().v4()}',
@@ -233,6 +268,12 @@ class LocalServerService extends ChangeNotifier {
   Stream<String> _streamCompletion({
     required String modelId,
     required String prompt,
+    required String systemPrompt,
+    required int maxOutputTokens,
+    required double temperature,
+    required double topP,
+    required double repeatPenalty,
+    required List<String> stop,
     required String id,
     required int created,
   }) async* {
@@ -240,6 +281,12 @@ class LocalServerService extends ChangeNotifier {
       await for (final token in InferenceService.instance.generate(
         modelId: modelId,
         prompt: prompt,
+        systemPrompt: systemPrompt,
+        maxOutputTokens: maxOutputTokens,
+        temperature: temperature,
+        topP: topP,
+        repeatPenalty: repeatPenalty,
+        stop: stop,
       )) {
         yield _sseData({
           'id': id,
@@ -272,11 +319,14 @@ class LocalServerService extends ChangeNotifier {
     yield 'data: [DONE]\n\n';
   }
 
-  static String _lastUserMessage(Map<String, dynamic> payload) {
+  static String _lastMessage(
+    Map<String, dynamic> payload, {
+    required String role,
+  }) {
     final messages = payload['messages'];
     if (messages is! List) return '';
     for (final raw in messages.reversed) {
-      if (raw is Map && raw['role'] == 'user') {
+      if (raw is Map && raw['role'] == role) {
         return raw['content']?.toString() ?? '';
       }
     }
@@ -293,6 +343,7 @@ class LocalServerService extends ChangeNotifier {
         attributes: {
           kMdnsNodeIdAttribute: identity.id,
           kMdnsProtocolAttribute: kMdnsProtocolVersion,
+          kMdnsAccessTokenAttribute: ?_lanAccessToken,
           'models': '${_servableModelIds.length}',
         },
       );
@@ -341,7 +392,7 @@ class LocalServerService extends ChangeNotifier {
         return response.change(headers: _corsHeaders(request));
       };
 
-  static Middleware _authMiddleware(String apiKey) =>
+  static Middleware _authMiddleware(String apiKey, {String? lanAccessToken}) =>
       (Handler inner) => (Request request) async {
         if (isPublicLocalServerMetadataRequest(
           request.method,
@@ -350,7 +401,10 @@ class LocalServerService extends ChangeNotifier {
           return inner(request);
         }
         final auth = request.headers['authorization'] ?? '';
-        if (!auth.startsWith('Bearer ') || auth.substring(7).trim() != apiKey) {
+        final token = auth.startsWith('Bearer ')
+            ? auth.substring(7).trim()
+            : '';
+        if (token != apiKey && token != lanAccessToken) {
           return Response.unauthorized(
             json.encode({
               'error': {

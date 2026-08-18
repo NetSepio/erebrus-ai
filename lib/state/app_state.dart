@@ -17,6 +17,7 @@ import '../org/ai_org.dart';
 import '../org/org_state.dart';
 import '../org/shared_model.dart';
 import '../services/local_server_service.dart';
+import '../services/node_discovery_service.dart';
 import '../services/power_service.dart';
 import '../services/persona_service.dart';
 import '../data/mock_data.dart';
@@ -31,6 +32,7 @@ class AppState extends ChangeNotifier {
     auth.addListener(_onAuthChanged);
     orgState.addListener(_onOrgChanged);
     LocalServerService.instance.addListener(_onServerChanged);
+    NodeDiscoveryService.instance.addListener(_onDiscoveryChanged);
     _syncFromAuth();
     unawaited(_loadLocalSettings());
   }
@@ -49,6 +51,7 @@ class AppState extends ChangeNotifier {
   String selectedModel = 'Select model';
   String selectedModelId = '';
   String selectedModelVariantId = '';
+  String selectedNetworkNodeId = '';
   String defaultModelId = '';
   String defaultModelVariantId = '';
   String selectedModelQuant = 'LOCAL';
@@ -65,9 +68,15 @@ class AppState extends ChangeNotifier {
       selectedPersonaConfig.copyWith(maxTokens: maxResponseTokens);
   String get selectedPersona => selectedPersonaConfig.name;
 
-  /// True when the currently selected model has been downloaded and is ready
-  /// to chat with locally.
+  bool get isNetworkModelSelected => selectedNetworkNodeId.isNotEmpty;
+
+  NetworkModelTarget? get selectedNetworkModelTarget => NodeDiscoveryService
+      .instance
+      .targetFor(selectedNetworkNodeId, selectedModelId);
+
+  /// True when the selected model is runnable locally or reachable on LAN.
   bool get isSelectedModelReady =>
+      (isNetworkModelSelected && selectedNetworkModelTarget != null) ||
       (selectedModelVariantId.isNotEmpty &&
           ModelPackageService.instance
                   .byVariantId(selectedModelVariantId)
@@ -107,6 +116,8 @@ class AppState extends ChangeNotifier {
     serving = LocalServerService.instance.isRunning;
     notifyListeners();
   }
+
+  void _onDiscoveryChanged() => notifyListeners();
 
   void _syncFromAuth() {
     signedIn = auth.isAuthenticated;
@@ -230,6 +241,8 @@ class AppState extends ChangeNotifier {
           preferences.getString('selected_model_id') ?? selectedModelId;
       selectedModelVariantId =
           preferences.getString('selected_model_variant_id') ?? '';
+      selectedNetworkNodeId =
+          preferences.getString('selected_network_node_id') ?? '';
       selectedModelQuant =
           preferences.getString('selected_model_quant') ?? selectedModelQuant;
       defaultModelId = preferences.getString('default_model_id') ?? '';
@@ -252,8 +265,21 @@ class AppState extends ChangeNotifier {
   void selectModel(String name, String quant, {String? id, String? variantId}) {
     selectedModel = name;
     selectedModelQuant = quant;
-    if (id != null) selectedModelId = id;
-    if (variantId != null) selectedModelVariantId = variantId;
+    selectedNetworkNodeId = '';
+    if (id != null) {
+      selectedModelId = id;
+      selectedModelVariantId = variantId ?? '';
+    }
+    notifyListeners();
+    unawaited(_persistActiveModel());
+  }
+
+  void selectNetworkModel(DiscoveredNode node, DiscoveredNodeModel model) {
+    selectedModel = model.name;
+    selectedModelId = model.id;
+    selectedModelVariantId = '';
+    selectedModelQuant = 'NETWORK';
+    selectedNetworkNodeId = node.id;
     notifyListeners();
     unawaited(_persistActiveModel());
   }
@@ -265,6 +291,7 @@ class AppState extends ChangeNotifier {
       selectedModelId = '';
       selectedModelVariantId = '';
       selectedModelQuant = 'LOCAL';
+      selectedNetworkNodeId = '';
       changed = true;
     }
     if (defaultModelId == modelId) {
@@ -307,6 +334,10 @@ class AppState extends ChangeNotifier {
       selectedModelVariantId,
     );
     await preferences.setString('selected_model_quant', selectedModelQuant);
+    await preferences.setString(
+      'selected_network_node_id',
+      selectedNetworkNodeId,
+    );
   }
 
   void selectPersona(String name, {String? id}) {
@@ -329,6 +360,7 @@ class AppState extends ChangeNotifier {
     auth.removeListener(_onAuthChanged);
     orgState.removeListener(_onOrgChanged);
     LocalServerService.instance.removeListener(_onServerChanged);
+    NodeDiscoveryService.instance.removeListener(_onDiscoveryChanged);
     super.dispose();
   }
 }

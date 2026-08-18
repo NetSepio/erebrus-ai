@@ -88,6 +88,7 @@ void main() {
       expect(node.modelListUri.path, '/v1/models');
       expect(node.modelListUri.host, 'fe80::1234');
       expect(node.modelListUri.toString(), contains('[fe80::1234]'));
+      expect(node.chatCompletionsUri.path, '/v1/chat/completions');
     });
 
     test('renders structured model capabilities received from a peer', () {
@@ -101,6 +102,24 @@ void main() {
       );
 
       expect(model.spec, '4B · 4bit · MLX · gemma');
+    });
+
+    test('network target keeps node identity separate from model identity', () {
+      const node = DiscoveredNode(
+        id: 'mac-node',
+        name: 'Studio Mac',
+        host: '192.168.1.24',
+        port: 11434,
+        accessToken: 'session-token',
+        models: [DiscoveredNodeModel(id: 'bonsai-4b', name: 'Bonsai 4B')],
+      );
+
+      final target = node.targetFor(node.models.first);
+      expect(target.nodeId, 'mac-node');
+      expect(target.modelId, 'bonsai-4b');
+      expect(target.selectionKey, 'mac-node::bonsai-4b');
+      expect(target.chatCompletionsUri.path, '/v1/chat/completions');
+      expect(target.accessToken, 'session-token');
     });
   });
 }

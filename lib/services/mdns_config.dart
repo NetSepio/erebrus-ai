@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 const kErebrusAiMdnsType = '_erebrusai._tcp';
 const kMdnsNodeIdAttribute = 'node_id';
 const kMdnsProtocolAttribute = 'protocol';
+const kMdnsAccessTokenAttribute = 'access_token';
 const kMdnsProtocolVersion = '1';
 
 const _nodeIdPreference = 'erebrus_lan_node_id';

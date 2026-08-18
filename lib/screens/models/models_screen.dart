@@ -29,10 +29,16 @@ import '../../widgets/ere_controls.dart';
 import '../auth/sign_in.dart';
 
 class ModelsScreen extends StatefulWidget {
-  const ModelsScreen({super.key, required this.wide, this.initialSubTab = 0});
+  const ModelsScreen({
+    super.key,
+    required this.wide,
+    this.initialSubTab = 0,
+    this.onOpenChat,
+  });
 
   final bool wide;
   final int initialSubTab;
+  final VoidCallback? onOpenChat;
 
   @override
   State<ModelsScreen> createState() => _ModelsScreenState();
@@ -107,7 +113,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
       index: _tab,
       children: [
         _LocalList(wide: true, query: _query),
-        _NetworkList(wide: true, query: _query),
+        _NetworkList(wide: true, query: _query, onOpenChat: widget.onOpenChat),
       ],
     ),
   );
@@ -293,7 +299,11 @@ class _ModelsScreenState extends State<ModelsScreen> {
               index: _tab,
               children: [
                 _LocalList(wide: false, query: _query),
-                _NetworkList(wide: false, query: _query),
+                _NetworkList(
+                  wide: false,
+                  query: _query,
+                  onOpenChat: widget.onOpenChat,
+                ),
               ],
             ),
           ),
@@ -747,7 +757,9 @@ class _LocalListState extends State<_LocalList> {
   }
 
   bool _isSelected(AppState app, MockModel m) {
-    if (m.id != null && m.id!.isNotEmpty) return app.selectedModelId == m.id;
+    if (m.id != null && m.id!.isNotEmpty) {
+      return !app.isNetworkModelSelected && app.selectedModelId == m.id;
+    }
     return app.selectedModel == m.name;
   }
 
@@ -1516,32 +1528,15 @@ class _NetworkStripCard extends StatelessWidget {
 // ─── NETWORK tab ─────────────────────────────────────────────────────────────
 
 class _NetworkList extends StatelessWidget {
-  const _NetworkList({required this.wide, required this.query});
+  const _NetworkList({
+    required this.wide,
+    required this.query,
+    this.onOpenChat,
+  });
 
   final bool wide;
   final String query;
-
-  List<MockNode> get _nodes {
-    return NodeDiscoveryService.instance.nodes
-        .map(
-          (node) => MockNode(
-            node.name,
-            '${node.host}:${node.port} · MDNS · ${node.error ?? (node.isLoadingModels ? 'LOADING MODELS' : 'ONLINE')}',
-            Symbols.device_hub,
-            node.models
-                .map(
-                  (model) => MockModel(
-                    model.name,
-                    model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
-                    model.spec.isEmpty ? model.id : model.spec,
-                    id: model.id,
-                  ),
-                )
-                .toList(),
-          ),
-        )
-        .toList();
-  }
+  final VoidCallback? onOpenChat;
 
   @override
   Widget build(BuildContext context) {
@@ -1550,7 +1545,7 @@ class _NetworkList extends StatelessWidget {
       builder: (context, _) {
         final app = AppScope.of(context);
         final q = query.toLowerCase();
-        final nodes = _nodes;
+        final nodes = NodeDiscoveryService.instance.nodes;
 
         final filteredNodes = nodes.where((n) {
           if (q.isEmpty) return true;
@@ -1577,7 +1572,7 @@ class _NetworkList extends StatelessWidget {
             const SizedBox(height: 14),
           ],
           for (final node in filteredNodes) ...[
-            _NodeCard(node: node),
+            _NodeCard(node: node, onOpenChat: onOpenChat),
             const SizedBox(height: 14),
           ],
           if (app.signedIn) ...[
@@ -1666,9 +1661,10 @@ class _DiscoveryErrorCard extends StatelessWidget {
 }
 
 class _NodeCard extends StatelessWidget {
-  const _NodeCard({required this.node});
+  const _NodeCard({required this.node, this.onOpenChat});
 
-  final MockNode node;
+  final DiscoveredNode node;
+  final VoidCallback? onOpenChat;
 
   @override
   Widget build(BuildContext context) {
@@ -1696,7 +1692,7 @@ class _NodeCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    node.icon,
+                    Symbols.device_hub,
                     size: 19,
                     color: AppColors.textSecondary,
                   ),
@@ -1723,7 +1719,7 @@ class _NodeCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        node.meta,
+                        '${node.host}:${node.port} · MDNS · ${node.error ?? (node.isLoadingModels ? 'LOADING MODELS' : 'ONLINE')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.mono(10.5, color: AppColors.textMuted),
@@ -1742,7 +1738,11 @@ class _NodeCard extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: 16),
                 child: Divider(height: 1, color: AppColors.strokeSoft),
               ),
-            _NodeModelRow(model: node.models[i]),
+            _NodeModelRow(
+              node: node,
+              model: node.models[i],
+              onOpenChat: onOpenChat,
+            ),
           ],
         ],
       ),
@@ -1909,9 +1909,15 @@ class _OrgModelRow extends StatelessWidget {
 }
 
 class _NodeModelRow extends StatelessWidget {
-  const _NodeModelRow({required this.model});
+  const _NodeModelRow({
+    required this.node,
+    required this.model,
+    this.onOpenChat,
+  });
 
-  final MockModel model;
+  final DiscoveredNode node;
+  final DiscoveredNodeModel model;
+  final VoidCallback? onOpenChat;
 
   @override
   Widget build(BuildContext context) {
@@ -1920,7 +1926,12 @@ class _NodeModelRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       child: Row(
         children: [
-          LetterTile(model.letter),
+          LetterTile(
+            model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+            accent:
+                app.selectedNetworkNodeId == node.id &&
+                app.selectedModelId == model.id,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text.rich(
@@ -1929,7 +1940,7 @@ class _NodeModelRow extends StatelessWidget {
                 style: AppText.grotesk(13.5, weight: FontWeight.w600),
                 children: [
                   TextSpan(
-                    text: '  · ${model.spec}',
+                    text: '  · ${model.spec.isEmpty ? model.id : model.spec}',
                     style: AppText.mono(11, color: AppColors.textMuted),
                   ),
                 ],
@@ -1940,9 +1951,22 @@ class _NodeModelRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           AccentChip(
-            'USE',
-            onTap: () =>
-                app.selectModel(model.name, model.spec.split(' · ').first),
+            app.selectedNetworkNodeId == node.id &&
+                    app.selectedModelId == model.id
+                ? 'USING'
+                : 'USE',
+            onTap: () {
+              app.selectNetworkModel(node, model);
+              if (onOpenChat != null) {
+                onOpenChat!();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Using ${model.name} from ${node.name}'),
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),

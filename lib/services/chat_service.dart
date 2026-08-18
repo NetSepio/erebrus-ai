@@ -9,8 +9,11 @@ import 'package:uuid/uuid.dart';
 import '../data/catalog_service.dart';
 import '../data/mock_data.dart';
 import 'inference_service.dart';
+import 'imported_model_service.dart';
 import 'model_download_service.dart';
 import 'model_package_service.dart';
+import 'network_inference_service.dart';
+import 'node_discovery_service.dart';
 import 'storage_service.dart';
 
 /// A real chat session and message store.
@@ -91,6 +94,7 @@ class ChatService extends ChangeNotifier {
       id: const Uuid().v4(),
       title: 'New chat',
       modelId: '',
+      networkNodeId: '',
       updatedAt: DateTime.now(),
     );
     _sessions.insert(0, session);
@@ -127,6 +131,10 @@ class ChatService extends ChangeNotifier {
     if (_activeSessionId == id && InferenceService.instance.isGenerating) {
       await InferenceService.instance.cancel();
     }
+    if (_activeSessionId == id &&
+        NetworkInferenceService.instance.isGenerating) {
+      await NetworkInferenceService.instance.cancel();
+    }
     _sessions.removeAt(index);
     _messages.remove(id);
     if (_activeSessionId == id) {
@@ -143,6 +151,7 @@ class ChatService extends ChangeNotifier {
   Future<void> send(
     String text, {
     String? modelId,
+    String? networkNodeId,
     MockPersona? persona,
   }) async {
     if (text.trim().isEmpty) return;
@@ -154,12 +163,18 @@ class ChatService extends ChangeNotifier {
         : session.modelId.isNotEmpty
         ? session.modelId
         : '';
+    final resolvedNetworkNodeId = networkNodeId ?? session.networkNodeId;
 
     // Remember the model used for this session.
-    if (resolvedModel.isNotEmpty && session.modelId != resolvedModel) {
+    if (resolvedModel.isNotEmpty &&
+        (session.modelId != resolvedModel ||
+            session.networkNodeId != resolvedNetworkNodeId)) {
       final idx = _sessions.indexWhere((s) => s.id == sid);
       if (idx >= 0) {
-        _sessions[idx] = session.copyWith(modelId: resolvedModel);
+        _sessions[idx] = session.copyWith(
+          modelId: resolvedModel,
+          networkNodeId: resolvedNetworkNodeId,
+        );
       }
     }
 
@@ -179,6 +194,7 @@ class ChatService extends ChangeNotifier {
       assistant: assistant,
       prompt: text,
       modelId: resolvedModel,
+      networkNodeId: resolvedNetworkNodeId,
       persona: persona,
     );
   }
@@ -188,28 +204,43 @@ class ChatService extends ChangeNotifier {
     required ChatMessage assistant,
     required String prompt,
     required String modelId,
+    required String networkNodeId,
     MockPersona? persona,
   }) async {
     final raw = StringBuffer();
     try {
-      final stream = await _infer(modelId, prompt, persona);
+      final stream = await _infer(
+        modelId,
+        prompt,
+        persona,
+        networkNodeId: networkNodeId,
+      );
       await for (final chunk in stream) {
         raw.write(chunk);
         assistant.text = sanitizeAssistantText(raw.toString());
-        assistant.tokensPerSecond =
-            InferenceService.instance.currentTokensPerSecond;
+        if (networkNodeId.isEmpty) {
+          assistant.tokensPerSecond =
+              InferenceService.instance.currentTokensPerSecond;
+        }
         notifyListeners();
       }
       assistant.text = sanitizeAssistantText(raw.toString());
-      assistant.tokensPerSecond =
-          InferenceService.instance.lastTokensPerSecond ??
-          assistant.tokensPerSecond;
-      assistant.truncated = InferenceService.instance.lastOutputWasTruncated;
+      if (networkNodeId.isEmpty) {
+        assistant.tokensPerSecond =
+            InferenceService.instance.lastTokensPerSecond ??
+            assistant.tokensPerSecond;
+        assistant.truncated = InferenceService.instance.lastOutputWasTruncated;
+      }
     } catch (e) {
-      assistant.text = 'Local inference failed: $e';
+      assistant.text = networkNodeId.isEmpty
+          ? 'Local inference failed: $e'
+          : 'Network inference failed: $e';
     }
     assistant.streaming = false;
-    assistant.meta = 'LOCAL';
+    final node = NodeDiscoveryService.instance.nodeById(networkNodeId);
+    assistant.meta = networkNodeId.isEmpty
+        ? 'LOCAL'
+        : 'NETWORK · ${node?.name ?? 'LAN NODE'}';
     notifyListeners();
     await _persist(sid);
   }
@@ -220,7 +251,10 @@ class ChatService extends ChangeNotifier {
     String assistantMessageId, {
     MockPersona? persona,
   }) async {
-    if (InferenceService.instance.isGenerating) return;
+    if (InferenceService.instance.isGenerating ||
+        NetworkInferenceService.instance.isGenerating) {
+      return;
+    }
     final sid = _activeSessionId;
     final session = activeSession;
     final messages = sid == null ? null : _messages[sid];
@@ -244,6 +278,7 @@ class ChatService extends ChangeNotifier {
       assistant: replacement,
       prompt: messages[userIndex].text,
       modelId: session.modelId,
+      networkNodeId: session.networkNodeId,
       persona: persona,
     );
   }
@@ -251,15 +286,43 @@ class ChatService extends ChangeNotifier {
   Future<Stream<String>> _infer(
     String modelId,
     String prompt,
-    MockPersona? persona,
-  ) async {
+    MockPersona? persona, {
+    required String networkNodeId,
+  }) async {
     if (kIsWeb || _inTest) {
       return Stream.fromIterable(['Test mode: no inference.']);
     }
 
+    if (networkNodeId.isNotEmpty) {
+      final target = NodeDiscoveryService.instance.targetFor(
+        networkNodeId,
+        modelId,
+      );
+      if (target == null) {
+        throw const NetworkInferenceException(
+          'The selected node is no longer available. Make sure both devices are on the same Wi-Fi, keep LAN sharing enabled, and rescan Models.',
+        );
+      }
+      return NetworkInferenceService.instance.generate(
+        target: target,
+        prompt: prompt,
+        systemPrompt: persona?.systemPrompt ?? '',
+        maxOutputTokens: persona?.maxTokens ?? 768,
+        temperature: persona?.temperature ?? 0.7,
+        topP: persona?.topP ?? 0.9,
+        repeatPenalty: persona?.repeatPenalty ?? 1.1,
+        stop: (persona?.stopSequences ?? '')
+            .split(RegExp(r'[\n,]'))
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(),
+      );
+    }
+
     if (modelId.isEmpty ||
         (!ModelDownloadService.instance.isDownloaded(modelId) &&
-            !ModelPackageService.instance.isModelRunnable(modelId))) {
+            !ModelPackageService.instance.isModelRunnable(modelId) &&
+            !ImportedModelService.instance.contains(modelId))) {
       final catalog = CatalogService.entries;
       final byId = {for (final e in catalog) e.id: e};
       final name = byId[modelId]?.name ?? modelId;
@@ -321,18 +384,21 @@ class ChatSession {
     required this.id,
     required this.title,
     required this.modelId,
+    this.networkNodeId = '',
     required this.updatedAt,
   });
 
   final String id;
   final String title;
   final String modelId;
+  final String networkNodeId;
   final DateTime updatedAt;
 
   factory ChatSession.fromJson(Map<String, dynamic> json) => ChatSession(
     id: json['id'] as String,
     title: json['title'] as String,
     modelId: json['model_id'] as String? ?? '',
+    networkNodeId: json['network_node_id'] as String? ?? '',
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
 
@@ -340,16 +406,22 @@ class ChatSession {
     'id': id,
     'title': title,
     'model_id': modelId,
+    if (networkNodeId.isNotEmpty) 'network_node_id': networkNodeId,
     'updated_at': updatedAt.toIso8601String(),
   };
 
-  ChatSession copyWith({String? title, String? modelId, DateTime? updatedAt}) =>
-      ChatSession(
-        id: id,
-        title: title ?? this.title,
-        modelId: modelId ?? this.modelId,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  ChatSession copyWith({
+    String? title,
+    String? modelId,
+    String? networkNodeId,
+    DateTime? updatedAt,
+  }) => ChatSession(
+    id: id,
+    title: title ?? this.title,
+    modelId: modelId ?? this.modelId,
+    networkNodeId: networkNodeId ?? this.networkNodeId,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 }
 
 class ChatMessage {

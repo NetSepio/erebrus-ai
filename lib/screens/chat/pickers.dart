@@ -42,12 +42,15 @@ void showModelPicker(BuildContext context) {
           _PickerRow(
             leading: LetterTile(
               model.letter,
-              accent: model.id == app.selectedModelId,
+              accent:
+                  !app.isNetworkModelSelected &&
+                  model.id == app.selectedModelId,
             ),
             title: model.name,
             meta: model.spec,
             trailing: const StatusBadge('LOADED', dot: true),
-            selected: model.id == app.selectedModelId,
+            selected:
+                !app.isNetworkModelSelected && model.id == app.selectedModelId,
             onTap: () {
               app.selectModel(model.name, model.quant, id: model.id);
               Navigator.of(context).pop();
@@ -58,13 +61,17 @@ void showModelPicker(BuildContext context) {
           _PickerRow(
             leading: LetterTile(
               item.catalog!.letter,
-              accent: item.model.modelId == app.selectedModelId,
+              accent:
+                  !app.isNetworkModelSelected &&
+                  item.model.modelId == app.selectedModelId,
             ),
             title: item.catalog!.name,
             meta:
                 '${item.model.format.toUpperCase()} · ${item.model.backends.join(' / ')}',
             trailing: const StatusBadge('LOADED', dot: true),
-            selected: item.model.modelId == app.selectedModelId,
+            selected:
+                !app.isNetworkModelSelected &&
+                item.model.modelId == app.selectedModelId,
             onTap: () {
               app.selectModel(
                 item.catalog!.name,
@@ -79,7 +86,8 @@ void showModelPicker(BuildContext context) {
         _PickerRow(
           leading: LetterTile(
             model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
-            accent: model.id == app.selectedModelId,
+            accent:
+                !app.isNetworkModelSelected && model.id == app.selectedModelId,
           ),
           title: model.name,
           meta: [
@@ -88,7 +96,8 @@ void showModelPicker(BuildContext context) {
             model.backend,
           ].join(' · '),
           trailing: const StatusBadge('IMPORTED', dot: true),
-          selected: model.id == app.selectedModelId,
+          selected:
+              !app.isNetworkModelSelected && model.id == app.selectedModelId,
           onTap: () {
             app.selectModel(
               model.name,
@@ -111,6 +120,9 @@ void showModelPicker(BuildContext context) {
           _PickerRow(
             leading: LetterTile(
               model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+              accent:
+                  app.selectedNetworkNodeId == node.id &&
+                  app.selectedModelId == model.id,
             ),
             title: model.name,
             meta: [
@@ -122,9 +134,11 @@ void showModelPicker(BuildContext context) {
               size: 15,
               color: AppColors.success,
             ),
-            selected: model.id == app.selectedModelId,
+            selected:
+                app.selectedNetworkNodeId == node.id &&
+                app.selectedModelId == model.id,
             onTap: () {
-              app.selectModel(model.name, 'REMOTE', id: model.id);
+              app.selectNetworkModel(node, model);
               Navigator.of(context).pop();
             },
           ),

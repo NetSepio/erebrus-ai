@@ -26,6 +26,18 @@ class NodeDiscoveryService extends ChangeNotifier {
   bool get isRunning => _running;
   String? get lastError => _lastError;
 
+  DiscoveredNode? nodeById(String nodeId) =>
+      _nodes.where((node) => node.id == nodeId).firstOrNull;
+
+  NetworkModelTarget? targetFor(String nodeId, String modelId) {
+    final node = nodeById(nodeId);
+    if (node == null) return null;
+    final model = node.models
+        .where((candidate) => candidate.id == modelId)
+        .firstOrNull;
+    return model == null ? null : node.targetFor(model);
+  }
+
   bool get _inTest => Platform.environment.containsKey('FLUTTER_TEST');
 
   /// Starts continuous mDNS discovery.
@@ -127,6 +139,7 @@ class NodeDiscoveryService extends ChangeNotifier {
       name: service.name,
       host: host,
       port: service.port,
+      accessToken: service.attributes[kMdnsAccessTokenAttribute]?.trim() ?? '',
       isLoadingModels: true,
     );
     _nodes.removeWhere((candidate) => candidate.id == node.id);
@@ -232,6 +245,7 @@ class DiscoveredNode {
     required this.name,
     required this.host,
     required this.port,
+    this.accessToken = '',
     this.models = const [],
     this.isLoadingModels = false,
     this.error,
@@ -241,6 +255,7 @@ class DiscoveredNode {
   final String name;
   final String host;
   final int port;
+  final String accessToken;
   final List<DiscoveredNodeModel> models;
   final bool isLoadingModels;
   final String? error;
@@ -254,6 +269,23 @@ class DiscoveredNode {
     pathSegments: const ['v1', 'models'],
   );
 
+  Uri get chatCompletionsUri => Uri(
+    scheme: 'http',
+    host: host,
+    port: port,
+    pathSegments: const ['v1', 'chat', 'completions'],
+  );
+
+  NetworkModelTarget targetFor(DiscoveredNodeModel model) => NetworkModelTarget(
+    nodeId: id,
+    nodeName: name,
+    host: host,
+    port: port,
+    accessToken: accessToken,
+    modelId: model.id,
+    modelName: model.name,
+  );
+
   DiscoveredNode copyWith({
     List<DiscoveredNodeModel>? models,
     bool? isLoadingModels,
@@ -263,6 +295,7 @@ class DiscoveredNode {
     name: name,
     host: host,
     port: port,
+    accessToken: accessToken,
     models: models ?? this.models,
     isLoadingModels: isLoadingModels ?? this.isLoadingModels,
     error: error,
@@ -270,6 +303,36 @@ class DiscoveredNode {
 
   @override
   String toString() => '$name @ $host:$port';
+}
+
+/// Everything needed to address one model on a discovered Erebrus peer.
+class NetworkModelTarget {
+  const NetworkModelTarget({
+    required this.nodeId,
+    required this.nodeName,
+    required this.host,
+    required this.port,
+    required this.accessToken,
+    required this.modelId,
+    required this.modelName,
+  });
+
+  final String nodeId;
+  final String nodeName;
+  final String host;
+  final int port;
+  final String accessToken;
+  final String modelId;
+  final String modelName;
+
+  String get selectionKey => '$nodeId::$modelId';
+
+  Uri get chatCompletionsUri => Uri(
+    scheme: 'http',
+    host: host,
+    port: port,
+    pathSegments: const ['v1', 'chat', 'completions'],
+  );
 }
 
 class DiscoveredNodeModel {

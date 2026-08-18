@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../services/chat_service.dart';
 import '../../services/inference_service.dart';
+import '../../services/network_inference_service.dart';
 import '../../services/speech_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
@@ -351,25 +352,28 @@ class _DesktopHeader extends StatelessWidget {
           ),
           const Spacer(),
           AnimatedBuilder(
-            animation: InferenceService.instance,
+            animation: Listenable.merge([
+              InferenceService.instance,
+              NetworkInferenceService.instance,
+            ]),
             builder: (context, _) {
               final inference = InferenceService.instance;
+              final network = NetworkInferenceService.instance;
+              final generating = inference.isGenerating || network.isGenerating;
               final rate = inference.isGenerating
                   ? inference.currentTokensPerSecond
                   : inference.lastTokensPerSecond;
               return Row(
                 children: [
                   const SizedBox(width: 10),
-                  GlowDot(glow: inference.isGenerating),
+                  GlowDot(glow: generating),
                   const SizedBox(width: 7),
                   Text(
-                    inference.isGenerating ? 'GENERATING' : 'READY',
+                    generating ? 'GENERATING' : 'READY',
                     style: AppText.mono(
                       11,
                       weight: FontWeight.w500,
-                      color: inference.isGenerating
-                          ? AppColors.accent
-                          : AppColors.success,
+                      color: generating ? AppColors.accent : AppColors.success,
                       lsEm: 0.06,
                     ),
                   ),
@@ -955,6 +959,7 @@ class _ComposerState extends State<_Composer> {
     await ChatService.instance.send(
       text,
       modelId: app.selectedModelId,
+      networkNodeId: app.selectedNetworkNodeId,
       persona: app.effectivePersonaConfig,
     );
     if (mounted) setState(() => _busy = false);
@@ -1041,24 +1046,35 @@ class _ComposerState extends State<_Composer> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Symbols.lock,
-                            size: 13,
-                            color: AppColors.success,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'LOCAL · NOTHING LEAVES THIS DEVICE',
-                            style: AppText.mono(
-                              10,
-                              color: AppColors.textMuted,
-                              lsEm: 0.08,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(
+                              app.isNetworkModelSelected
+                                  ? Symbols.wifi
+                                  : Symbols.lock,
+                              size: 13,
+                              color: AppColors.success,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                app.isNetworkModelSelected
+                                    ? 'LOCAL NETWORK · SENT TO ${app.selectedNetworkModelTarget?.nodeName.toUpperCase() ?? 'SELECTED NODE'}'
+                                    : 'LOCAL · NOTHING LEAVES THIS DEVICE',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.mono(
+                                  10,
+                                  color: AppColors.textMuted,
+                                  lsEm: 0.08,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 12),
                       Text(
                         'CONTEXT 3.2K / 8K',
                         style: AppText.mono(10, color: AppColors.textMuted),
@@ -1070,15 +1086,17 @@ class _ComposerState extends State<_Composer> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Symbols.lock,
+                    Icon(
+                      app.isNetworkModelSelected ? Symbols.wifi : Symbols.lock,
                       size: 12,
                       color: AppColors.success,
                     ),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'ON-DEVICE · NOTHING LEAVES YOUR PHONE',
+                        app.isNetworkModelSelected
+                            ? 'LOCAL NETWORK · ${app.selectedNetworkModelTarget?.nodeName.toUpperCase() ?? 'SELECTED NODE'}'
+                            : 'ON-DEVICE · NOTHING LEAVES YOUR PHONE',
                         textAlign: TextAlign.center,
                         style: AppText.mono(
                           9.5,

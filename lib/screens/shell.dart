@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../state/app_state.dart';
 import '../navigation/shell_tab.dart';
 import '../services/inference_service.dart';
+import '../services/network_inference_service.dart';
 import '../services/transcription_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
@@ -149,6 +150,9 @@ class _ShellState extends State<Shell> {
   Future<void> _releaseChatModel() async {
     final inference = InferenceService.instance;
     try {
+      if (NetworkInferenceService.instance.isGenerating) {
+        await NetworkInferenceService.instance.cancel();
+      }
       if (inference.isGenerating) await inference.cancel();
       await inference.unload();
       debugPrint('[Inference] chat model unloaded after leaving Chat');
@@ -169,6 +173,7 @@ class _ShellState extends State<Shell> {
       ModelsScreen(
         wide: wide,
         initialSubTab: widget.initialTab == ShellTab.models ? 1 : 0,
+        onOpenChat: () => unawaited(_setTab(ShellTab.chat)),
       ),
       SettingsScreen(wide: wide),
     ],
