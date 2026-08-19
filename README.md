@@ -14,6 +14,8 @@ AI node.
 - **Mobile companion** — iOS and Android discover nodes and run small models
   while open.
 - **Team workspaces** — join an organization to access shared models.
+- **Catalog-driven model browser** — inspect compatible GGUF and MLX packages,
+  capabilities, provenance, licenses, and local storage from one screen.
 
 ---
 
@@ -52,6 +54,7 @@ flows — see [docs/AUTH.md](docs/AUTH.md).
 | Architecture & state flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Auth, orgs, and environment | [docs/AUTH.md](docs/AUTH.md) |
 | Platform status & open work | [docs/STATUS.md](docs/STATUS.md) |
+| Release history | [CHANGELOG.md](CHANGELOG.md) |
 
 ---
 

@@ -16,6 +16,16 @@ void main() {
         entries.single.variants.last.provenance.isCommunityConversion,
         isTrue,
       );
+      expect(entries.single.publisher, 'Qwen');
+      expect(entries.single.architecture, 'qwen3');
+      expect(entries.single.capabilities, ['chat', 'tool_calling']);
+      expect(entries.single.bestFor, ['Private coding']);
+      expect(entries.single.supportsTools, isTrue);
+      expect(entries.single.supportsGpuOffload, isTrue);
+      expect(entries.single.licenseId, 'apache-2.0');
+      expect(entries.single.runtimeVerification, 'verified_llama_cpp');
+      expect(entries.single.matchesQuery('Qwen'), isTrue);
+      expect(entries.single.matchesQuery('tool calling'), isTrue);
     });
 
     test('rejects unsupported schema versions', () {
@@ -63,11 +73,41 @@ Map<String, Object?> _catalog() => {
       'id': 'qwen-small',
       'name': 'Qwen Small',
       'family': 'Qwen',
-      'model': {'parameter_count': 800000000},
+      'publisher': 'Qwen',
+      'description': 'A small private coding model.',
+      'model': {
+        'parameter_count': 800000000,
+        'parameter_label': '0.8B',
+        'architecture': 'qwen3',
+        'context_length': 32768,
+        'recommended_context_length': 8192,
+      },
+      'modalities': {
+        'runtime_input': ['text'],
+        'upstream_input': ['text'],
+        'output': ['text'],
+      },
+      'capabilities': ['chat', 'tool_calling'],
+      'best_for': ['Private coding'],
+      'limitations': ['Small parameter count'],
+      'languages': ['multilingual'],
+      'supports_tools': true,
+      'supports_json': true,
       'device_support': {
         'platforms': ['ios-arm64', 'macos-arm64'],
         'minimum_ram_gb': 1,
         'recommended_ram_gb': 2,
+      },
+      'runtime': {'supports_gpu_offload': true, 'requires_mmproj': false},
+      'license': {
+        'id': 'apache-2.0',
+        'name': 'Apache License 2.0',
+        'commercial_use': true,
+      },
+      'status': {
+        'catalog_state': 'active',
+        'erebrus_runtime_verification': 'verified_llama_cpp',
+        'verified_at': '2026-08-16T12:19:26Z',
       },
       'variants': [
         _variant(

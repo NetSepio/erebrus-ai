@@ -145,6 +145,24 @@ void main() {
       expect(find.text('Assistant voice'), findsOneWidget);
     });
 
+    testWidgets('models use desktop catalog details and show storage path', (
+      tester,
+    ) async {
+      await pumpApp(tester, const Size(1280, 800));
+
+      await tester.tap(find.text('MODELS'));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('MODEL CATALOG'), findsOneWidget);
+      expect(find.text('Download options'), findsOneWidget);
+      expect(find.text('About this model'), findsOneWidget);
+      expect(find.text('MODELS FOLDER'), findsOneWidget);
+      expect(find.textContaining('ErebrusAI/models'), findsOneWidget);
+      expect(find.text('DOWNLOADS'), findsNothing);
+      expect(find.text('STARS'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('sign-in page swaps guest → signed-in content', (tester) async {
       await pumpApp(tester, const Size(1280, 800));
 

@@ -245,7 +245,30 @@ class CatalogEntry {
     this.tags = const [],
     this.slug = '',
     this.variant = '',
+    this.publisher = '',
     this.description = '',
+    this.architecture = '',
+    this.parameterLabel = '',
+    this.contextLength = 0,
+    this.recommendedContextLength = 0,
+    this.runtimeInput = const [],
+    this.upstreamInput = const [],
+    this.outputModalities = const [],
+    this.capabilities = const [],
+    this.bestFor = const [],
+    this.limitations = const [],
+    this.languages = const [],
+    this.supportsTools = false,
+    this.supportsJson = false,
+    this.supportsVision = false,
+    this.supportsGpuOffload = false,
+    this.requiresMmproj = false,
+    this.licenseId = '',
+    this.licenseName = '',
+    this.licenseUrl = '',
+    this.commercialUse = false,
+    this.runtimeVerification = '',
+    this.verifiedAt,
     this.collections = const [],
     this.badges = const [],
     this.minRamGB = 0,
@@ -273,6 +296,8 @@ class CatalogEntry {
     final displayMap = json['display'] as Map<String, dynamic>?;
     final statusMap = json['status'] as Map<String, dynamic>?;
     final runtimeMap = json['runtime'] as Map<String, dynamic>?;
+    final modalitiesMap = json['modalities'] as Map<String, dynamic>?;
+    final licenseMap = json['license'] as Map<String, dynamic>?;
     final modelId = (json['id'] as String?) ?? '';
 
     final parameterCount =
@@ -420,7 +445,34 @@ class CatalogEntry {
       family: (json['family'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
       variant: (json['variant'] as String?) ?? '',
+      publisher: (json['publisher'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
+      architecture: (modelMap?['architecture'] as String?) ?? '',
+      parameterLabel: parameterLabel,
+      contextLength: (modelMap?['context_length'] as int?) ?? 0,
+      recommendedContextLength:
+          (modelMap?['recommended_context_length'] as int?) ?? 0,
+      runtimeInput: _stringList(modalitiesMap?['runtime_input']),
+      upstreamInput: _stringList(modalitiesMap?['upstream_input']),
+      outputModalities: _stringList(modalitiesMap?['output']),
+      capabilities: _stringList(json['capabilities']),
+      bestFor: _stringList(json['best_for']),
+      limitations: _stringList(json['limitations']),
+      languages: _stringList(json['languages']),
+      supportsTools: json['supports_tools'] == true,
+      supportsJson: json['supports_json'] == true,
+      supportsVision:
+          json['supports_vision'] == true ||
+          _stringList(modalitiesMap?['runtime_input']).contains('image'),
+      supportsGpuOffload: runtimeMap?['supports_gpu_offload'] == true,
+      requiresMmproj: runtimeMap?['requires_mmproj'] == true,
+      licenseId: (licenseMap?['id'] as String?) ?? '',
+      licenseName: (licenseMap?['name'] as String?) ?? '',
+      licenseUrl: (licenseMap?['url'] as String?) ?? '',
+      commercialUse: licenseMap?['commercial_use'] == true,
+      runtimeVerification:
+          (statusMap?['erebrus_runtime_verification'] as String?) ?? '',
+      verifiedAt: _dateTime(statusMap?['verified_at']),
       quant: modelArtifact.quantization,
       sizeBytes: artifactSizeBytes,
       fileSizeDisplay: artifactSizeDisplay,
@@ -454,6 +506,7 @@ class CatalogEntry {
   final String family;
   final String name;
   final String variant;
+  final String publisher;
   final String quant;
   final int sizeBytes;
   final String fileSizeDisplay;
@@ -471,6 +524,28 @@ class CatalogEntry {
   final List<String> collections;
   final List<String> badges;
   final String description;
+  final String architecture;
+  final String parameterLabel;
+  final int contextLength;
+  final int recommendedContextLength;
+  final List<String> runtimeInput;
+  final List<String> upstreamInput;
+  final List<String> outputModalities;
+  final List<String> capabilities;
+  final List<String> bestFor;
+  final List<String> limitations;
+  final List<String> languages;
+  final bool supportsTools;
+  final bool supportsJson;
+  final bool supportsVision;
+  final bool supportsGpuOffload;
+  final bool requiresMmproj;
+  final String licenseId;
+  final String licenseName;
+  final String licenseUrl;
+  final bool commercialUse;
+  final String runtimeVerification;
+  final DateTime? verifiedAt;
 
   /// Minimum RAM required to run at all, in GB, from the catalog.
   final double minRamGB;
@@ -547,11 +622,16 @@ class CatalogEntry {
   }) => MockModel(name, letter, spec, id: id, status: status, accent: accent);
 
   bool matchesQuery(String query) {
-    final q = query.toLowerCase();
+    final q = query.toLowerCase().replaceAll('_', ' ').trim();
+    bool matches(String value) =>
+        value.toLowerCase().replaceAll('_', ' ').contains(q);
     return name.toLowerCase().contains(q) ||
-        family.toLowerCase().contains(q) ||
-        tags.any((t) => t.toLowerCase().contains(q)) ||
-        variant.toLowerCase().contains(q);
+        matches(family) ||
+        matches(publisher) ||
+        matches(architecture) ||
+        tags.any(matches) ||
+        capabilities.any(matches) ||
+        matches(variant);
   }
 }
 
@@ -594,6 +674,11 @@ List<String> _stringList(dynamic value) {
     return value.whereType<String>().toList();
   }
   return const [];
+}
+
+DateTime? _dateTime(dynamic value) {
+  if (value == null) return null;
+  return DateTime.tryParse(value.toString())?.toUtc();
 }
 
 ModelVariant? _selectLegacyCompatibleVariant(

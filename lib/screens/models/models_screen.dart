@@ -200,7 +200,11 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 GhostButton('RESCAN', icon: Symbols.refresh, onTap: _rescan),
             ],
           ),
-          const SizedBox(height: 18),
+          if (_tab == 0) ...[
+            const SizedBox(height: 10),
+            const _ModelsFolderPath(),
+          ],
+          const SizedBox(height: 14),
           _listStack(true),
         ],
       ),
@@ -257,6 +261,8 @@ class _ModelsScreenState extends State<ModelsScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 9),
+                  const _ModelsFolderPath(compact: true),
                 ] else
                   Row(
                     children: [
@@ -574,6 +580,62 @@ class _ModelsScreenState extends State<ModelsScreen> {
   }
 }
 
+class _ModelsFolderPath extends StatelessWidget {
+  const _ModelsFolderPath({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final path =
+        app.modelsDirectory ??
+        StorageService.instance.modelsDirectoryDisplayLabel;
+    return Tooltip(
+      message: path,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 10 : 12,
+          vertical: compact ? 7 : 8,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.surface2,
+          border: Border.all(color: AppColors.strokeSoft),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Symbols.folder_open,
+              size: 15,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'MODELS FOLDER',
+              style: AppText.mono(
+                9,
+                weight: FontWeight.w600,
+                color: AppColors.textFaint,
+                lsEm: 0.08,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                path,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.mono(10, color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ImportConfirmation {
   const _ImportConfirmation({required this.draft, required this.copyIntoApp});
   final ImportedModelDraft draft;
@@ -691,6 +753,7 @@ class _LocalListState extends State<_LocalList> {
   final Map<String, BackendKind> _preferredBackends = {};
   List<BackendCapabilities> _capabilities = const [];
   late DeviceProfile _device;
+  String? _selectedEntryId;
 
   @override
   void initState() {
@@ -848,9 +911,17 @@ class _LocalListState extends State<_LocalList> {
                 )
                 .toList();
 
-            final pad = widget.wide
-                ? const EdgeInsets.only(bottom: 24)
-                : const EdgeInsets.fromLTRB(20, 0, 20, 16);
+            if (widget.wide) {
+              return _buildDesktopCatalog(
+                context,
+                app,
+                filteredCatalog,
+                imported,
+                snapshot.hasData,
+              );
+            }
+
+            const pad = EdgeInsets.fromLTRB(20, 0, 20, 16);
 
             return ListView(
               padding: pad,
@@ -907,6 +978,188 @@ class _LocalListState extends State<_LocalList> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopCatalog(
+    BuildContext context,
+    AppState app,
+    List<CatalogEntry> catalog,
+    List<ImportedModel> imported,
+    bool loaded,
+  ) {
+    if (!loaded && catalog.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.accent),
+      );
+    }
+    if (catalog.isEmpty) {
+      return Center(
+        child: Text(
+          CatalogService.lastError == null
+              ? 'No models match your search'
+              : 'Catalog unavailable · try again shortly',
+          style: AppText.grotesk(13, color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    CatalogEntry selected = catalog.first;
+    for (final entry in catalog) {
+      if (entry.id == _selectedEntryId) {
+        selected = entry;
+        break;
+      }
+    }
+    final selectedVariant = _preferredVariants[selected.id];
+    final deviceVariants = _variantsForDevice(selected);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final listWidth = (constraints.maxWidth * 0.34).clamp(300.0, 390.0);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          decoration: BoxDecoration(
+            color: AppColors.bgElevated,
+            border: Border.all(color: AppColors.stroke),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: listWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'MODEL CATALOG',
+                              style: AppText.sectionHeader(size: 10),
+                            ),
+                          ),
+                          Text(
+                            '${catalog.length}',
+                            style: AppText.mono(10, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: AppColors.strokeSoft),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        children: [
+                          if (imported.isNotEmpty) ...[
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(18, 6, 18, 5),
+                              child: _ListSectionLabel('IMPORTED BY YOU'),
+                            ),
+                            for (final model in imported)
+                              _DesktopImportedTile(
+                                model: model,
+                                selected:
+                                    !app.isNetworkModelSelected &&
+                                    app.selectedModelId == model.id,
+                                onTap: () => app.selectModel(
+                                  model.name,
+                                  model.quantization.isEmpty
+                                      ? model.format.toUpperCase()
+                                      : model.quantization,
+                                  id: model.id,
+                                  variantId: model.variantId,
+                                ),
+                              ),
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(18, 15, 18, 5),
+                              child: _ListSectionLabel('CURATED CATALOG'),
+                            ),
+                          ],
+                          for (final entry in catalog)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: _DesktopCatalogTile(
+                                entry: entry,
+                                variant: _preferredVariants[entry.id],
+                                status: _statusFor(entry),
+                                selected: entry.id == selected.id,
+                                onTap: () =>
+                                    setState(() => _selectedEntryId = entry.id),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.stroke,
+              ),
+              Expanded(
+                child: _DesktopModelDetail(
+                  entry: selected,
+                  selectedVariant: selectedVariant,
+                  deviceVariants: deviceVariants,
+                  backend: selectedVariant == null
+                      ? null
+                      : _backendForVariant(selectedVariant),
+                  status: _statusFor(selected),
+                  progress: _progressFor(selected),
+                  selectedInApp:
+                      !app.isNetworkModelSelected &&
+                      app.selectedModelId == selected.id,
+                  onSelectVariant: (variant) {
+                    _preferredVariants[selected.id] = variant;
+                    final backend = _backendForVariant(variant);
+                    if (backend != null) {
+                      _preferredBackends[selected.id] = backend;
+                    }
+                    setState(() {});
+                  },
+                  onDownload: selectedVariant == null
+                      ? null
+                      : () =>
+                            _download(context, app, selected, selectedVariant),
+                  onUpdate:
+                      selectedVariant != null &&
+                          ModelPackageService.instance.hasUpdate(
+                            selectedVariant,
+                          )
+                      ? () => _download(
+                          context,
+                          app,
+                          selected,
+                          selectedVariant,
+                          updating: true,
+                        )
+                      : null,
+                  onUse: selectedVariant == null
+                      ? null
+                      : () => app.selectModel(
+                          selected.name,
+                          selectedVariant.quantization,
+                          id: selected.id,
+                          variantId: selectedVariant.id,
+                        ),
+                  onCancel: selectedVariant == null
+                      ? null
+                      : () => ModelPackageService.instance.cancelDownload(
+                          selectedVariant.id,
+                        ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1253,6 +1506,800 @@ class _LocalListState extends State<_LocalList> {
       );
     }
   }
+}
+
+class _DesktopImportedTile extends StatelessWidget {
+  const _DesktopImportedTile({
+    required this.model,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ImportedModel model;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
+    child: Material(
+      color: selected ? AppColors.accent.withA(0.12) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+          child: Row(
+            children: [
+              LetterTile(
+                model.name.isEmpty ? '?' : model.name[0].toUpperCase(),
+                size: 34,
+                radius: 9,
+                fontSize: 12,
+                accent: selected,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      model.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.grotesk(13, weight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        model.format.toUpperCase(),
+                        model.quantization,
+                        formatBytes(model.sizeBytes),
+                      ].where((part) => part.isNotEmpty).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.mono(9, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Symbols.folder_special,
+                size: 16,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _DesktopCatalogTile extends StatelessWidget {
+  const _DesktopCatalogTile({
+    required this.entry,
+    required this.variant,
+    required this.status,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final CatalogEntry entry;
+  final ModelVariant? variant;
+  final ModelStatus status;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final formats = entry.variants
+        .map((candidate) => candidate.format.toUpperCase())
+        .toSet()
+        .join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Material(
+        color: selected ? AppColors.accent.withA(0.12) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: selected
+                    ? AppColors.accent.withA(0.45)
+                    : Colors.transparent,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                LetterTile(
+                  entry.letter,
+                  size: 38,
+                  radius: 10,
+                  fontSize: 13,
+                  accent: selected,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.grotesk(
+                                13.5,
+                                weight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (entry.featured)
+                            const Icon(
+                              Symbols.kid_star,
+                              size: 15,
+                              color: AppColors.warn,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        entry.publisher.isNotEmpty
+                            ? entry.publisher
+                            : entry.family,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.grotesk(
+                          11.5,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              [
+                                if (entry.parameterLabel.isNotEmpty)
+                                  entry.parameterLabel,
+                                if (formats.isNotEmpty) formats,
+                                if (variant?.quantization.isNotEmpty == true)
+                                  variant!.quantization,
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.mono(
+                                9,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusDot(status: status),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.status});
+
+  final ModelStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, label) = switch (status) {
+      ModelStatus.loaded => (AppColors.success, 'READY'),
+      ModelStatus.downloading => (AppColors.accentHi, 'LOADING'),
+      ModelStatus.idle => (AppColors.success, 'READY'),
+      ModelStatus.catalog => (AppColors.textMuted, 'AVAILABLE'),
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: AppText.mono(8.5, color: color)),
+      ],
+    );
+  }
+}
+
+class _DesktopModelDetail extends StatelessWidget {
+  const _DesktopModelDetail({
+    required this.entry,
+    required this.selectedVariant,
+    required this.deviceVariants,
+    required this.backend,
+    required this.status,
+    required this.progress,
+    required this.selectedInApp,
+    required this.onSelectVariant,
+    required this.onDownload,
+    required this.onUpdate,
+    required this.onUse,
+    required this.onCancel,
+  });
+
+  final CatalogEntry entry;
+  final ModelVariant? selectedVariant;
+  final List<ModelVariant> deviceVariants;
+  final BackendKind? backend;
+  final ModelStatus status;
+  final double? progress;
+  final bool selectedInApp;
+  final ValueChanged<ModelVariant> onSelectVariant;
+  final VoidCallback? onDownload;
+  final VoidCallback? onUpdate;
+  final VoidCallback? onUse;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final formats = entry.variants
+        .map((variant) => variant.format.toUpperCase())
+        .toSet()
+        .toList();
+    final selectedInstalled =
+        selectedVariant != null &&
+        ModelPackageService.instance
+                .byVariantId(selectedVariant!.id)
+                ?.runnable ==
+            true;
+    final selectedDownloading =
+        selectedVariant != null &&
+        ModelPackageService.instance.isDownloading(selectedVariant!.id);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(26, 22, 26, 30),
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LetterTile(
+              entry.letter,
+              size: 48,
+              radius: 13,
+              fontSize: 17,
+              accent: true,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.name,
+                    style: AppText.grotesk(22, weight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    entry.publisher.isNotEmpty ? entry.publisher : entry.family,
+                    style: AppText.grotesk(
+                      12.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (entry.featured)
+              const _DetailBadge(
+                label: 'STAFF PICK',
+                icon: Symbols.kid_star,
+                color: AppColors.warn,
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _DetailSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                entry.description.isNotEmpty
+                    ? entry.description
+                    : 'A curated model package for private local inference.',
+                style: AppText.grotesk(
+                  15,
+                  weight: FontWeight.w500,
+                  color: AppColors.textBody,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1, color: AppColors.strokeSoft),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 20,
+                runSpacing: 12,
+                children: [
+                  _MetaValue(
+                    label: 'PARAMS',
+                    value: entry.parameterLabel.isNotEmpty
+                        ? entry.parameterLabel
+                        : '${entry.parameterB}B',
+                  ),
+                  if (entry.architecture.isNotEmpty)
+                    _MetaValue(label: 'ARCH', value: entry.architecture),
+                  if (entry.recommendedContextLength > 0)
+                    _MetaValue(
+                      label: 'CONTEXT',
+                      value: _formatContext(entry.recommendedContextLength),
+                    ),
+                  _MetaValue(label: 'FORMAT', value: formats.join(' / ')),
+                  if (entry.licenseId.isNotEmpty)
+                    _MetaValue(
+                      label: 'LICENSE',
+                      value: entry.licenseId.toUpperCase(),
+                    ),
+                ],
+              ),
+              if (entry.capabilities.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: entry.capabilities
+                      .map((capability) => _CapabilityChip(capability))
+                      .toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        Text(
+          'Download options',
+          style: AppText.grotesk(17, weight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        if (deviceVariants.isEmpty)
+          const _DetailSurface(child: _EmptyVariantMessage())
+        else
+          _DetailSurface(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              children: [
+                for (final variant in deviceVariants) ...[
+                  _VariantChoice(
+                    variant: variant,
+                    selected: variant.id == selectedVariant?.id,
+                    installed:
+                        ModelPackageService.instance
+                            .byVariantId(variant.id)
+                            ?.runnable ==
+                        true,
+                    onTap: () => onSelectVariant(variant),
+                  ),
+                  if (variant != deviceVariants.last) const SizedBox(height: 7),
+                ],
+                if (selectedVariant != null) ...[
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        if (entry.supportsGpuOffload)
+                          const _DetailBadge(
+                            label: 'GPU OFFLOAD SUPPORTED',
+                            icon: Symbols.bolt,
+                            color: AppColors.success,
+                          ),
+                        const Spacer(),
+                        Text(
+                          backend?.catalogName.toUpperCase() ?? '',
+                          style: AppText.mono(9.5, color: AppColors.textMuted),
+                        ),
+                        const SizedBox(width: 12),
+                        if (selectedDownloading)
+                          OutlinedButton.icon(
+                            onPressed: onCancel,
+                            icon: const Icon(Symbols.close, size: 17),
+                            label: Text(
+                              'CANCEL ${((progress ?? 0) * 100).round()}%',
+                            ),
+                          )
+                        else if (onUpdate != null)
+                          FilledButton.icon(
+                            onPressed: onUpdate,
+                            icon: const Icon(
+                              Symbols.system_update_alt,
+                              size: 17,
+                            ),
+                            label: const Text('UPDATE'),
+                          )
+                        else if (selectedInstalled)
+                          FilledButton.icon(
+                            onPressed: onUse,
+                            icon: Icon(
+                              selectedInApp
+                                  ? Symbols.check
+                                  : Symbols.play_arrow,
+                              size: 17,
+                            ),
+                            label: Text(selectedInApp ? 'SELECTED' : 'USE'),
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: onDownload,
+                            icon: const Icon(Symbols.download, size: 17),
+                            label: Text(
+                              'DOWNLOAD · ${formatBytes(selectedVariant!.sizeBytes)}',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        const SizedBox(height: 22),
+        Text(
+          'About this model',
+          style: AppText.grotesk(17, weight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        _DetailSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (entry.bestFor.isNotEmpty)
+                _DetailList(title: 'BEST FOR', items: entry.bestFor),
+              if (entry.bestFor.isNotEmpty && entry.limitations.isNotEmpty)
+                const SizedBox(height: 18),
+              if (entry.limitations.isNotEmpty)
+                _DetailList(
+                  title: 'LIMITATIONS',
+                  items: entry.limitations,
+                  color: AppColors.warn,
+                ),
+              if (entry.bestFor.isNotEmpty || entry.limitations.isNotEmpty)
+                const SizedBox(height: 18),
+              _ProvenanceSummary(entry: entry, variant: selectedVariant),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailSurface extends StatelessWidget {
+  const _DetailSurface({required this.child, this.padding});
+
+  final Widget child;
+  final EdgeInsets? padding;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: padding ?? const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      border: Border.all(color: AppColors.strokeSoft),
+      borderRadius: BorderRadius.circular(15),
+    ),
+    child: child,
+  );
+}
+
+class _MetaValue extends StatelessWidget {
+  const _MetaValue({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: AppText.mono(
+          9,
+          weight: FontWeight.w600,
+          color: AppColors.textFaint,
+        ),
+      ),
+      const SizedBox(width: 7),
+      Text(
+        value,
+        style: AppText.mono(
+          10.5,
+          weight: FontWeight.w600,
+          color: AppColors.textBody,
+        ),
+      ),
+    ],
+  );
+}
+
+class _DetailBadge extends StatelessWidget {
+  const _DetailBadge({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withA(0.09),
+      border: Border.all(color: color.withA(0.28)),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: AppText.mono(9, weight: FontWeight.w600, color: color),
+        ),
+      ],
+    ),
+  );
+}
+
+class _CapabilityChip extends StatelessWidget {
+  const _CapabilityChip(this.capability);
+
+  final String capability;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = capability.toLowerCase();
+    final color = normalized.contains('vision')
+        ? AppColors.warn
+        : normalized.contains('reason')
+        ? AppColors.success
+        : normalized.contains('tool') || normalized.contains('code')
+        ? AppColors.orgPurple
+        : AppColors.accentHi;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withA(0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        capability.replaceAll('_', ' ').toUpperCase(),
+        style: AppText.mono(8.5, weight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+}
+
+class _VariantChoice extends StatelessWidget {
+  const _VariantChoice({
+    required this.variant,
+    required this.selected,
+    required this.installed,
+    required this.onTap,
+  });
+
+  final ModelVariant variant;
+  final bool selected;
+  final bool installed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? AppColors.accent.withA(0.08) : AppColors.surface2,
+    borderRadius: BorderRadius.circular(11),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: selected
+                ? AppColors.accent.withA(0.45)
+                : AppColors.strokeSoft,
+          ),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.surface3,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                variant.format.toUpperCase(),
+                style: AppText.mono(
+                  9,
+                  weight: FontWeight.w600,
+                  color: AppColors.textBody,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                [
+                  variant.quantization,
+                  if (variant.provenance.publisher.isNotEmpty)
+                    variant.provenance.publisher,
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.grotesk(12.5, weight: FontWeight.w500),
+              ),
+            ),
+            if (installed) ...[
+              const Icon(
+                Symbols.check_circle,
+                size: 16,
+                color: AppColors.success,
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              formatBytes(variant.sizeBytes),
+              style: AppText.mono(9.5, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _EmptyVariantMessage extends StatelessWidget {
+  const _EmptyVariantMessage();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      const Icon(Symbols.info, color: AppColors.warn),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          'No catalog package is compatible with this device and its active runtimes.',
+          style: AppText.grotesk(12.5, color: AppColors.textSecondary),
+        ),
+      ),
+    ],
+  );
+}
+
+class _DetailList extends StatelessWidget {
+  const _DetailList({
+    required this.title,
+    required this.items,
+    this.color = AppColors.textSecondary,
+  });
+
+  final String title;
+  final List<String> items;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(title, style: AppText.sectionHeader(size: 9.5)),
+      const SizedBox(height: 8),
+      for (final item in items)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 7),
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  item,
+                  style: AppText.grotesk(
+                    12.5,
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+class _ProvenanceSummary extends StatelessWidget {
+  const _ProvenanceSummary({required this.entry, required this.variant});
+
+  final CatalogEntry entry;
+  final ModelVariant? variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final provenance = variant?.provenance;
+    final verification = entry.runtimeVerification
+        .replaceAll('_', ' ')
+        .toUpperCase();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('SOURCE & VERIFICATION', style: AppText.sectionHeader(size: 9.5)),
+        const SizedBox(height: 9),
+        if (provenance?.repositoryId.isNotEmpty == true)
+          Text(
+            provenance!.repositoryId,
+            style: AppText.mono(10.5, color: AppColors.textBody),
+          ),
+        if (provenance != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            '${provenance.label} · ${provenance.verification.replaceAll('_', ' ').toUpperCase()}',
+            style: AppText.mono(9, color: AppColors.textMuted),
+          ),
+        ],
+        if (verification.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Text(verification, style: AppText.mono(9, color: AppColors.success)),
+        ],
+        if (entry.licenseName.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            '${entry.licenseName}${entry.commercialUse ? ' · COMMERCIAL USE ALLOWED' : ''}',
+            style: AppText.mono(9.5, color: AppColors.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+String _formatContext(int tokens) {
+  if (tokens >= 1000000) return '${(tokens / 1000000).toStringAsFixed(1)}M';
+  if (tokens >= 1000) {
+    final value = tokens / 1000;
+    return '${value == value.roundToDouble() ? value.round() : value.toStringAsFixed(1)}K';
+  }
+  return '$tokens';
 }
 
 class _ListSectionLabel extends StatelessWidget {
