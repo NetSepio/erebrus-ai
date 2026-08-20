@@ -18,9 +18,9 @@ set(EREBRUS_TURBOQUANT_ACCELERATOR
 set_property(CACHE EREBRUS_TURBOQUANT_ACCELERATOR
              PROPERTY STRINGS CPU CUDA HIP)
 
-# Build llama-server in an isolated CMake graph. FetchContent / add_subdirectory
-# exports ggml, ggml-base, and ggml-cpu into the Flutter project and collides
-# with whisper_ggml_plus on Windows.
+# Isolated sidecar build. FetchContent / add_subdirectory exports ggml,
+# ggml-base, and ggml-cpu into the Flutter graph and collides with
+# whisper_ggml_plus on Windows.
 set(_tq_prefix "${CMAKE_CURRENT_BINARY_DIR}/turboquant-ep")
 set(_tq_src "${_tq_prefix}/src")
 set(_tq_bin "${_tq_prefix}/build")
@@ -43,22 +43,9 @@ set(_tq_cmake_args
   -DLLAMA_OPENSSL=OFF
   -DLLAMA_USE_PREBUILT_UI=OFF
 )
-set(_tq_cache_args)
-if(CMAKE_C_COMPILER)
-  list(APPEND _tq_cache_args
-    "-DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}")
-endif()
-if(CMAKE_CXX_COMPILER)
-  list(APPEND _tq_cache_args
-    "-DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}")
-endif()
 
 if(EREBRUS_TURBOQUANT_ACCELERATOR STREQUAL "CUDA")
   list(APPEND _tq_cmake_args -DGGML_CUDA=ON -DGGML_CUDA_FA=ON)
-  if(CMAKE_CUDA_COMPILER)
-    list(APPEND _tq_cache_args
-      "-DCMAKE_CUDA_COMPILER:FILEPATH=${CMAKE_CUDA_COMPILER}")
-  endif()
 elseif(EREBRUS_TURBOQUANT_ACCELERATOR STREQUAL "HIP")
   list(APPEND _tq_cmake_args -DGGML_HIP=ON -DGGML_HIP_GRAPHS=ON)
 elseif(NOT EREBRUS_TURBOQUANT_ACCELERATOR STREQUAL "CPU")
@@ -67,32 +54,24 @@ elseif(NOT EREBRUS_TURBOQUANT_ACCELERATOR STREQUAL "CPU")
           "${EREBRUS_TURBOQUANT_ACCELERATOR}")
 endif()
 
-set(_tq_ep_unparsed)
-find_program(_tq_ninja NAMES ninja ninja.exe)
-if(_tq_ninja)
-  list(APPEND _tq_ep_unparsed CMAKE_GENERATOR "Ninja")
-  list(APPEND _tq_cache_args
-    "-DCMAKE_MAKE_PROGRAM:FILEPATH=${_tq_ninja}")
-  set(_tq_server "${_tq_bin}/bin/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
-else()
-  if(CMAKE_GENERATOR)
-    list(APPEND _tq_ep_unparsed CMAKE_GENERATOR "${CMAKE_GENERATOR}")
-  endif()
-  if(CMAKE_GENERATOR_PLATFORM)
-    list(APPEND _tq_ep_unparsed
-      CMAKE_GENERATOR_PLATFORM "${CMAKE_GENERATOR_PLATFORM}")
-  endif()
-  if(CMAKE_GENERATOR MATCHES "Visual Studio")
-    set(_tq_server
-        "${_tq_bin}/bin/Release/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
-  else()
-    set(_tq_server "${_tq_bin}/bin/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
-  endif()
+# Reuse the parent generator. Forcing Ninja under Visual Studio inherits
+# CMAKE_GENERATOR_PLATFORM=x64 and breaks the inner configure.
+set(_tq_gen)
+if(CMAKE_GENERATOR)
+  list(APPEND _tq_gen CMAKE_GENERATOR "${CMAKE_GENERATOR}")
+endif()
+if(CMAKE_GENERATOR_PLATFORM)
+  list(APPEND _tq_gen CMAKE_GENERATOR_PLATFORM "${CMAKE_GENERATOR_PLATFORM}")
+endif()
+if(CMAKE_GENERATOR_TOOLSET)
+  list(APPEND _tq_gen CMAKE_GENERATOR_TOOLSET "${CMAKE_GENERATOR_TOOLSET}")
 endif()
 
-set(_tq_cache_kw)
-if(_tq_cache_args)
-  set(_tq_cache_kw CMAKE_CACHE_ARGS ${_tq_cache_args})
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+  set(_tq_server
+      "${_tq_bin}/bin/Release/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
+else()
+  set(_tq_server "${_tq_bin}/bin/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
 endif()
 
 ExternalProject_Add(erebrus_turboquant_ep
@@ -102,13 +81,16 @@ ExternalProject_Add(erebrus_turboquant_ep
   PREFIX "${_tq_prefix}"
   SOURCE_DIR "${_tq_src}"
   BINARY_DIR "${_tq_bin}"
-  ${_tq_ep_unparsed}
+  ${_tq_gen}
   CMAKE_ARGS ${_tq_cmake_args}
-  ${_tq_cache_kw}
-  BUILD_COMMAND "${CMAKE_COMMAND}" --build "${_tq_bin}" --config Release --target llama-server
+  BUILD_COMMAND "${CMAKE_COMMAND}" --build "${_tq_bin}" --config Release --target llama-server --parallel
   INSTALL_COMMAND ""
   UPDATE_COMMAND ""
   BUILD_BYPRODUCTS "${_tq_server}"
+  LOG_DOWNLOAD TRUE
+  LOG_CONFIGURE TRUE
+  LOG_BUILD TRUE
+  LOG_OUTPUT_ON_FAILURE TRUE
   USES_TERMINAL_DOWNLOAD TRUE
   USES_TERMINAL_CONFIGURE TRUE
   USES_TERMINAL_BUILD TRUE

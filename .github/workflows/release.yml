@@ -62,6 +62,20 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
+      - name: Dump TurboQuant ExternalProject logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $root = "build/windows/x64/plugins/erebrus_turboquant"
+          if (Test-Path $root) {
+            Get-ChildItem -Recurse $root -Include *.log,*.txt,*.err | ForEach-Object {
+              Write-Host "===== $($_.FullName) ====="
+              Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -Last 200
+            }
+          } else {
+            Write-Host "TurboQuant plugin build dir missing: $root"
+          }
+
       - name: Verify pinned TurboQuant runtime
         shell: pwsh
         run: |
