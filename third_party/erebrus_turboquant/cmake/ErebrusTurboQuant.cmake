@@ -22,7 +22,9 @@ set_property(CACHE EREBRUS_TURBOQUANT_ACCELERATOR
 # ggml-base, and ggml-cpu into the Flutter graph and collides with
 # whisper_ggml_plus on Windows.
 set(_tq_prefix "${CMAKE_CURRENT_BINARY_DIR}/turboquant-ep")
-set(_tq_src "${_tq_prefix}/src")
+# Keep SOURCE_DIR off PREFIX/src. CMake stores stamp files there, and Windows
+# then fails the extract rename with "Access is denied".
+set(_tq_src "${_tq_prefix}/llama-cpp-turboquant")
 set(_tq_bin "${_tq_prefix}/build")
 
 set(_tq_cmake_args
