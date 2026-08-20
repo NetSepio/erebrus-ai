@@ -98,7 +98,6 @@ ExternalProject_Add(erebrus_turboquant_ep
   USES_TERMINAL_BUILD TRUE
 )
 
-set(EREBRUS_TURBOQUANT_SERVER "${_tq_server}")
 set(EREBRUS_TURBOQUANT_MANIFEST
     "${CMAKE_CURRENT_BINARY_DIR}/erebrus-turboquant-runtime.json")
 file(GENERATE
@@ -113,3 +112,28 @@ file(GENERATE
   \"value_cache\": \"turbo3\"
 }
 ")
+
+# Stage into this plugin's binary dir so Flutter's INSTALL target, which can
+# run as soon as ALL_BUILD starts, copies a file that already exists.
+set(EREBRUS_TURBOQUANT_SIDECAR_DIR "${CMAKE_CURRENT_BINARY_DIR}/sidecar")
+set(EREBRUS_TURBOQUANT_SERVER
+    "${EREBRUS_TURBOQUANT_SIDECAR_DIR}/llama-server${CMAKE_EXECUTABLE_SUFFIX}")
+set(_tq_manifest_staged
+    "${EREBRUS_TURBOQUANT_SIDECAR_DIR}/erebrus-turboquant-runtime.json")
+add_custom_command(
+  OUTPUT "${EREBRUS_TURBOQUANT_SERVER}" "${_tq_manifest_staged}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${EREBRUS_TURBOQUANT_SIDECAR_DIR}"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "${_tq_server}" "${EREBRUS_TURBOQUANT_SERVER}"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "${EREBRUS_TURBOQUANT_MANIFEST}" "${_tq_manifest_staged}"
+  DEPENDS erebrus_turboquant_ep "${EREBRUS_TURBOQUANT_MANIFEST}"
+  VERBATIM
+)
+add_custom_target(erebrus_turboquant_runtime ALL
+  DEPENDS "${EREBRUS_TURBOQUANT_SERVER}" "${_tq_manifest_staged}"
+)
+set(EREBRUS_TURBOQUANT_MANIFEST "${_tq_manifest_staged}")
+if(TARGET INSTALL)
+  add_dependencies(INSTALL erebrus_turboquant_runtime)
+endif()

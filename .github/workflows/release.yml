@@ -67,13 +67,14 @@ jobs:
         shell: pwsh
         run: |
           $root = "build/windows/x64/plugins/erebrus_turboquant"
-          if (Test-Path $root) {
-            Get-ChildItem -Recurse $root -Include *.log,*.txt,*.err | ForEach-Object {
-              Write-Host "===== $($_.FullName) ====="
-              Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -Last 200
-            }
-          } else {
-            Write-Host "TurboQuant plugin build dir missing: $root"
+          Write-Host "===== cmake --install (to surface the real error) ====="
+          & cmake --install build/windows/x64 --config Release
+          Write-Host "===== sidecar / Release listing ====="
+          Get-ChildItem -Recurse "$root/sidecar","$root/turboquant-ep/build/bin" -ErrorAction SilentlyContinue | Select-Object FullName,Length
+          Get-ChildItem "build/windows/x64/runner/Release" -ErrorAction SilentlyContinue | Select-Object Name,Length
+          if (Test-Path "$root/cmake_install.cmake") {
+            Write-Host "===== plugin cmake_install.cmake ====="
+            Get-Content "$root/cmake_install.cmake"
           }
 
       - name: Verify pinned TurboQuant runtime
