@@ -109,3 +109,21 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# TurboQuant sidecar. Must be installed from this file after
+# CMAKE_INSTALL_PREFIX is the Flutter bundle genex, not from the plugin.
+if(EREBRUS_TURBOQUANT_SERVER)
+  install(
+    PROGRAMS "${EREBRUS_TURBOQUANT_SERVER}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/erebrus_turboquant"
+    COMPONENT Runtime
+  )
+  install(
+    FILES "${EREBRUS_TURBOQUANT_MANIFEST}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/erebrus_turboquant"
+    COMPONENT Runtime
+  )
+endif()
+if(TARGET erebrus_turboquant_runtime AND TARGET INSTALL)
+  add_dependencies(INSTALL erebrus_turboquant_runtime)
+endif()

@@ -134,6 +134,3 @@ add_custom_target(erebrus_turboquant_runtime ALL
   DEPENDS "${EREBRUS_TURBOQUANT_SERVER}" "${_tq_manifest_staged}"
 )
 set(EREBRUS_TURBOQUANT_MANIFEST "${_tq_manifest_staged}")
-if(TARGET INSTALL)
-  add_dependencies(INSTALL erebrus_turboquant_runtime)
-endif()

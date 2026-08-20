@@ -68,7 +68,7 @@ jobs:
         run: |
           $root = "build/windows/x64/plugins/erebrus_turboquant"
           Write-Host "===== cmake --install (to surface the real error) ====="
-          & cmake --install build/windows/x64 --config Release
+          & cmake --install build/windows/x64 --config Release --prefix "build/windows/x64/runner/Release"
           Write-Host "===== sidecar / Release listing ====="
           Get-ChildItem -Recurse "$root/sidecar","$root/turboquant-ep/build/bin" -ErrorAction SilentlyContinue | Select-Object FullName,Length
           Get-ChildItem "build/windows/x64/runner/Release" -ErrorAction SilentlyContinue | Select-Object Name,Length
