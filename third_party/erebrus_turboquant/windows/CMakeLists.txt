@@ -6,7 +6,7 @@ project(${PROJECT_NAME} LANGUAGES C CXX)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/ErebrusTurboQuant.cmake")
 
 install(
-  PROGRAMS "$<TARGET_FILE:llama-server>"
+  PROGRAMS "${EREBRUS_TURBOQUANT_SERVER}"
   DESTINATION "erebrus_turboquant"
   COMPONENT Runtime
 )

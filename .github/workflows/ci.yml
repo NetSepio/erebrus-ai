@@ -155,6 +155,24 @@ jobs:
           if ($metadata.key_cache -ne "q8_0" -or $metadata.value_cache -ne "turbo3") { exit 1 }
           & $runtime --version | Select-String "c26cbdf"
 
+      - name: Package Windows app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          $dest = "dist/ErebrusAI-windows-v$version.zip"
+          if (Test-Path $dest) { Remove-Item $dest }
+          Push-Location build/windows/x64/runner/Release
+          7z a -tzip (Join-Path (Get-Location) "..\..\..\..\..\${dest}") *
+          Pop-Location
+          Write-Host "artifact=$dest"
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: dist/ErebrusAI-windows-v*.zip
+
   build-desktop-linux:
     name: Build Linux
     runs-on: ubuntu-latest
