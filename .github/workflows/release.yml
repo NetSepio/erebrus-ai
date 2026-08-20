@@ -60,22 +60,21 @@ jobs:
         run: flutter pub get
 
       - name: Build Windows
+        id: flutter_windows
+        continue-on-error: true
         run: flutter build windows --release
 
-      - name: Dump TurboQuant ExternalProject logs
-        if: failure()
+      - name: Install Windows bundle
         shell: pwsh
         run: |
-          $root = "build/windows/x64/plugins/erebrus_turboquant"
-          Write-Host "===== cmake --install (to surface the real error) ====="
-          & cmake --install build/windows/x64 --config Release --prefix "build/windows/x64/runner/Release"
-          Write-Host "===== sidecar / Release listing ====="
-          Get-ChildItem -Recurse "$root/sidecar","$root/turboquant-ep/build/bin" -ErrorAction SilentlyContinue | Select-Object FullName,Length
-          Get-ChildItem "build/windows/x64/runner/Release" -ErrorAction SilentlyContinue | Select-Object Name,Length
-          if (Test-Path "$root/cmake_install.cmake") {
-            Write-Host "===== plugin cmake_install.cmake ====="
-            Get-Content "$root/cmake_install.cmake"
+          $exe = "build/windows/x64/runner/Release/erebrus_ai.exe"
+          $sidecar = "build/windows/x64/runner/Release/erebrus_turboquant/llama-server.exe"
+          if (!(Test-Path $exe) -or !(Test-Path $sidecar)) {
+            Write-Host "Completing install with an explicit prefix"
+            cmake --install build/windows/x64 --config Release --prefix "$PWD/build/windows/x64/runner/Release"
           }
+          if (!(Test-Path $exe)) { throw "erebrus_ai.exe was not produced" }
+          if (!(Test-Path $sidecar)) { throw "TurboQuant llama-server.exe was not produced" }
 
       - name: Verify pinned TurboQuant runtime
         shell: pwsh
