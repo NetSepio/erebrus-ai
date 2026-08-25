@@ -64,10 +64,15 @@ flows — see [docs/AUTH.md](docs/AUTH.md).
 ```
 lib/
 ├── auth/        # Wallet/social sign-in, session, gateway, deep links
+├── data/        # Model catalog, persona repository, transcription sessions
+├── navigation/  # Adaptive responsive navigation shell and routing
 ├── org/         # Organization / workspace client and state
 ├── platform/    # Secure storage and platform detection
-├── screens/     # Chat, models, personas, settings, sign-in, shell
-└── state/       # AppState wiring auth + org to the UI
+├── screens/     # Chat, models, personas, settings, sign-in, onboarding
+├── services/    # Inference coordinator, backends, download manager, HTTP server, mDNS
+├── state/       # AppState wiring auth + org to the UI
+├── theme/       # Design system tokens, colors, typography, glassmorphism
+└── widgets/     # Reusable glass cards, thought bubbles, controls, status indicators
 ```
 
 ---
