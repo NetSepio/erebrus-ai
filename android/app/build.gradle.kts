@@ -27,11 +27,44 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val keyPropsFile = rootProject.file("key.properties")
+            if (keyPropsFile.exists()) {
+                val keyProps = java.util.Properties().apply {
+                    load(keyPropsFile.inputStream())
+                }
+                val storeFilePath = keyProps.getProperty("storeFile")
+                if (storeFilePath != null && storeFilePath.isNotEmpty()) {
+                    storeFile = file(storeFilePath)
+                }
+                storePassword = keyProps.getProperty("storePassword")
+                keyAlias = keyProps.getProperty("keyAlias")
+                keyPassword = keyProps.getProperty("keyPassword")
+            } else {
+                val keystorePath = project.findProperty("ANDROID_KEYSTORE_PATH") as String?
+                    ?: System.getenv("ANDROID_KEYSTORE_PATH")
+                if (keystorePath != null && file(keystorePath).exists()) {
+                    storeFile = file(keystorePath)
+                    storePassword = project.findProperty("ANDROID_KEYSTORE_PASSWORD") as String?
+                        ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                    keyAlias = project.findProperty("ANDROID_KEY_ALIAS") as String?
+                        ?: System.getenv("ANDROID_KEY_ALIAS")
+                    keyPassword = project.findProperty("ANDROID_KEY_PASSWORD") as String?
+                        ?: System.getenv("ANDROID_KEY_PASSWORD")
+                }
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                releaseSigning
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

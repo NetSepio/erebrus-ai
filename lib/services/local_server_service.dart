@@ -10,6 +10,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:uuid/uuid.dart';
 
 import '../data/catalog_service.dart';
+import '../platform/secure_storage.dart';
 import 'inference_service.dart';
 import 'imported_model_service.dart';
 import 'mdns_config.dart';
@@ -49,11 +50,35 @@ class LocalServerService extends ChangeNotifier {
   /// The API key clients must send in the `Authorization` header.
   Future<String> get apiKey async {
     if (_apiKey != null) return _apiKey!;
-    final prefs = await SharedPreferences.getInstance();
-    var key = prefs.getString('erebrus_local_api_key');
+    const storageKey = 'erebrus_local_api_key';
+    String? key;
+    try {
+      key = await ErebrusSecureStorage.instance.read(key: storageKey);
+    } catch (_) {
+      // Secure storage read failed or not supported on this platform
+    }
+    // Backward-compatibility: migrate legacy unencrypted key from SharedPreferences if present
+    if (key == null || key.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final legacyKey = prefs.getString(storageKey);
+        if (legacyKey != null && legacyKey.isNotEmpty) {
+          key = legacyKey;
+          try {
+            await ErebrusSecureStorage.instance.write(
+              key: storageKey,
+              value: key,
+            );
+            await prefs.remove(storageKey);
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
     if (key == null || key.isEmpty) {
       key = 'ere_sk_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}';
-      await prefs.setString('erebrus_local_api_key', key);
+      try {
+        await ErebrusSecureStorage.instance.write(key: storageKey, value: key);
+      } catch (_) {}
     }
     _apiKey = key;
     return key;

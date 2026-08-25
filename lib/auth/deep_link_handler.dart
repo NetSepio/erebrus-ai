@@ -46,7 +46,7 @@ class DeepLinkHandler {
     final url = link.toString();
     final auth = _auth;
     if (auth == null) {
-      debugPrint('[DeepLinkHandler] auth not bound for $url');
+      debugPrint('[DeepLinkHandler] auth not bound for ${_redactUrl(url)}');
       return;
     }
 
@@ -57,16 +57,54 @@ class DeepLinkHandler {
 
     final modal = auth.appKitModal;
     if (modal == null) {
-      debugPrint('[DeepLinkHandler] unhandled link (no Reown session): $url');
+      debugPrint(
+        '[DeepLinkHandler] unhandled link (no Reown session): ${_redactUrl(url)}',
+      );
       return;
     }
     final handled = await modal.dispatchEnvelope(url);
     if (!handled) {
-      debugPrint('[DeepLinkHandler] Reown did not handle: $url');
+      debugPrint('[DeepLinkHandler] Reown did not handle: ${_redactUrl(url)}');
     }
   }
 
   static void _onError(dynamic error) {
     debugPrint('[DeepLinkHandler] $error');
+  }
+
+  static String _redactUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      if (uri.queryParameters.isEmpty && uri.fragment.isEmpty) {
+        return url;
+      }
+      const sensitiveKeys = {
+        'token',
+        'paseto',
+        'state',
+        'code',
+        'secret',
+        'key',
+        'signature',
+        'auth',
+      };
+      final sanitizedParams = Map<String, String>.fromEntries(
+        uri.queryParameters.entries.map((entry) {
+          if (sensitiveKeys.contains(entry.key.toLowerCase())) {
+            return MapEntry(entry.key, 'REDACTED');
+          }
+          return entry;
+        }),
+      );
+      var sanitized = uri.replace(
+        queryParameters: sanitizedParams.isEmpty ? null : sanitizedParams,
+      );
+      if (uri.fragment.isNotEmpty) {
+        sanitized = sanitized.replace(fragment: 'REDACTED');
+      }
+      return sanitized.toString();
+    } catch (_) {
+      return '[unparseable-link]';
+    }
   }
 }
