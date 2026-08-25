@@ -18,7 +18,7 @@ import 'model_download_service.dart';
 import 'model_package_service.dart';
 
 bool isPublicLocalServerMetadataRequest(String method, String path) =>
-    method == 'GET' && (path == 'health' || path == 'v1/models');
+    method == 'GET' && path == 'health';
 
 /// A real OpenAI-compatible HTTP server that runs on the device.
 ///
@@ -146,6 +146,7 @@ class LocalServerService extends ChangeNotifier {
     final lanAccessToken = _lanAccessToken;
     final pipeline = const Pipeline()
         .addMiddleware(_corsMiddleware)
+        .addMiddleware(_rateLimitMiddleware)
         .addMiddleware(_authMiddleware(key, lanAccessToken: lanAccessToken))
         .addHandler(_router);
     return pipeline;
@@ -415,6 +416,55 @@ class LocalServerService extends ChangeNotifier {
         }
         final response = await inner(request);
         return response.change(headers: _corsHeaders(request));
+      };
+
+  static final Map<String, List<int>> _requestTimes = {};
+  static const int _kMaxRequestsPerMinute = 60;
+  static const int _kWindowMs = 60000;
+  static const int _kMaxPayloadBytes = 10 * 1024 * 1024; // 10MB limit
+
+  static Middleware get _rateLimitMiddleware =>
+      (Handler inner) => (Request request) async {
+        if (request.contentLength != null &&
+            request.contentLength! > _kMaxPayloadBytes) {
+          return Response(
+            413,
+            body: json.encode({
+              'error': {
+                'message': 'Payload too large (maximum 10MB)',
+                'type': 'payload_too_large',
+              },
+            }),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
+        final forwarded = request.headers['x-forwarded-for'];
+        final clientKey = forwarded?.split(',').first.trim() ?? 'peer';
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        final times = _requestTimes.putIfAbsent(clientKey, () => []);
+        times.removeWhere((t) => now - t > _kWindowMs);
+
+        if (times.length >= _kMaxRequestsPerMinute) {
+          return Response(
+            429,
+            body: json.encode({
+              'error': {
+                'message':
+                    'Rate limit exceeded. Maximum $_kMaxRequestsPerMinute requests per minute.',
+                'type': 'rate_limit_error',
+              },
+            }),
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '60',
+            },
+          );
+        }
+
+        times.add(now);
+        return inner(request);
       };
 
   static Middleware _authMiddleware(String apiKey, {String? lanAccessToken}) =>

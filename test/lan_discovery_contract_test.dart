@@ -69,9 +69,9 @@ void main() {
       );
     });
 
-    test('model metadata is public but inference is authenticated', () {
+    test('health check is public while model metadata and inference are authenticated', () {
       expect(isPublicLocalServerMetadataRequest('GET', 'health'), isTrue);
-      expect(isPublicLocalServerMetadataRequest('GET', 'v1/models'), isTrue);
+      expect(isPublicLocalServerMetadataRequest('GET', 'v1/models'), isFalse);
       expect(
         isPublicLocalServerMetadataRequest('POST', 'v1/chat/completions'),
         isFalse,

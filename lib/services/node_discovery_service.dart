@@ -157,6 +157,12 @@ class NodeDiscoveryService extends ChangeNotifier {
       try {
         final request = await client.getUrl(node.modelListUri);
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        if (node.accessToken.isNotEmpty) {
+          request.headers.set(
+            HttpHeaders.authorizationHeader,
+            'Bearer ${node.accessToken}',
+          );
+        }
         final response = await request.close();
         if (response.statusCode == HttpStatus.ok) {
           final payload = jsonDecode(

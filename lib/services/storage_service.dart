@@ -53,18 +53,14 @@ class StorageService {
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// Request permissions required to write the Erebrus AI workspace.
-  /// On Android this asks for storage / manage-external-storage; on iOS and
-  /// desktop it returns true immediately.
+  /// On iOS, desktop, and modern Android scoped storage, this completes safely.
   Future<bool> ensurePermissions() async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
-      // Android 11+ requires MANAGE_EXTERNAL_STORAGE to create a public
-      // ErebrusAI folder. On older versions WRITE_EXTERNAL_STORAGE is enough.
-      if (await Permission.manageExternalStorage.request().isGranted) {
-        return true;
-      }
-      if (await Permission.storage.request().isGranted) return true;
-      return false;
+      final status = await Permission.storage.status;
+      if (status.isGranted) return true;
+      final requested = await Permission.storage.request();
+      return requested.isGranted || requested.isLimited;
     }
     return true;
   }
@@ -279,8 +275,7 @@ class StorageService {
     if (!Platform.isAndroid) return null;
 
     final storage = await Permission.storage.status;
-    final manage = await Permission.manageExternalStorage.status;
-    if (!storage.isGranted && !manage.isGranted) return null;
+    if (!storage.isGranted) return null;
 
     final ext = await getExternalStorageDirectory();
     if (ext == null) return null;
