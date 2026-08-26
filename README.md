@@ -9,8 +9,9 @@ AI node.
 
 - **Private by default** — inference runs on your hardware.
 - **Wallet or social sign-in** — one Erebrus account across the ecosystem.
-- **Desktop always-on node** — macOS, Windows, Linux can serve models in the
-  background.
+- **Desktop always-on node** — macOS, Windows, and Linux live in the system
+  tray while serving models in the background. Closing the window hides it;
+  use the tray icon to reopen or quit the app.
 - **Mobile companion** — iOS and Android discover nodes and run small models
   while open.
 - **Team workspaces** — join an organization to access shared models.

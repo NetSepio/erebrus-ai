@@ -2,6 +2,15 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
+## Unreleased
+
+### Desktop
+
+- Run as a true menu-bar/system-tray app: closing the window hides it while
+  keeping background services and the tray icon active.
+- Remove the Dock/taskbar icon and use the tray icon as the sole way to reopen
+  the window; quitting remains an explicit tray-menu action.
+
 ## 1.0.2+4 — 2026-08-19
 
 ### Authentication and sessions

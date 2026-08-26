@@ -50,8 +50,13 @@ class _DesktopShellState extends State<DesktopShell>
     try {
       await windowManager.ensureInitialized();
       await windowManager.setPreventClose(true);
-      await _syncInferenceState(force: true);
+      // A tray-owned app should never have a second launcher in the Dock or
+      // taskbar. On macOS this switches the process to accessory mode; the
+      // native LSUIElement setting also prevents a Dock icon from flashing
+      // briefly before Flutter has initialized.
+      await windowManager.setSkipTaskbar(true);
       _initialized = true;
+      await _syncInferenceState(force: true);
       debugPrint('[Desktop] Erebrus AI tray ready');
     } on Object catch (error) {
       debugPrint('[Desktop] tray initialization failed: $error');
@@ -88,7 +93,7 @@ class _DesktopShellState extends State<DesktopShell>
 
   @override
   void onWindowClose() {
-    if (_initialized) unawaited(windowManager.hide());
+    unawaited(windowManager.hide());
   }
 
   void _onInferenceChanged() {
