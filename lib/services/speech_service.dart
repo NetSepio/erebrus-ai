@@ -65,17 +65,42 @@ class SpeechService extends ChangeNotifier {
     if (!_initialized) await _initialize();
     final voice = selectedVoice;
     if (voice != null) {
-      await _tts.setVoice(voice.platformValue);
+      try {
+        await _tts.setVoice(voice.platformValue);
+      } catch (e) {
+        debugPrint('[Speech] setVoice failed: $e');
+      }
     } else {
       final locale = PlatformDispatcher.instance.locale.toLanguageTag();
-      final available = await _tts.isLanguageAvailable(locale);
-      await _tts.setLanguage(
-        available == true || available == 1 ? locale : 'en-US',
-      );
+      var setSuccess = false;
+      try {
+        final available = await _tts.isLanguageAvailable(locale);
+        if (available == true || available == 1) {
+          await _tts.setLanguage(locale);
+          setSuccess = true;
+        }
+      } catch (_) {
+        // Desktop platforms (Windows/Linux) do not implement isLanguageAvailable
+      }
+      if (!setSuccess) {
+        try {
+          await _tts.setLanguage(locale);
+        } catch (_) {
+          try {
+            await _tts.setLanguage('en-US');
+          } catch (_) {}
+        }
+      }
     }
-    await _tts.setSpeechRate(_rate);
-    await _tts.setPitch(_pitch);
-    await _tts.setVolume(1.0);
+    try {
+      await _tts.setSpeechRate(_rate);
+    } catch (_) {}
+    try {
+      await _tts.setPitch(_pitch);
+    } catch (_) {}
+    try {
+      await _tts.setVolume(1.0);
+    } catch (_) {}
     await _tts.speak(text);
   }
 

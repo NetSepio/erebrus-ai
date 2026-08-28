@@ -142,12 +142,10 @@ class LocalServerService extends ChangeNotifier {
   }
 
   Handler get _handler {
-    final key = _apiKey ?? '';
-    final lanAccessToken = _lanAccessToken;
     final pipeline = const Pipeline()
         .addMiddleware(_corsMiddleware)
         .addMiddleware(_rateLimitMiddleware)
-        .addMiddleware(_authMiddleware(key, lanAccessToken: lanAccessToken))
+        .addMiddleware(_authMiddleware)
         .addHandler(_router);
     return pipeline;
   }
@@ -284,14 +282,15 @@ class LocalServerService extends ChangeNotifier {
           'total_tokens': 0,
         },
       });
-    } on InferenceException catch (e) {
+    } catch (e) {
+      final msg = e is InferenceException ? e.message : e.toString();
       return _jsonResponse({
-        'error': {'message': e.message, 'type': 'inference_error'},
+        'error': {'message': msg, 'type': 'inference_error'},
       }, status: 500);
     }
   }
 
-  Stream<String> _streamCompletion({
+  Stream<List<int>> _streamCompletion({
     required String modelId,
     required String prompt,
     required String systemPrompt,
@@ -303,6 +302,10 @@ class LocalServerService extends ChangeNotifier {
     required String id,
     required int created,
   }) async* {
+    // Send an immediate SSE comment ping so HTTP response headers (200 OK)
+    // are flushed immediately to the client while the model loads.
+    yield utf8.encode(': connected\n\n');
+
     try {
       await for (final token in InferenceService.instance.generate(
         modelId: modelId,
@@ -314,7 +317,7 @@ class LocalServerService extends ChangeNotifier {
         repeatPenalty: repeatPenalty,
         stop: stop,
       )) {
-        yield _sseData({
+        yield utf8.encode(_sseData({
           'id': id,
           'object': 'chat.completion.chunk',
           'created': created,
@@ -326,9 +329,9 @@ class LocalServerService extends ChangeNotifier {
               'finish_reason': null,
             },
           ],
-        });
+        }));
       }
-      yield _sseData({
+      yield utf8.encode(_sseData({
         'id': id,
         'object': 'chat.completion.chunk',
         'created': created,
@@ -336,13 +339,14 @@ class LocalServerService extends ChangeNotifier {
         'choices': [
           {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
         ],
-      });
-    } on InferenceException catch (e) {
-      yield _sseData({
-        'error': {'message': e.message, 'type': 'inference_error'},
-      });
+      }));
+    } catch (e) {
+      final msg = e is InferenceException ? e.message : e.toString();
+      yield utf8.encode(_sseData({
+        'error': {'message': msg, 'type': 'inference_error'},
+      }));
     }
-    yield 'data: [DONE]\n\n';
+    yield utf8.encode('data: [DONE]\n\n');
   }
 
   static String _lastMessage(
@@ -467,7 +471,7 @@ class LocalServerService extends ChangeNotifier {
         return inner(request);
       };
 
-  static Middleware _authMiddleware(String apiKey, {String? lanAccessToken}) =>
+  static Middleware get _authMiddleware =>
       (Handler inner) => (Request request) async {
         if (isPublicLocalServerMetadataRequest(
           request.method,
@@ -479,7 +483,10 @@ class LocalServerService extends ChangeNotifier {
         final token = auth.startsWith('Bearer ')
             ? auth.substring(7).trim()
             : '';
-        if (token != apiKey && token != lanAccessToken) {
+        final apiKey = _instance._apiKey ?? '';
+        final lanAccessToken = _instance._lanAccessToken;
+        if ((apiKey.isEmpty && lanAccessToken == null) ||
+            (token != apiKey && token != lanAccessToken)) {
           return Response.unauthorized(
             json.encode({
               'error': {

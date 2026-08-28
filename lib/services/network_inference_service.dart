@@ -75,9 +75,15 @@ class NetworkInferenceService extends ChangeNotifier {
       final response = await _client.send(request);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final body = await response.stream.bytesToString();
+        final serverMsg = _errorMessage(body);
+        if (response.statusCode == 401 ||
+            serverMsg?.toLowerCase().contains('invalid api key') == true) {
+          throw const NetworkInferenceException(
+            'The host node token expired or the host was restarted. Please go to Models and tap Rescan to refresh.',
+          );
+        }
         throw NetworkInferenceException(
-          _errorMessage(body) ??
-              'The node returned HTTP ${response.statusCode}.',
+          serverMsg ?? 'The node returned HTTP ${response.statusCode}.',
         );
       }
 
@@ -113,6 +119,16 @@ class NetworkInferenceService extends ChangeNotifier {
     } on NetworkInferenceException {
       rethrow;
     } on Object catch (error) {
+      final errorStr = error.toString();
+      if (errorStr.contains('Connection closed before full header') ||
+          errorStr.contains('Connection reset') ||
+          errorStr.contains('Connection refused') ||
+          errorStr.contains('Software caused connection abort') ||
+          errorStr.contains('SocketException')) {
+        throw NetworkInferenceException(
+          'Connection to ${target.nodeName} was lost or interrupted. Please ensure the Erebrus AI app is open on the host device and tap Rescan in Models.',
+        );
+      }
       throw NetworkInferenceException(
         'Could not reach ${target.nodeName}: $error',
       );
