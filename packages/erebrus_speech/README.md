@@ -1,9 +1,10 @@
 # Erebrus Speech
 
-Private Flutter plugin for Apple's on-device SpeechAnalyzer API. The plugin is
-compiled into iOS and macOS builds but reports unavailable below OS 26.
+Private Flutter plugin for Apple's on-device `SpeechAnalyzer` API. The plugin is
+compiled into iOS and macOS builds (available on macOS 26 / iOS 26+).
 
-The Phase 0 bridge can probe locale/assets, capture microphone buffers, persist
-the original session audio as CAF, stream SpeechTranscriber results, and stop
-with a transcript/audio result. Product UI and durable session storage are
-implemented in later phases.
+The bridge probes locale/assets, captures microphone buffers, persists
+the original session audio as CAF, streams `SpeechTranscriber` results in real-time,
+and returns structured transcript segments with timecodes. Cross-platform fallback
+for non-Apple devices is provided via the `whisper.cpp` engine.
+

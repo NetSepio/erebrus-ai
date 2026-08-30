@@ -1524,25 +1524,28 @@ class _SessionTile extends StatelessWidget {
     final active = service.current?.id == session.id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        selected: active,
-        selectedTileColor: AppColors.surface3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        title: Text(
-          session.effectiveTranscript.isEmpty
-              ? 'Recording · ${_sessionDate(session.createdAt)}'
-              : session.effectiveTranscript,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: AppText.grotesk(12.5, weight: FontWeight.w600),
+      child: Material(
+        color: Colors.transparent,
+        child: ListTile(
+          selected: active,
+          selectedTileColor: AppColors.surface3,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          title: Text(
+            session.effectiveTranscript.isEmpty
+                ? 'Recording · ${_sessionDate(session.createdAt)}'
+                : session.effectiveTranscript,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.grotesk(12.5, weight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${_sessionDate(session.createdAt)} · ${session.locale} · '
+            '${_duration(Duration(milliseconds: session.durationMilliseconds))}'
+            '${session.analysisChatIds.isEmpty ? '' : ' · ${session.analysisChatIds.length} analysis draft${session.analysisChatIds.length == 1 ? '' : 's'}'}',
+            style: AppText.mono(9.5, color: AppColors.textMuted),
+          ),
+          onTap: () => service.selectSession(session),
         ),
-        subtitle: Text(
-          '${_sessionDate(session.createdAt)} · ${session.locale} · '
-          '${_duration(Duration(milliseconds: session.durationMilliseconds))}'
-          '${session.analysisChatIds.isEmpty ? '' : ' · ${session.analysisChatIds.length} analysis draft${session.analysisChatIds.length == 1 ? '' : 's'}'}',
-          style: AppText.mono(9.5, color: AppColors.textMuted),
-        ),
-        onTap: () => service.selectSession(session),
       ),
     );
   }

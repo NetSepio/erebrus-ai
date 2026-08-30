@@ -100,6 +100,15 @@ flutter run -d <iphone-device-id>
   entitlements and reverse-domain URL scheme setup.
 - Sign-in with Apple requires the bundle id and service id configured.
 
+#### Building for TestFlight / App Store
+To produce an archive or IPA for TestFlight distribution:
+
+```bash
+flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+```
+
+Or open `ios/Runner.xcworkspace` in Xcode, select **Any iOS Device (arm64)**, and go to **Product > Archive**. Ensure your Apple Developer Team and Provisioning Profiles are selected under the **Signing & Capabilities** tab.
+
 ### Android
 
 ```bash

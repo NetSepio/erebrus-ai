@@ -113,6 +113,7 @@ file(GENERATE
 }
 ")
 
+
 # Stage into this plugin's binary dir so Flutter's INSTALL target, which can
 # run as soon as ALL_BUILD starts, copies a file that already exists.
 set(EREBRUS_TURBOQUANT_SIDECAR_DIR "${CMAKE_CURRENT_BINARY_DIR}/sidecar")

@@ -4,6 +4,7 @@ import 'package:erebrus_ai/data/transcription_session.dart';
 import 'package:erebrus_ai/services/transcription_contract.dart';
 import 'package:erebrus_ai/services/transcription_session_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   late Directory root;
@@ -25,7 +26,7 @@ void main() {
     'finalized session preserves audio, raw text, timecodes, and edits',
     () async {
       final directory = await repository.createSessionDirectory('session-1');
-      final audio = File('${directory.path}/capture.caf');
+      final audio = File(p.join(directory.path, 'capture.caf'));
       await audio.writeAsBytes([1, 2, 3, 4]);
 
       final session = await repository.finalize(
@@ -172,7 +173,7 @@ void main() {
 
   test('interrupted draft is recovered with transcript and audio', () async {
     final directory = await repository.createSessionDirectory('interrupted');
-    final audio = File('${directory.path}/audio.wav');
+    final audio = File(p.join(directory.path, 'audio.wav'));
     await audio.writeAsBytes([1, 2, 3, 4]);
     await repository.saveDraft(
       sessionId: 'interrupted',
@@ -209,7 +210,7 @@ void main() {
 
   test('orphan audio without a manifest is recovered', () async {
     final directory = await repository.createSessionDirectory('orphan');
-    final audio = File('${directory.path}/capture.caf');
+    final audio = File(p.join(directory.path, 'capture.caf'));
     await audio.writeAsBytes([9, 8, 7]);
 
     final restored = TranscriptionSessionRepository(
@@ -220,7 +221,7 @@ void main() {
     expect(recovered.id, 'orphan');
     expect(recovered.status, TranscriptionSessionStatus.failed);
     expect(recovered.audio?.relativePath, 'capture.caf');
-    expect(File('${directory.path}/session.json').existsSync(), isTrue);
+    expect(File(p.join(directory.path, 'session.json')).existsSync(), isTrue);
     restored.dispose();
   });
 }

@@ -27,8 +27,8 @@ AI node.
 | **macOS** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
 | **Windows** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
 | **Linux** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
-| **Android** | Client + optional server | GitHub Releases (APK) / sideload |
-| **iOS** | Client + in-app server | TestFlight / App Store (see [docs/BUILD.md](docs/BUILD.md)) |
+| **Android** | Client + optional server | Build from source; production signing pending |
+| **iOS** | Client + in-app server | Build from source; TestFlight signing pending |
 | **Web** | Not supported | Browsers cannot run local LLMs in MVP |
 
 ---
@@ -37,8 +37,8 @@ AI node.
 
 ```bash
 flutter pub get
-flutter analyze      # No issues found!
-flutter test         # All tests passed!
+flutter analyze
+flutter test
 flutter run          # desktop or connected device
 ```
 
@@ -64,10 +64,15 @@ flows — see [docs/AUTH.md](docs/AUTH.md).
 ```
 lib/
 ├── auth/        # Wallet/social sign-in, session, gateway, deep links
+├── data/        # Model catalog, persona repository, transcription sessions
+├── navigation/  # Adaptive responsive navigation shell and routing
 ├── org/         # Organization / workspace client and state
 ├── platform/    # Secure storage and platform detection
-├── screens/     # Chat, models, personas, settings, sign-in, shell
-└── state/       # AppState wiring auth + org to the UI
+├── screens/     # Chat, models, personas, settings, sign-in, onboarding
+├── services/    # Inference coordinator, backends, download manager, HTTP server, mDNS
+├── state/       # AppState wiring auth + org to the UI
+├── theme/       # Design system tokens, colors, typography, glassmorphism
+└── widgets/     # Reusable glass cards, thought bubbles, controls, status indicators
 ```
 
 ---

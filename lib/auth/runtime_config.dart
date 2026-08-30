@@ -54,8 +54,8 @@ class RuntimeConfig {
 
   /// Google server (web) client id for native Google sign-in.
   static String get googleServerClientId => _firstNonEmpty([
-    kGoogleServerClientId,
     _values['GOOGLE_SERVER_CLIENT_ID'],
+    kGoogleServerClientId,
   ]);
 
   static bool get hasGoogleSignIn => googleServerClientId.isNotEmpty;

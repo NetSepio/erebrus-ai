@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:uuid/uuid.dart';
 
 import '../data/catalog_service.dart';
+import '../platform/secure_storage.dart';
 import 'inference_service.dart';
 import 'imported_model_service.dart';
 import 'mdns_config.dart';
@@ -17,7 +19,74 @@ import 'model_download_service.dart';
 import 'model_package_service.dart';
 
 bool isPublicLocalServerMetadataRequest(String method, String path) =>
-    method == 'GET' && (path == 'health' || path == 'v1/models');
+    method == 'GET' && path == 'health';
+
+const int kMaxLocalServerPayloadBytes = 10 * 1024 * 1024;
+
+class LocalServerPayloadTooLarge implements Exception {
+  const LocalServerPayloadTooLarge();
+}
+
+Future<String> readBoundedLocalServerBody(
+  Request request, {
+  int maxBytes = kMaxLocalServerPayloadBytes,
+}) async {
+  if (request.contentLength != null && request.contentLength! > maxBytes) {
+    throw const LocalServerPayloadTooLarge();
+  }
+
+  final body = BytesBuilder(copy: false);
+  var received = 0;
+  await for (final chunk in request.read()) {
+    received += chunk.length;
+    if (received > maxBytes) throw const LocalServerPayloadTooLarge();
+    body.add(chunk);
+  }
+  return utf8.decode(body.takeBytes());
+}
+
+Future<String> loadOrCreateLocalServerApiKey({
+  required Future<String?> Function() secureRead,
+  required Future<void> Function(String value) secureWrite,
+  required Future<String?> Function() fallbackRead,
+  required Future<void> Function(String value) fallbackWrite,
+  required Future<void> Function() fallbackDelete,
+  required String Function() generate,
+}) async {
+  var secureAvailable = true;
+  String? key;
+  try {
+    key = await secureRead();
+  } catch (_) {
+    secureAvailable = false;
+  }
+  if (key != null && key.isNotEmpty) return key;
+
+  final fallbackKey = await fallbackRead();
+  if (fallbackKey != null && fallbackKey.isNotEmpty) {
+    if (secureAvailable) {
+      try {
+        await secureWrite(fallbackKey);
+        await fallbackDelete();
+      } catch (_) {
+        // Keep the fallback until secure storage becomes available.
+      }
+    }
+    return fallbackKey;
+  }
+
+  key = generate();
+  if (secureAvailable) {
+    try {
+      await secureWrite(key);
+      return key;
+    } catch (_) {
+      // Persist below so the key never exists only in process memory.
+    }
+  }
+  await fallbackWrite(key);
+  return key;
+}
 
 /// A real OpenAI-compatible HTTP server that runs on the device.
 ///
@@ -49,12 +118,26 @@ class LocalServerService extends ChangeNotifier {
   /// The API key clients must send in the `Authorization` header.
   Future<String> get apiKey async {
     if (_apiKey != null) return _apiKey!;
-    final prefs = await SharedPreferences.getInstance();
-    var key = prefs.getString('erebrus_local_api_key');
-    if (key == null || key.isEmpty) {
-      key = 'ere_sk_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}';
-      await prefs.setString('erebrus_local_api_key', key);
-    }
+    const storageKey = 'erebrus_local_api_key';
+    final key = await loadOrCreateLocalServerApiKey(
+      secureRead: () => ErebrusSecureStorage.instance.read(key: storageKey),
+      secureWrite: (value) =>
+          ErebrusSecureStorage.instance.write(key: storageKey, value: value),
+      fallbackRead: () async =>
+          (await SharedPreferences.getInstance()).getString(storageKey),
+      fallbackWrite: (value) async {
+        final stored = await (await SharedPreferences.getInstance()).setString(
+          storageKey,
+          value,
+        );
+        if (!stored) throw StateError('Could not persist local server API key');
+      },
+      fallbackDelete: () async {
+        await (await SharedPreferences.getInstance()).remove(storageKey);
+      },
+      generate: () =>
+          'ere_sk_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}',
+    );
     _apiKey = key;
     return key;
   }
@@ -117,11 +200,10 @@ class LocalServerService extends ChangeNotifier {
   }
 
   Handler get _handler {
-    final key = _apiKey ?? '';
-    final lanAccessToken = _lanAccessToken;
     final pipeline = const Pipeline()
         .addMiddleware(_corsMiddleware)
-        .addMiddleware(_authMiddleware(key, lanAccessToken: lanAccessToken))
+        .addMiddleware(_rateLimitMiddleware)
+        .addMiddleware(_authMiddleware)
         .addHandler(_router);
     return pipeline;
   }
@@ -169,7 +251,12 @@ class LocalServerService extends ChangeNotifier {
   }
 
   Future<Response> _handleChatCompletion(Request request) async {
-    final body = await request.readAsString();
+    late final String body;
+    try {
+      body = await readBoundedLocalServerBody(request);
+    } on LocalServerPayloadTooLarge {
+      return _payloadTooLargeResponse();
+    }
     final payload = json.decode(body) as Map<String, dynamic>? ?? {};
     final modelId = payload['model'] as String? ?? '';
     final stream = payload['stream'] as bool? ?? true;
@@ -258,14 +345,15 @@ class LocalServerService extends ChangeNotifier {
           'total_tokens': 0,
         },
       });
-    } on InferenceException catch (e) {
+    } catch (e) {
+      final msg = e is InferenceException ? e.message : e.toString();
       return _jsonResponse({
-        'error': {'message': e.message, 'type': 'inference_error'},
+        'error': {'message': msg, 'type': 'inference_error'},
       }, status: 500);
     }
   }
 
-  Stream<String> _streamCompletion({
+  Stream<List<int>> _streamCompletion({
     required String modelId,
     required String prompt,
     required String systemPrompt,
@@ -277,6 +365,10 @@ class LocalServerService extends ChangeNotifier {
     required String id,
     required int created,
   }) async* {
+    // Send an immediate SSE comment ping so HTTP response headers (200 OK)
+    // are flushed immediately to the client while the model loads.
+    yield utf8.encode(': connected\n\n');
+
     try {
       await for (final token in InferenceService.instance.generate(
         modelId: modelId,
@@ -288,35 +380,42 @@ class LocalServerService extends ChangeNotifier {
         repeatPenalty: repeatPenalty,
         stop: stop,
       )) {
-        yield _sseData({
+        yield utf8.encode(
+          _sseData({
+            'id': id,
+            'object': 'chat.completion.chunk',
+            'created': created,
+            'model': modelId,
+            'choices': [
+              {
+                'index': 0,
+                'delta': {'role': 'assistant', 'content': token},
+                'finish_reason': null,
+              },
+            ],
+          }),
+        );
+      }
+      yield utf8.encode(
+        _sseData({
           'id': id,
           'object': 'chat.completion.chunk',
           'created': created,
           'model': modelId,
           'choices': [
-            {
-              'index': 0,
-              'delta': {'role': 'assistant', 'content': token},
-              'finish_reason': null,
-            },
+            {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
           ],
-        });
-      }
-      yield _sseData({
-        'id': id,
-        'object': 'chat.completion.chunk',
-        'created': created,
-        'model': modelId,
-        'choices': [
-          {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
-        ],
-      });
-    } on InferenceException catch (e) {
-      yield _sseData({
-        'error': {'message': e.message, 'type': 'inference_error'},
-      });
+        }),
+      );
+    } catch (e) {
+      final msg = e is InferenceException ? e.message : e.toString();
+      yield utf8.encode(
+        _sseData({
+          'error': {'message': msg, 'type': 'inference_error'},
+        }),
+      );
     }
-    yield 'data: [DONE]\n\n';
+    yield utf8.encode('data: [DONE]\n\n');
   }
 
   static String _lastMessage(
@@ -392,7 +491,53 @@ class LocalServerService extends ChangeNotifier {
         return response.change(headers: _corsHeaders(request));
       };
 
-  static Middleware _authMiddleware(String apiKey, {String? lanAccessToken}) =>
+  static final Map<String, List<int>> _requestTimes = {};
+  static const int _kMaxRequestsPerMinute = 60;
+  static const int _kWindowMs = 60000;
+  static Middleware get _rateLimitMiddleware =>
+      (Handler inner) => (Request request) async {
+        if (request.contentLength != null &&
+            request.contentLength! > kMaxLocalServerPayloadBytes) {
+          return _payloadTooLargeResponse();
+        }
+
+        final forwarded = request.headers['x-forwarded-for'];
+        final clientKey = forwarded?.split(',').first.trim() ?? 'peer';
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        final times = _requestTimes.putIfAbsent(clientKey, () => []);
+        times.removeWhere((t) => now - t > _kWindowMs);
+
+        if (times.length >= _kMaxRequestsPerMinute) {
+          return Response(
+            429,
+            body: json.encode({
+              'error': {
+                'message':
+                    'Rate limit exceeded. Maximum $_kMaxRequestsPerMinute requests per minute.',
+                'type': 'rate_limit_error',
+              },
+            }),
+            headers: {'content-type': 'application/json', 'retry-after': '60'},
+          );
+        }
+
+        times.add(now);
+        return inner(request);
+      };
+
+  static Response _payloadTooLargeResponse() => Response(
+    413,
+    body: json.encode({
+      'error': {
+        'message': 'Payload too large (maximum 10MB)',
+        'type': 'payload_too_large',
+      },
+    }),
+    headers: {'content-type': 'application/json'},
+  );
+
+  static Middleware get _authMiddleware =>
       (Handler inner) => (Request request) async {
         if (isPublicLocalServerMetadataRequest(
           request.method,
@@ -404,7 +549,10 @@ class LocalServerService extends ChangeNotifier {
         final token = auth.startsWith('Bearer ')
             ? auth.substring(7).trim()
             : '';
-        if (token != apiKey && token != lanAccessToken) {
+        final apiKey = _instance._apiKey ?? '';
+        final lanAccessToken = _instance._lanAccessToken;
+        if ((apiKey.isEmpty && lanAccessToken == null) ||
+            (token != apiKey && token != lanAccessToken)) {
           return Response.unauthorized(
             json.encode({
               'error': {

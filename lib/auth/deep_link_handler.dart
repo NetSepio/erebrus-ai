@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'auth_config.dart';
 import 'desktop_web_auth.dart';
 import 'wallet_auth_controller.dart';
 
@@ -46,7 +47,9 @@ class DeepLinkHandler {
     final url = link.toString();
     final auth = _auth;
     if (auth == null) {
-      debugPrint('[DeepLinkHandler] auth not bound for $url');
+      debugPrint(
+        '[DeepLinkHandler] auth not bound for ${redactedAuthUrlForLog(url)}',
+      );
       return;
     }
 
@@ -57,12 +60,16 @@ class DeepLinkHandler {
 
     final modal = auth.appKitModal;
     if (modal == null) {
-      debugPrint('[DeepLinkHandler] unhandled link (no Reown session): $url');
+      debugPrint(
+        '[DeepLinkHandler] unhandled link (no Reown session): ${redactedAuthUrlForLog(url)}',
+      );
       return;
     }
     final handled = await modal.dispatchEnvelope(url);
     if (!handled) {
-      debugPrint('[DeepLinkHandler] Reown did not handle: $url');
+      debugPrint(
+        '[DeepLinkHandler] Reown did not handle: ${redactedAuthUrlForLog(url)}',
+      );
     }
   }
 

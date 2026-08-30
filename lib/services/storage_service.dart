@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
@@ -53,18 +54,19 @@ class StorageService {
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// Request permissions required to write the Erebrus AI workspace.
-  /// On Android this asks for storage / manage-external-storage; on iOS and
-  /// desktop it returns true immediately.
+  /// On iOS, desktop, and modern Android scoped storage, this completes safely.
   Future<bool> ensurePermissions() async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
-      // Android 11+ requires MANAGE_EXTERNAL_STORAGE to create a public
-      // ErebrusAI folder. On older versions WRITE_EXTERNAL_STORAGE is enough.
-      if (await Permission.manageExternalStorage.request().isGranted) {
+      final sdkInt = await _androidSdkInt();
+      if (sdkInt == null || !requiresLegacyAndroidStoragePermission(sdkInt)) {
         return true;
       }
-      if (await Permission.storage.request().isGranted) return true;
-      return false;
+      final status = await Permission.storage.status;
+      if (status.isGranted) return true;
+      final requested = await Permission.storage.request();
+      // Downloads can always fall back to the app-private documents folder.
+      return requested.isGranted || requested.isLimited || requested.isDenied;
     }
     return true;
   }
@@ -278,9 +280,13 @@ class StorageService {
   Future<Directory?> _publicRootDir() async {
     if (!Platform.isAndroid) return null;
 
+    final sdkInt = await _androidSdkInt();
+    if (sdkInt == null || !requiresLegacyAndroidStoragePermission(sdkInt)) {
+      return null;
+    }
+
     final storage = await Permission.storage.status;
-    final manage = await Permission.manageExternalStorage.status;
-    if (!storage.isGranted && !manage.isGranted) return null;
+    if (!storage.isGranted) return null;
 
     final ext = await getExternalStorageDirectory();
     if (ext == null) return null;
@@ -293,5 +299,16 @@ class StorageService {
       root = root.parent;
     }
     return root;
+  }
+}
+
+bool requiresLegacyAndroidStoragePermission(int sdkInt) => sdkInt <= 28;
+
+Future<int?> _androidSdkInt() async {
+  try {
+    return (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+  } catch (error) {
+    debugPrint('[Storage] could not determine Android SDK level: $error');
+    return null;
   }
 }

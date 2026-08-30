@@ -46,6 +46,26 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build
 
 # Environment secrets
 .env
+
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+
+# Android build cache & signing keys
+android/local.properties
+android/.gradle/
+*.keystore
+*.jks
+*.key
+
+# Native dependency artifacts
+.flutter-plugins
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+macos/.symlinks/

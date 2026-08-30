@@ -128,11 +128,9 @@ class ModelDownloadService extends ChangeNotifier {
   Future<bool> download(CatalogEntry entry) async {
     if (isDownloaded(entry.id)) return true;
 
-    final permitted = await StorageService.instance.ensurePermissions();
-    if (!permitted) {
-      debugPrint('[Download] storage permission denied');
-      return false;
-    }
+    // A denied legacy public-storage permission is not fatal: StorageService
+    // falls back to the app-private documents directory on Android.
+    await StorageService.instance.ensurePermissions();
 
     final dir = await StorageService.instance.modelsDir();
     final baseName = _safeName(entry.id);

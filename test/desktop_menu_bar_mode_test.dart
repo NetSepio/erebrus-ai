@@ -15,7 +15,9 @@ void main() {
   });
 
   test('macOS runs as a menu-bar accessory and survives window close', () {
-    final infoPlist = File('macos/Runner/Info.plist').readAsStringSync();
+    final infoPlist = File(
+      'macos/Runner/Info.plist',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     final appDelegate = File(
       'macos/Runner/AppDelegate.swift',
     ).readAsStringSync();
