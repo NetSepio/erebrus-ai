@@ -37,6 +37,9 @@ cp env.example .env
 
 `.env` is bundled as a Flutter asset and parsed by `RuntimeConfig` at startup.
 For CI or release builds you can also pass these as `--dart-define` values.
+OAuth client IDs and redirect URLs are public configuration identifiers, not
+client secrets. The repository contains production defaults where applicable;
+explicit `.env` values override them for development and alternate deployments.
 
 ---
 

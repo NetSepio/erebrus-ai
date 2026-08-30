@@ -47,6 +47,92 @@ void main() {
     });
   });
 
+  group('local server API-key persistence', () {
+    test(
+      'falls back to durable preferences when secure storage fails',
+      () async {
+        String? fallback;
+
+        final first = await loadOrCreateLocalServerApiKey(
+          secureRead: () => throw StateError('secure storage unavailable'),
+          secureWrite: (_) => throw StateError('secure storage unavailable'),
+          fallbackRead: () async => fallback,
+          fallbackWrite: (value) async => fallback = value,
+          fallbackDelete: () async => fallback = null,
+          generate: () => 'ere_sk_generated',
+        );
+        final second = await loadOrCreateLocalServerApiKey(
+          secureRead: () => throw StateError('secure storage unavailable'),
+          secureWrite: (_) => throw StateError('secure storage unavailable'),
+          fallbackRead: () async => fallback,
+          fallbackWrite: (value) async => fallback = value,
+          fallbackDelete: () async => fallback = null,
+          generate: () => 'ere_sk_rotated',
+        );
+
+        expect(first, 'ere_sk_generated');
+        expect(second, first);
+        expect(fallback, first);
+      },
+    );
+
+    test(
+      'migrates a fallback key only after secure persistence succeeds',
+      () async {
+        String? secure;
+        String? fallback = 'ere_sk_legacy';
+
+        final key = await loadOrCreateLocalServerApiKey(
+          secureRead: () async => secure,
+          secureWrite: (value) async => secure = value,
+          fallbackRead: () async => fallback,
+          fallbackWrite: (value) async => fallback = value,
+          fallbackDelete: () async => fallback = null,
+          generate: () => 'unused',
+        );
+
+        expect(key, 'ere_sk_legacy');
+        expect(secure, key);
+        expect(fallback, isNull);
+      },
+    );
+  });
+
+  group('bounded local server request bodies', () {
+    test('rejects a chunked body after it crosses the byte limit', () async {
+      final request = Request(
+        'POST',
+        Uri.parse('http://localhost:11434/v1/chat/completions'),
+        body: Stream<List<int>>.fromIterable([
+          [1, 2, 3],
+          [4, 5, 6],
+        ]),
+      );
+
+      await expectLater(
+        readBoundedLocalServerBody(request, maxBytes: 5),
+        throwsA(isA<LocalServerPayloadTooLarge>()),
+      );
+    });
+
+    test('decodes an in-limit chunked UTF-8 body', () async {
+      final encoded = utf8.encode('{"prompt":"hello"}');
+      final request = Request(
+        'POST',
+        Uri.parse('http://localhost:11434/v1/chat/completions'),
+        body: Stream<List<int>>.fromIterable([
+          encoded.sublist(0, 4),
+          encoded.sublist(4),
+        ]),
+      );
+
+      expect(
+        await readBoundedLocalServerBody(request, maxBytes: encoded.length),
+        utf8.decode(encoded),
+      );
+    });
+  });
+
   group('Local server shelf pipeline handlers', () {
     const testApiKey = 'ere_sk_test_secret_key_12345';
     const testLanToken = 'ere_lan_temporary_token_67890';

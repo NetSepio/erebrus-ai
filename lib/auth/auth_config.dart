@@ -90,6 +90,16 @@ const kErebrusBundleId = 'com.erebrus.ai';
 /// Linux APPLICATION_ID.
 const kErebrusLinuxApplicationId = 'com.erebrus.erebrus_ai';
 
+/// Removes every query parameter and fragment before an authentication URL is
+/// written to logs. Parameter allowlists are intentionally avoided because new
+/// OAuth providers may introduce sensitive fields under unexpected names.
+String redactedAuthUrlForLog(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.scheme.isEmpty) return '[unparseable-auth-url]';
+  if (uri.hasAuthority) return '${uri.scheme}://${uri.authority}${uri.path}';
+  return '${uri.scheme}:${uri.path}';
+}
+
 String reownOriginNotAllowedMessage(String relayOrigin) =>
     'Reown relay rejected this app (origin not allowed). In cloud.reown.com → '
     'your project → Allowlist, add: $relayOrigin and https://erebrus.io — then '

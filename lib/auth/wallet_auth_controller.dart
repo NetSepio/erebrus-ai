@@ -269,8 +269,8 @@ class WalletAuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final url = DesktopWebAuth.buildLoginUrl();
-      debugPrint('[Auth] opening web login: $url');
       final uri = Uri.parse(url);
+      debugPrint('[Auth] opening web login: ${redactedAuthUrlForLog(url)}');
       final launched = await launchUrl(
         uri,
         mode: LaunchMode.externalApplication,

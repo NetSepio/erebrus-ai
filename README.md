@@ -27,8 +27,8 @@ AI node.
 | **macOS** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
 | **Windows** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
 | **Linux** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
-| **Android** | Client + optional server | GitHub Releases (APK) / sideload |
-| **iOS** | Client + in-app server | TestFlight / App Store (see [docs/BUILD.md](docs/BUILD.md)) |
+| **Android** | Client + optional server | Build from source; production signing pending |
+| **iOS** | Client + in-app server | Build from source; TestFlight signing pending |
 | **Web** | Not supported | Browsers cannot run local LLMs in MVP |
 
 ---
@@ -37,8 +37,8 @@ AI node.
 
 ```bash
 flutter pub get
-flutter analyze      # No issues found!
-flutter test         # All tests passed!
+flutter analyze
+flutter test
 flutter run          # desktop or connected device
 ```
 

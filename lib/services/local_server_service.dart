@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,73 @@ import 'model_package_service.dart';
 
 bool isPublicLocalServerMetadataRequest(String method, String path) =>
     method == 'GET' && path == 'health';
+
+const int kMaxLocalServerPayloadBytes = 10 * 1024 * 1024;
+
+class LocalServerPayloadTooLarge implements Exception {
+  const LocalServerPayloadTooLarge();
+}
+
+Future<String> readBoundedLocalServerBody(
+  Request request, {
+  int maxBytes = kMaxLocalServerPayloadBytes,
+}) async {
+  if (request.contentLength != null && request.contentLength! > maxBytes) {
+    throw const LocalServerPayloadTooLarge();
+  }
+
+  final body = BytesBuilder(copy: false);
+  var received = 0;
+  await for (final chunk in request.read()) {
+    received += chunk.length;
+    if (received > maxBytes) throw const LocalServerPayloadTooLarge();
+    body.add(chunk);
+  }
+  return utf8.decode(body.takeBytes());
+}
+
+Future<String> loadOrCreateLocalServerApiKey({
+  required Future<String?> Function() secureRead,
+  required Future<void> Function(String value) secureWrite,
+  required Future<String?> Function() fallbackRead,
+  required Future<void> Function(String value) fallbackWrite,
+  required Future<void> Function() fallbackDelete,
+  required String Function() generate,
+}) async {
+  var secureAvailable = true;
+  String? key;
+  try {
+    key = await secureRead();
+  } catch (_) {
+    secureAvailable = false;
+  }
+  if (key != null && key.isNotEmpty) return key;
+
+  final fallbackKey = await fallbackRead();
+  if (fallbackKey != null && fallbackKey.isNotEmpty) {
+    if (secureAvailable) {
+      try {
+        await secureWrite(fallbackKey);
+        await fallbackDelete();
+      } catch (_) {
+        // Keep the fallback until secure storage becomes available.
+      }
+    }
+    return fallbackKey;
+  }
+
+  key = generate();
+  if (secureAvailable) {
+    try {
+      await secureWrite(key);
+      return key;
+    } catch (_) {
+      // Persist below so the key never exists only in process memory.
+    }
+  }
+  await fallbackWrite(key);
+  return key;
+}
 
 /// A real OpenAI-compatible HTTP server that runs on the device.
 ///
@@ -51,35 +119,25 @@ class LocalServerService extends ChangeNotifier {
   Future<String> get apiKey async {
     if (_apiKey != null) return _apiKey!;
     const storageKey = 'erebrus_local_api_key';
-    String? key;
-    try {
-      key = await ErebrusSecureStorage.instance.read(key: storageKey);
-    } catch (_) {
-      // Secure storage read failed or not supported on this platform
-    }
-    // Backward-compatibility: migrate legacy unencrypted key from SharedPreferences if present
-    if (key == null || key.isEmpty) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final legacyKey = prefs.getString(storageKey);
-        if (legacyKey != null && legacyKey.isNotEmpty) {
-          key = legacyKey;
-          try {
-            await ErebrusSecureStorage.instance.write(
-              key: storageKey,
-              value: key,
-            );
-            await prefs.remove(storageKey);
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
-    if (key == null || key.isEmpty) {
-      key = 'ere_sk_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}';
-      try {
-        await ErebrusSecureStorage.instance.write(key: storageKey, value: key);
-      } catch (_) {}
-    }
+    final key = await loadOrCreateLocalServerApiKey(
+      secureRead: () => ErebrusSecureStorage.instance.read(key: storageKey),
+      secureWrite: (value) =>
+          ErebrusSecureStorage.instance.write(key: storageKey, value: value),
+      fallbackRead: () async =>
+          (await SharedPreferences.getInstance()).getString(storageKey),
+      fallbackWrite: (value) async {
+        final stored = await (await SharedPreferences.getInstance()).setString(
+          storageKey,
+          value,
+        );
+        if (!stored) throw StateError('Could not persist local server API key');
+      },
+      fallbackDelete: () async {
+        await (await SharedPreferences.getInstance()).remove(storageKey);
+      },
+      generate: () =>
+          'ere_sk_${const Uuid().v4().replaceAll('-', '').substring(0, 24)}',
+    );
     _apiKey = key;
     return key;
   }
@@ -193,7 +251,12 @@ class LocalServerService extends ChangeNotifier {
   }
 
   Future<Response> _handleChatCompletion(Request request) async {
-    final body = await request.readAsString();
+    late final String body;
+    try {
+      body = await readBoundedLocalServerBody(request);
+    } on LocalServerPayloadTooLarge {
+      return _payloadTooLargeResponse();
+    }
     final payload = json.decode(body) as Map<String, dynamic>? ?? {};
     final modelId = payload['model'] as String? ?? '';
     final stream = payload['stream'] as bool? ?? true;
@@ -317,34 +380,40 @@ class LocalServerService extends ChangeNotifier {
         repeatPenalty: repeatPenalty,
         stop: stop,
       )) {
-        yield utf8.encode(_sseData({
+        yield utf8.encode(
+          _sseData({
+            'id': id,
+            'object': 'chat.completion.chunk',
+            'created': created,
+            'model': modelId,
+            'choices': [
+              {
+                'index': 0,
+                'delta': {'role': 'assistant', 'content': token},
+                'finish_reason': null,
+              },
+            ],
+          }),
+        );
+      }
+      yield utf8.encode(
+        _sseData({
           'id': id,
           'object': 'chat.completion.chunk',
           'created': created,
           'model': modelId,
           'choices': [
-            {
-              'index': 0,
-              'delta': {'role': 'assistant', 'content': token},
-              'finish_reason': null,
-            },
+            {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
           ],
-        }));
-      }
-      yield utf8.encode(_sseData({
-        'id': id,
-        'object': 'chat.completion.chunk',
-        'created': created,
-        'model': modelId,
-        'choices': [
-          {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
-        ],
-      }));
+        }),
+      );
     } catch (e) {
       final msg = e is InferenceException ? e.message : e.toString();
-      yield utf8.encode(_sseData({
-        'error': {'message': msg, 'type': 'inference_error'},
-      }));
+      yield utf8.encode(
+        _sseData({
+          'error': {'message': msg, 'type': 'inference_error'},
+        }),
+      );
     }
     yield utf8.encode('data: [DONE]\n\n');
   }
@@ -425,22 +494,11 @@ class LocalServerService extends ChangeNotifier {
   static final Map<String, List<int>> _requestTimes = {};
   static const int _kMaxRequestsPerMinute = 60;
   static const int _kWindowMs = 60000;
-  static const int _kMaxPayloadBytes = 10 * 1024 * 1024; // 10MB limit
-
   static Middleware get _rateLimitMiddleware =>
       (Handler inner) => (Request request) async {
         if (request.contentLength != null &&
-            request.contentLength! > _kMaxPayloadBytes) {
-          return Response(
-            413,
-            body: json.encode({
-              'error': {
-                'message': 'Payload too large (maximum 10MB)',
-                'type': 'payload_too_large',
-              },
-            }),
-            headers: {'content-type': 'application/json'},
-          );
+            request.contentLength! > kMaxLocalServerPayloadBytes) {
+          return _payloadTooLargeResponse();
         }
 
         final forwarded = request.headers['x-forwarded-for'];
@@ -460,16 +518,24 @@ class LocalServerService extends ChangeNotifier {
                 'type': 'rate_limit_error',
               },
             }),
-            headers: {
-              'content-type': 'application/json',
-              'retry-after': '60',
-            },
+            headers: {'content-type': 'application/json', 'retry-after': '60'},
           );
         }
 
         times.add(now);
         return inner(request);
       };
+
+  static Response _payloadTooLargeResponse() => Response(
+    413,
+    body: json.encode({
+      'error': {
+        'message': 'Payload too large (maximum 10MB)',
+        'type': 'payload_too_large',
+      },
+    }),
+    headers: {'content-type': 'application/json'},
+  );
 
   static Middleware get _authMiddleware =>
       (Handler inner) => (Request request) async {
