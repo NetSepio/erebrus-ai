@@ -232,9 +232,9 @@ jobs:
       - name: Build release APKs and Play Store App Bundle
         run: |
           DEFINES=(--dart-define-from-file=.env --target-platform android-arm64)
-          flutter build apk --flavor playstore --release "${DEFINES[@]}"
-          flutter build appbundle --flavor playstore --release "${DEFINES[@]}"
-          flutter build apk --flavor dappstore --release "${DEFINES[@]}"
+          scripts/ci-annotate.sh flutter build apk --flavor playstore --release "${DEFINES[@]}"
+          scripts/ci-annotate.sh flutter build appbundle --flavor playstore --release "${DEFINES[@]}"
+          scripts/ci-annotate.sh flutter build apk --flavor dappstore --release "${DEFINES[@]}"
 
       - name: Package and verify signatures
         env:
@@ -317,6 +317,11 @@ jobs:
           fi
           sudo xcode-select -s "${xcode}/Contents/Developer"
           xcodebuild -version
+          # Xcode 26+ ships the Metal compiler as a separate component; mlx-swift
+          # (erebrus_mlx) compiles .metal shaders and fails without it.
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed'; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
 
       - if: steps.gate.outputs.enabled == 'true'
         run: scripts/write-ci-env.sh
@@ -325,7 +330,7 @@ jobs:
       - if: steps.gate.outputs.enabled == 'true'
         run: scripts/pin-spm-platforms.sh macos
       - if: steps.gate.outputs.enabled == 'true'
-        run: flutter build macos --release --dart-define-from-file=.env
+        run: scripts/ci-annotate.sh flutter build macos --release --dart-define-from-file=.env
 
       - name: Package macOS app
         if: steps.gate.outputs.enabled == 'true'
@@ -363,7 +368,7 @@ jobs:
 
       - run: scripts/write-ci-env.sh
       - run: flutter pub get
-      - run: flutter build linux --release --dart-define-from-file=.env
+      - run: scripts/ci-annotate.sh flutter build linux --release --dart-define-from-file=.env
 
       - name: Verify pinned TurboQuant runtime
         run: |
@@ -375,7 +380,9 @@ jobs:
           grep -q '"accelerator": "CPU"' "$manifest"
           grep -q '"key_cache": "q8_0"' "$manifest"
           grep -q '"value_cache": "turbo3"' "$manifest"
-          "$runtime" --version | grep -q c26cbdf
+          # The archive checksum (enforced by CMake) and the manifest pin the source;
+          # --version reports the enclosing repo's commit, so only check it runs.
+          "$runtime" --version > /dev/null 2>&1
 
       - name: Package Linux bundle
         run: |
@@ -437,7 +444,10 @@ jobs:
           if ($metadata.source_archive_sha256 -ne "5a7221222d658ca93dbf62ba2ca0623712547e9640605c12ebdfa8963aeda239") { exit 1 }
           if ($metadata.accelerator -ne "CPU") { exit 1 }
           if ($metadata.key_cache -ne "q8_0" -or $metadata.value_cache -ne "turbo3") { exit 1 }
-          & $runtime --version | Select-String "c26cbdf"
+          # The archive checksum (enforced by CMake) and the manifest pin the source;
+          # --version reports the enclosing repo's commit, so only check it runs.
+          & $runtime --version 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package Windows app
         shell: pwsh

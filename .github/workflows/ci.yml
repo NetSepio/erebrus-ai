@@ -101,6 +101,11 @@ jobs:
           fi
           sudo xcode-select -s "${xcode}/Contents/Developer"
           xcodebuild -version
+          # Xcode 26+ ships the Metal compiler as a separate component; mlx-swift
+          # (erebrus_mlx) compiles .metal shaders and fails without it.
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed'; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
 
       - run: cp env.example .env
       - run: flutter pub get
@@ -116,7 +121,7 @@ jobs:
       - name: Test macOS backend resolver
         run: flutter test third_party/lib_llama_cpp_macos/test/lib_llama_cpp_macos_test.dart
 
-      - run: flutter build macos --release
+      - run: scripts/ci-annotate.sh flutter build macos --release
 
       - name: Verify universal Whisper runtime
         run: |
@@ -146,6 +151,11 @@ jobs:
           fi
           sudo xcode-select -s "${xcode}/Contents/Developer"
           xcodebuild -version
+          # Xcode 26+ ships the Metal compiler as a separate component; mlx-swift
+          # (erebrus_mlx) compiles .metal shaders and fails without it.
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed'; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
 
       - run: cp env.example .env
       - run: flutter pub get
@@ -163,7 +173,7 @@ jobs:
       - name: Test iOS backend resolver
         run: flutter test third_party/lib_llama_cpp_ios/test/lib_llama_cpp_ios_test.dart
 
-      - run: flutter build ios --release --no-codesign
+      - run: scripts/ci-annotate.sh flutter build ios --release --no-codesign
 
   build-windows:
     name: Build Windows
@@ -225,7 +235,10 @@ jobs:
           if ($metadata.source_archive_sha256 -ne "5a7221222d658ca93dbf62ba2ca0623712547e9640605c12ebdfa8963aeda239") { exit 1 }
           if ($metadata.accelerator -ne "CPU") { exit 1 }
           if ($metadata.key_cache -ne "q8_0" -or $metadata.value_cache -ne "turbo3") { exit 1 }
-          & $runtime --version | Select-String "c26cbdf"
+          # The archive checksum (enforced by CMake) and the manifest pin the source;
+          # --version reports the enclosing repo's commit, so only check it runs.
+          & $runtime --version 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package Windows app
         shell: pwsh
@@ -264,7 +277,7 @@ jobs:
 
       - run: cp env.example .env
       - run: flutter pub get
-      - run: flutter build linux --release
+      - run: scripts/ci-annotate.sh flutter build linux --release
 
       - name: Verify pinned TurboQuant runtime
         run: |
@@ -276,7 +289,9 @@ jobs:
           grep -q '"accelerator": "CPU"' "$manifest"
           grep -q '"key_cache": "q8_0"' "$manifest"
           grep -q '"value_cache": "turbo3"' "$manifest"
-          "$runtime" --version | grep -q c26cbdf
+          # The archive checksum (enforced by CMake) and the manifest pin the source;
+          # --version reports the enclosing repo's commit, so only check it runs.
+          "$runtime" --version > /dev/null 2>&1
 
   build-android:
     name: Build Android APK
@@ -308,13 +323,13 @@ jobs:
       - name: Cross-compile TurboQuant ARM64 CPU candidate
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          tool/build_turboquant_android.sh \
+          scripts/ci-annotate.sh tool/build_turboquant_android.sh \
             CPU \
             /tmp/erebrus-turboquant-android-source \
             /tmp/erebrus-turboquant-android-build
 
       # Debug-signed here: no release keys in CI. release.yml signs.
-      - run: flutter build apk --flavor playstore --release
+      - run: scripts/ci-annotate.sh flutter build apk --flavor playstore --release
 
       - name: Verify packaged Whisper ABIs
         run: |

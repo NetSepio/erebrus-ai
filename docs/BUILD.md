@@ -161,10 +161,17 @@ dart run flutter_launcher_icons:main
 Workflows live in `.github/workflows/`. CI (`ci.yml`) needs no secrets.
 
 Apple builds need Xcode 26 or newer (`erebrus_speech` uses `SpeechAnalyzer`);
-the workflows select the newest stable Xcode 26+ on the runner. After every
-`flutter pub get`, `scripts/pin-spm-platforms.sh` pins the generated plugin
-Swift package to iOS 17 / macOS 14 (`scripts/build-all-release.sh` calls it
-too).
+the workflows select the newest stable Xcode 26+ on the runner and install its
+Metal toolchain, a separate component since Xcode 26 that `mlx-swift` needs
+for its shaders (locally: `xcodebuild -downloadComponent MetalToolchain`).
+After every `flutter pub get`, `scripts/pin-spm-platforms.sh` pins the
+generated plugin Swift package to iOS 17 / macOS 14
+(`scripts/build-all-release.sh` calls it too).
+
+Build steps run through `scripts/ci-annotate.sh`, which repeats a failed
+step's error lines as workflow annotations. Annotations can be read without
+signing in to GitHub, for example:
+`curl -s https://api.github.com/repos/NetSepio/erebrus-ai/check-runs/<job id>/annotations`.
 
 ### Cutting a release
 

@@ -26,15 +26,19 @@ if [[ "$actual_patch_hash" != "$NEON_PATCH_SHA256" ]]; then
   exit 65
 fi
 
+fresh_clone=0
 if [[ ! -d "$CHECKOUT_PATH/.git" ]]; then
   if [[ -e "$CHECKOUT_PATH" ]]; then
     echo "Refusing to replace non-git path: $CHECKOUT_PATH" >&2
     exit 73
   fi
   git clone --filter=blob:none --no-checkout "$REPOSITORY_URL" "$CHECKOUT_PATH"
+  fresh_clone=1
 fi
 
-if [[ -n "$(git -C "$CHECKOUT_PATH" status --short)" ]]; then
+# A --no-checkout clone has an empty work tree, which status reports as every
+# file deleted, so only an existing checkout can be dirty.
+if [[ "$fresh_clone" -eq 0 && -n "$(git -C "$CHECKOUT_PATH" status --short)" ]]; then
   echo "Refusing to alter a dirty TurboQuant checkout: $CHECKOUT_PATH" >&2
   exit 65
 fi

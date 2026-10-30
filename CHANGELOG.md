@@ -2,6 +2,19 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
+## 1.1.2+4 — 2026-10-30
+
+### Builds and releases
+
+- Apple CI builds install Xcode's separately shipped Metal toolchain, which
+  the on-device MLX runtime needs to compile its GPU shaders.
+- The Android TurboQuant cross-compile no longer stops on a fresh checkout.
+- The Linux and Windows runtime checks no longer depend on `llama-server
+  --version` output, which reports this repository's commit instead of
+  TurboQuant's; the pinned source is still verified by checksum.
+- Failed build steps repeat their errors as workflow annotations, readable
+  without signing in to GitHub.
+
 ## 1.1.1+3 — 2026-10-30
 
 ### Sign-in
