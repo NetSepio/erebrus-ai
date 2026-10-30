@@ -276,7 +276,7 @@ jobs:
 
   build-macos:
     needs: [prepare, verify]
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
@@ -306,14 +306,16 @@ jobs:
           channel: stable
           cache: true
 
-      # erebrus_speech uses SpeechAnalyzer, which needs the iOS/macOS 26 SDK;
-      # the runner's default Xcode is older. Picks the newest stable Xcode 26+.
-      - name: Select Xcode 26 or newer
+      # erebrus_speech uses SpeechAnalyzer, which needs the iOS/macOS 26 SDK,
+      # and mlx-swift declares swift-tools-version 6.3, which needs Xcode 26.4+
+      # (older Xcode crashes resolving packages). Picks the newest stable Xcode.
+      - name: Select Xcode 26.4 or newer
         if: steps.gate.outputs.enabled == 'true'
         run: |
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app /Applications/Xcode_[3-9][0-9]*.app 2>/dev/null | grep -vi beta | sort -V | tail -1 || true)
-          if [[ -z "${xcode}" ]]; then
-            echo "::error::No Xcode 26+ on this runner:"; ls -d /Applications/Xcode*.app; exit 1
+          xcode=$(ls -d /Applications/Xcode_[0-9]*.app 2>/dev/null | grep -vi beta | sort -V | tail -1 || true)
+          version="${xcode##*/Xcode_}"; version="${version%.app}"
+          if [[ -z "${xcode}" || "$(printf '%s\n' 26.4 "${version}" | sort -V | head -1)" != 26.4 ]]; then
+            echo "::error::No Xcode 26.4+ on this runner:"; ls -d /Applications/Xcode*.app; exit 1
           fi
           sudo xcode-select -s "${xcode}/Contents/Developer"
           xcodebuild -version

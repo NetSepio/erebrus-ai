@@ -38,8 +38,10 @@ Notable user-facing changes to Erebrus AI are documented here.
   and app-indicator libraries, the Android NDK install no longer fails, and the
   Windows TurboQuant runtime install is completed when `flutter build` stops
   early.
-- Apple CI builds install Xcode's separately shipped Metal toolchain, which
-  the on-device MLX runtime needs to compile its GPU shaders.
+- Apple CI builds run on macOS 26 runners with Xcode 26.4 or newer: the MLX
+  runtime's Swift package needs Swift 6.3, and the older Xcode on macOS 15
+  runners crashed resolving it. They also install Xcode's separately shipped
+  Metal toolchain, which MLX needs to compile its GPU shaders.
 - The Android TurboQuant cross-compile no longer stops on a fresh checkout.
 - The Linux and Windows runtime checks no longer depend on `llama-server
   --version` output, which reports this repository's commit instead of

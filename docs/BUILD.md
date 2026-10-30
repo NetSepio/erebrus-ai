@@ -160,10 +160,14 @@ dart run flutter_launcher_icons:main
 
 Workflows live in `.github/workflows/`. CI (`ci.yml`) needs no secrets.
 
-Apple builds need Xcode 26 or newer (`erebrus_speech` uses `SpeechAnalyzer`);
-the workflows select the newest stable Xcode 26+ on the runner and install its
-Metal toolchain, a separate component since Xcode 26 that `mlx-swift` needs
-for its shaders (locally: `xcodebuild -downloadComponent MetalToolchain`).
+Apple builds need Xcode 26.4 or newer: `erebrus_speech` uses `SpeechAnalyzer`
+(iOS/macOS 26 SDK), and `mlx-swift` declares `swift-tools-version: 6.3`, which
+older Xcode cannot load (Xcode 26.3 crashes resolving packages with
+`-[NSMutableArray insertObjects:atIndexes:]`). The Apple jobs run on the
+`macos-26` / `macos-26-intel` runners, select the newest stable Xcode, and
+install its Metal toolchain, a separate component since Xcode 26 that
+`mlx-swift` needs for its shaders (locally:
+`xcodebuild -downloadComponent MetalToolchain`).
 After every `flutter pub get`, `scripts/pin-spm-platforms.sh` pins the
 generated plugin Swift package to iOS 17 / macOS 14
 (`scripts/build-all-release.sh` calls it too).
