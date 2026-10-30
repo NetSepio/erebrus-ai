@@ -2,19 +2,6 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
-## 1.1.2+4 — 2026-10-30
-
-### Builds and releases
-
-- Apple CI builds install Xcode's separately shipped Metal toolchain, which
-  the on-device MLX runtime needs to compile its GPU shaders.
-- The Android TurboQuant cross-compile no longer stops on a fresh checkout.
-- The Linux and Windows runtime checks no longer depend on `llama-server
-  --version` output, which reports this repository's commit instead of
-  TurboQuant's; the pinned source is still verified by checksum.
-- Failed build steps repeat their errors as workflow annotations, readable
-  without signing in to GitHub.
-
 ## 1.1.1+3 — 2026-10-30
 
 ### Sign-in
@@ -51,6 +38,14 @@ Notable user-facing changes to Erebrus AI are documented here.
   and app-indicator libraries, the Android NDK install no longer fails, and the
   Windows TurboQuant runtime install is completed when `flutter build` stops
   early.
+- Apple CI builds install Xcode's separately shipped Metal toolchain, which
+  the on-device MLX runtime needs to compile its GPU shaders.
+- The Android TurboQuant cross-compile no longer stops on a fresh checkout.
+- The Linux and Windows runtime checks no longer depend on `llama-server
+  --version` output, which reports this repository's commit instead of
+  TurboQuant's; the pinned source is still verified by checksum.
+- Failed build steps repeat their errors as workflow annotations, readable
+  without signing in to GitHub.
 - Android release builds are shrunk and obfuscated with R8 again (it was
   turned off when the store flavors were added, which Play Console flagged as
   1% obfuscation). The App Bundle carries its mapping file, and each GitHub
