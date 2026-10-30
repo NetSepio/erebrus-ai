@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:erebrus_ai/auth/auth_session_store.dart';
+import 'package:erebrus_ai/auth/session_mutex.dart';
 import 'package:erebrus_ai/auth/entitlement_state.dart';
 import 'package:erebrus_ai/auth/gateway_auth_client.dart';
 import 'package:erebrus_ai/auth/user_org_invite.dart';
@@ -92,6 +93,7 @@ void main() {
       final client = _RecordingAuthClient();
       final controller = WalletAuthController(
         authClient: client,
+        sessionMutex: SessionMutex(lockDirectory: Directory.systemTemp.path),
         store: _MemorySessionStore(_storedSession),
       );
       await controller.loadPersistedSession();
@@ -108,6 +110,7 @@ void main() {
       final client = _RecordingAuthClient();
       final controller = WalletAuthController(
         authClient: client,
+        sessionMutex: SessionMutex(lockDirectory: Directory.systemTemp.path),
         store: _MemorySessionStore(_storedSession),
       );
       await controller.loadPersistedSession();
@@ -169,7 +172,9 @@ Future<HttpServer> _serverReturning(
   return server;
 }
 
-const _storedSession = StoredAuthSession(
+final _storedSession = StoredAuthSession(
+  refreshToken: 'refresh-fixture',
+  expiresAt: DateTime.now().add(const Duration(hours: 24)),
   token: 'session-token',
   walletAddress: 'wallet',
   userId: 'user',
@@ -217,6 +222,9 @@ class _MemorySessionStore extends AuthSessionStore {
   _MemorySessionStore(this.session);
 
   StoredAuthSession? session;
+
+  @override
+  Future<void> save(StoredAuthSession value) async => session = value;
 
   @override
   Future<StoredAuthSession?> read() async => session;

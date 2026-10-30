@@ -1,33 +1,59 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
-    branches: [main, master]
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  analyze-and-test:
-    name: Analyze + Test
+  gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Free gitleaks CLI (pinned + checksum-verified) instead of
+      # gitleaks-action, which needs a paid license on organization repos and
+      # never gets secrets on fork PRs.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+      - name: Scan git history for secrets
+        run: ./gitleaks git --config .gitleaks.toml --redact --verbose --exit-code 1 .
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+  verify:
+    name: Analyze + Test
+    needs: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Analyze
-        run: flutter analyze --no-pub
+      # pubspec.yaml bundles .env as an asset.
+      - run: cp env.example .env
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
 
       - name: Validate benchmark regression gate
         run: >-
@@ -35,13 +61,13 @@ jobs:
           tool/benchmark_baseline.fixture.json
           tool/benchmark_candidate.fixture.json
 
-      - name: Run tests
-        run: flutter test
+      - run: flutter test
 
-  build-desktop-macos:
-    name: Build macOS (${{ matrix.arch }})
+  build-macos:
+    name: Build macOS (${{ matrix.arch }}, unsigned)
+    needs: verify
     runs-on: ${{ matrix.runner }}
-    needs: analyze-and-test
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -50,21 +76,35 @@ jobs:
             runner: macos-15
           - arch: x86_64
             runner: macos-15-intel
+    # Runner signs with NetSepio's team (76KW3AMAW5) and Sign in with Apple,
+    # which CI has no certificate for. flutter passes FLUTTER_XCODE_* to
+    # xcodebuild as build settings, so this compiles the app without signing.
+    env:
+      FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
+      FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
+      FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
+      # erebrus_speech uses SpeechAnalyzer, which needs the iOS/macOS 26 SDK;
+      # the runner's default Xcode is older. Picks the newest stable Xcode 26+.
+      - name: Select Xcode 26 or newer
+        run: |
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app /Applications/Xcode_[3-9][0-9]*.app 2>/dev/null | grep -vi beta | sort -V | tail -1 || true)
+          if [[ -z "${xcode}" ]]; then
+            echo "::error::No Xcode 26+ on this runner:"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "${xcode}/Contents/Developer"
+          xcodebuild -version
 
-      - name: Install dependencies
-        run: flutter pub get
+      - run: cp env.example .env
+      - run: flutter pub get
+      - run: scripts/pin-spm-platforms.sh macos
 
       - name: Verify packaged llama.cpp Metal framework
         run: |
@@ -76,8 +116,7 @@ jobs:
       - name: Test macOS backend resolver
         run: flutter test third_party/lib_llama_cpp_macos/test/lib_llama_cpp_macos_test.dart
 
-      - name: Build macOS
-        run: flutter build macos --release
+      - run: flutter build macos --release
 
       - name: Verify universal Whisper runtime
         run: |
@@ -86,23 +125,31 @@ jobs:
 
   build-ios:
     name: Build iOS (unsigned)
+    needs: verify
     runs-on: macos-15
-    needs: analyze-and-test
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
+      # erebrus_speech uses SpeechAnalyzer, which needs the iOS/macOS 26 SDK;
+      # the runner's default Xcode is older. Picks the newest stable Xcode 26+.
+      - name: Select Xcode 26 or newer
+        run: |
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app /Applications/Xcode_[3-9][0-9]*.app 2>/dev/null | grep -vi beta | sort -V | tail -1 || true)
+          if [[ -z "${xcode}" ]]; then
+            echo "::error::No Xcode 26+ on this runner:"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "${xcode}/Contents/Developer"
+          xcodebuild -version
 
-      - name: Install dependencies
-        run: flutter pub get
+      - run: cp env.example .env
+      - run: flutter pub get
+      - run: scripts/pin-spm-platforms.sh ios
 
       - name: Verify packaged iOS llama.cpp Metal framework
         run: |
@@ -116,31 +163,42 @@ jobs:
       - name: Test iOS backend resolver
         run: flutter test third_party/lib_llama_cpp_ios/test/lib_llama_cpp_ios_test.dart
 
-      - name: Build unsigned iOS release
-        run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign
 
-  build-desktop-windows:
+  build-windows:
     name: Build Windows
+    needs: verify
     runs-on: windows-2022
-    needs: analyze-and-test
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
+      - run: cp env.example .env
+      - run: flutter pub get
 
-      - name: Install dependencies
-        run: flutter pub get
-
+      # The TurboQuant sidecar's install step can fail inside `flutter build`
+      # after the app itself compiled; the next step completes the install
+      # and fails the job if either binary is missing.
       - name: Build Windows
+        continue-on-error: true
         run: flutter build windows --release
+
+      - name: Install Windows bundle
+        shell: pwsh
+        run: |
+          $exe = "build/windows/x64/runner/Release/erebrus_ai.exe"
+          $sidecar = "build/windows/x64/runner/Release/erebrus_turboquant/llama-server.exe"
+          if (!(Test-Path $exe) -or !(Test-Path $sidecar)) {
+            Write-Host "Completing install with an explicit prefix"
+            cmake --install build/windows/x64 --config Release --prefix "$PWD/build/windows/x64/runner/Release"
+          }
+          if (!(Test-Path $exe)) { throw "erebrus_ai.exe was not produced" }
+          if (!(Test-Path $sidecar)) { throw "TurboQuant llama-server.exe was not produced" }
 
       - name: Dump TurboQuant ExternalProject logs
         if: failure()
@@ -173,47 +231,40 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
-          $dest = "dist/ErebrusAI-windows-v$version.zip"
-          if (Test-Path $dest) { Remove-Item $dest }
-          Push-Location build/windows/x64/runner/Release
-          7z a -tzip (Join-Path (Get-Location) "..\..\..\..\..\${dest}") *
-          Pop-Location
-          Write-Host "artifact=$dest"
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "dist/erebrus-ai-windows-ci.zip" -Force
 
-      - name: Upload Windows app
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: dist/ErebrusAI-windows-v*.zip
+          if-no-files-found: error
+          path: dist/erebrus-ai-windows-ci.zip
 
-  build-desktop-linux:
+  build-linux:
     name: Build Linux
-    runs-on: ubuntu-latest
-    needs: analyze-and-test
+    needs: verify
+    # Pinned rather than ubuntu-latest: the bundle links against the build
+    # host's glibc, so a newer image would stop it running on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Linux dependencies
+      # Plugin system libraries: libsecret (flutter_secure_storage),
+      # GStreamer (audioplayers), ayatana-appindicator (tray_manager).
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev libsecret-1-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev \
+            libsecret-1-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libayatana-appindicator3-dev
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Build Linux
-        run: flutter build linux --release
+      - run: cp env.example .env
+      - run: flutter pub get
+      - run: flutter build linux --release
 
       - name: Verify pinned TurboQuant runtime
         run: |
@@ -229,32 +280,30 @@ jobs:
 
   build-android:
     name: Build Android APK
+    needs: verify
     runs-on: ubuntu-latest
-    needs: analyze-and-test
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create .env placeholder
-        run: cp env.example .env
+      - run: cp env.example .env
+      - run: flutter pub get
 
-      - name: Install dependencies
-        run: flutter pub get
-
+      # sdkmanager is not on PATH on the hosted image (exit 127).
       - name: Install pinned Android NDK for TurboQuant candidate
-        run: sdkmanager "ndk;28.2.13676358"
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
 
       - name: Cross-compile TurboQuant ARM64 CPU candidate
         run: |
@@ -264,8 +313,8 @@ jobs:
             /tmp/erebrus-turboquant-android-source \
             /tmp/erebrus-turboquant-android-build
 
-      - name: Build Android
-        run: flutter build apk --flavor playstore --release
+      # Debug-signed here: no release keys in CI. release.yml signs.
+      - run: flutter build apk --flavor playstore --release
 
       - name: Verify packaged Whisper ABIs
         run: |

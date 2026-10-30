@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../platform/platform_capabilities.dart';
 import 'auth_config.dart';
 import 'auth_session_store.dart';
+import 'auth_session_repository.dart';
+import 'session_mutex.dart';
 import 'deep_link_handler.dart';
 import 'desktop_web_auth.dart';
 import 'entitlement_state.dart';
@@ -21,17 +23,42 @@ import 'user_org_invite.dart';
 import 'user_profile.dart';
 
 const kSessionExpiredMessage = 'Your session expired. Please sign in again.';
+const kAccountSuspendedMessage =
+    'This account is suspended. Contact Erebrus support for help.';
 
 /// Wallet login via MWA on Solana Mobile, Reown elsewhere, and gateway v2 auth.
 class WalletAuthController extends ChangeNotifier {
-  WalletAuthController({GatewayAuthClient? authClient, AuthSessionStore? store})
-    : _authClient = authClient ?? GatewayAuthClient(),
-      _store = store ?? AuthSessionStore() {
-    _authClient.onUnauthorized = handleBearerUnauthorized;
+  WalletAuthController({
+    GatewayAuthClient? authClient,
+    AuthSessionStore? store,
+    SessionMutex? sessionMutex,
+    DateTime Function()? now,
+  }) : _authClient = authClient ?? GatewayAuthClient(),
+       _store = store ?? AuthSessionStore() {
+    sessions = AuthSessionRepository(
+      store: _store,
+      mutex: sessionMutex,
+      now: now,
+      refresh: _authClient.refreshSession,
+      upgrade: _authClient.upgradeSession,
+      revoke: _authClient.revokeSession,
+    );
+    sessions.onChanged = _sessionChanged;
+    sessions.onTerminated = (reason) {
+      authError = reason.accountSuspended
+          ? kAccountSuspendedMessage
+          : kSessionExpiredMessage;
+      sessionExpiredRevision++;
+      notifyListeners();
+    };
+    _authClient.sessionRepository = sessions;
   }
 
   final GatewayAuthClient _authClient;
   final AuthSessionStore _store;
+  late final AuthSessionRepository sessions;
+  String? _sessionIdentity;
+  String? get sessionIdentity => _sessionIdentity;
 
   ReownAppKitModal? appKitModal;
 
@@ -75,6 +102,9 @@ class WalletAuthController extends ChangeNotifier {
 
   bool isSolanaMobileDevice = false;
 
+  bool get needsSessionLogin =>
+      sessions.current?.loginRequired == true ||
+      sessions.current?.renewalPending == true;
   bool get isAuthenticated => _token != null && _token!.isNotEmpty;
   bool get isEntitled => entitlement.entitled || role == 'admin';
   bool get usesReown => PlatformCapabilities.usesReown;
@@ -110,26 +140,18 @@ class WalletAuthController extends ChangeNotifier {
     authError = null;
     notifyListeners();
     try {
-      final stored = await _store.read();
-      if (stored != null) {
-        _token = stored.token;
-        _mwaAuthToken = stored.mwaAuthToken;
-        walletAddress = stored.walletAddress;
-        userId = stored.userId;
-        role = stored.role;
-        authMethod = stored.authMethod;
-        debugPrint('[Auth] restored session for ${stored.walletAddress}');
+      await sessions.restore();
+      if (isAuthenticated) {
         final refresh = _refreshRestoredSession();
         if (awaitNetwork) {
           await refresh;
         } else {
           unawaited(refresh);
         }
-      } else {
-        entitlement = EntitlementState.none;
       }
     } catch (e) {
-      debugPrint('[Auth] restore failed: $e');
+      authError =
+          'Could not read the saved session. Try again after unlocking the device.';
     } finally {
       sessionReady = true;
       notifyListeners();
@@ -143,7 +165,7 @@ class WalletAuthController extends ChangeNotifier {
       await refreshAccountOrgInvites();
       await refreshRank();
     } catch (e) {
-      debugPrint('[Auth] background session refresh failed: $e');
+      authError = 'Could not refresh account data.';
     }
   }
 
@@ -259,7 +281,7 @@ class WalletAuthController extends ChangeNotifier {
       reownReady = true;
       debugPrint('[Reown] ready — wallets + social login available');
 
-      if (appKitModal!.isConnected && !isAuthenticated) {
+      if (appKitModal!.isConnected && (!isAuthenticated || needsSessionLogin)) {
         await _authenticateConnectedWallet();
       }
     } catch (e) {
@@ -321,6 +343,7 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Completes sign-in from pasted PASETO / callback URL (Postman-style fallback).
   Future<void> signInWithPastedCredential(String input) async {
+    final loginGeneration = sessions.generation;
     isAuthenticating = true;
     awaitingWebCallback = false;
     authError = null;
@@ -339,7 +362,7 @@ class WalletAuthController extends ChangeNotifier {
       var wallet = callback.walletAddress;
       final role = callback.role.isNotEmpty ? callback.role : 'user';
 
-      await _authClient.fetchSubscription(callback.token);
+      await _authClient.validateImportedAccess(callback.token);
       if (userId.isEmpty) userId = 'imported';
       if (wallet.isEmpty) wallet = 'imported';
 
@@ -351,6 +374,7 @@ class WalletAuthController extends ChangeNotifier {
           walletAddress: wallet,
         ),
         method: 'manual_paste',
+        expectedGeneration: loginGeneration,
       );
       DesktopWebAuth.clearPendingState();
       await refreshEntitlement();
@@ -382,6 +406,7 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Completes sign-in from `erebrusai://auth?token=…` (called by [DeepLinkHandler]).
   Future<void> handleWebAuthCallback(String url) async {
+    final loginGeneration = sessions.generation;
     awaitingWebCallback = false;
     isAuthenticating = true;
     authError = null;
@@ -404,6 +429,7 @@ class WalletAuthController extends ChangeNotifier {
           walletAddress: callback.walletAddress,
         ),
         method: 'web',
+        expectedGeneration: loginGeneration,
       );
       DesktopWebAuth.clearPendingState();
       await refreshEntitlement();
@@ -443,6 +469,7 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> signInWithGoogle() async {
+    final loginGeneration = sessions.generation;
     if (isAuthenticating || !googleLoginAvailable) return;
     isAuthenticating = true;
     authError = null;
@@ -451,7 +478,7 @@ class WalletAuthController extends ChangeNotifier {
       final idToken = await googleIdToken();
       if (idToken == null) return;
       final session = await _authClient.googleLogin(idToken);
-      await _finishIdentitySignIn(session, 'google');
+      await _finishIdentitySignIn(session, 'google', loginGeneration);
     } on AuthException catch (e) {
       authError = e.message;
     } on SocialLoginException catch (e) {
@@ -465,6 +492,7 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> signInWithApple() async {
+    final loginGeneration = sessions.generation;
     if (isAuthenticating || !appleLoginAvailable) return;
     isAuthenticating = true;
     authError = null;
@@ -478,7 +506,7 @@ class WalletAuthController extends ChangeNotifier {
         nonce: credential.nonce,
         state: credential.state,
       );
-      await _finishIdentitySignIn(session, 'apple');
+      await _finishIdentitySignIn(session, 'apple', loginGeneration);
     } on AuthException catch (e) {
       authError = e.message;
     } on SocialLoginException catch (e) {
@@ -510,6 +538,7 @@ class WalletAuthController extends ChangeNotifier {
     required String email,
     required String code,
   }) async {
+    final loginGeneration = sessions.generation;
     final normalized = code.replaceAll(RegExp(r'\D'), '');
     if (normalized.length < 4) {
       authError = 'Enter the full code from your email';
@@ -528,7 +557,7 @@ class WalletAuthController extends ChangeNotifier {
         authError = 'Sign-in succeeded but no session token was returned';
         return;
       }
-      await _finishIdentitySignIn(session, 'email');
+      await _finishIdentitySignIn(session, 'email', loginGeneration);
     } on AuthException catch (e) {
       authError = e.message;
     } on TimeoutException {
@@ -541,11 +570,19 @@ class WalletAuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> _finishIdentitySignIn(AuthSession session, String method) async {
+  Future<void> _finishIdentitySignIn(
+    AuthSession session,
+    String method,
+    int expectedGeneration,
+  ) async {
     if (session.token.isEmpty) {
       throw AuthException('Sign-in did not return a session token');
     }
-    await _persistSession(session, method: method);
+    await _persistSession(
+      session,
+      method: method,
+      expectedGeneration: expectedGeneration,
+    );
     await refreshEntitlement();
     await refreshProfile();
     await refreshAccountOrgInvites();
@@ -554,6 +591,7 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Mobile Wallet Adapter path — opens the native wallet selector on Seeker/Saga.
   Future<void> signInWithSolanaMobile() async {
+    final loginGeneration = sessions.generation;
     if (!isSolanaMobileDevice) {
       authError = 'Solana Mobile sign-in is only available on Seeker and Saga';
       notifyListeners();
@@ -586,6 +624,7 @@ class WalletAuthController extends ChangeNotifier {
       await _persistSession(
         session,
         method: 'solana_mobile',
+        expectedGeneration: loginGeneration,
         mwaToken: result.authToken,
       );
       await refreshEntitlement();
@@ -607,33 +646,12 @@ class WalletAuthController extends ChangeNotifier {
 
   Future<void> signOut() async {
     authError = null;
-    entitlementError = null;
-    entitlement = EntitlementState.none;
     final mwaToken = _mwaAuthToken;
-    _token = null;
-    _mwaAuthToken = null;
-    walletAddress = '';
-    userId = '';
-    role = '';
-    authMethod = '';
-    userProfile = null;
-    accountOrgInvites = [];
-    isRedeemingReferral = false;
-    referralError = null;
-    referralMessage = null;
-    referralSummary = null;
-    rank = null;
-    rankError = null;
-    awaitingWebCallback = false;
     DesktopWebAuth.clearPendingState();
-    notifyListeners();
-    // Every cleanup step is best-effort: the local session is already gone,
-    // and a failing wallet disconnect (e.g. its sign-in page context was
-    // disposed) must not abort the rest.
-    try {
-      await _store.clear();
-    } catch (e) {
-      debugPrint('[Auth] clearing stored session failed: $e');
+    final confirmed = await sessions.logout();
+    if (!confirmed) {
+      authError =
+          'Signed out on this device. Remote session revocation is unconfirmed; connect and sign in again to manage your sessions.';
     }
     try {
       if (appKitModal?.isConnected == true) await appKitModal?.disconnect();
@@ -646,17 +664,14 @@ class WalletAuthController extends ChangeNotifier {
 
   /// Revalidates the current bearer session without logging out for recoverable
   /// authorization, network, or server failures. Authenticated 401 responses are
-  /// handled centrally by [handleBearerUnauthorized].
+  /// handled centrally by the session repository.
   Future<void> revalidateSession() async {
     final active = _revalidation;
     if (active != null) {
       await active;
       return;
     }
-    final token = _token;
-    if (token == null || token.isEmpty) return;
-
-    final operation = _revalidateToken(token);
+    final operation = _restoreAndRevalidate();
     _revalidation = operation;
     try {
       await operation;
@@ -665,16 +680,39 @@ class WalletAuthController extends ChangeNotifier {
     }
   }
 
+  Future<void> _restoreAndRevalidate() async {
+    try {
+      // Re-read the committed session on resume, including replacements or
+      // logout performed by another isolate while the UI was suspended.
+      await sessions.restore();
+      final token = _token;
+      if (token != null && token.isNotEmpty) await _revalidateToken(token);
+    } catch (_) {
+      entitlementError =
+          'Could not read the saved session. Try again after unlocking the device.';
+      notifyListeners();
+    }
+  }
+
   Future<void> _revalidateToken(String token) async {
+    final generation = sessions.generation;
     isLoadingEntitlement = true;
     entitlementError = null;
     notifyListeners();
     try {
-      entitlement = await _authClient.fetchSubscription(token);
+      final valid = await sessions.validSession(token);
+      final updated = await _authClient.fetchSubscription(valid.token);
+      if (generation == sessions.generation && isAuthenticated) {
+        entitlement = updated;
+      }
     } on AuthException catch (e) {
-      // A bearer-authenticated 401 has already invalidated the session in the
-      // HTTP client. All other failures are recoverable and retain the token.
-      if (e.statusCode != 401) entitlementError = e.message;
+      if (generation == sessions.generation) {
+        entitlementError = e.message;
+        if (e.code == 'SESSION_LOGIN_REQUIRED' ||
+            sessions.current?.loginRequired == true) {
+          authError = 'Please sign in again to enable persistent sessions.';
+        }
+      }
     } catch (e) {
       entitlementError = e.toString();
     } finally {
@@ -683,43 +721,38 @@ class WalletAuthController extends ChangeNotifier {
     }
   }
 
-  /// Invalidates only the session that supplied [rejectedToken]. Clearing the
-  /// in-memory token before awaiting storage makes concurrent 401s idempotent.
-  Future<void> handleBearerUnauthorized(String rejectedToken) async {
-    if (rejectedToken.isEmpty || _token != rejectedToken) return;
-
-    _token = null;
-    _mwaAuthToken = null;
-    walletAddress = '';
-    userId = '';
-    role = '';
-    authMethod = '';
-    entitlement = EntitlementState.none;
-    entitlementError = null;
-    userProfile = null;
-    profileError = null;
-    accountOrgInvites = [];
-    accountOrgInvitesError = null;
-    isRedeemingReferral = false;
-    referralError = null;
-    referralMessage = null;
-    referralSummary = null;
-    rank = null;
-    rankError = null;
-    awaitingWebCallback = false;
-    authError = kSessionExpiredMessage;
-    sessionExpiredRevision++;
-    DesktopWebAuth.clearPendingState();
-    notifyListeners();
-
-    try {
-      await _store.clear();
-    } catch (e) {
-      debugPrint('[Auth] failed to clear expired persisted session: $e');
+  void _sessionChanged(StoredAuthSession? stored) {
+    final accountChanged = stored?.generation != _sessionIdentity;
+    _sessionIdentity = stored?.generation;
+    _token = stored?.token;
+    _mwaAuthToken = stored?.mwaAuthToken;
+    walletAddress = stored?.walletAddress ?? '';
+    userId = stored?.userId ?? '';
+    role = stored?.role ?? '';
+    authMethod = stored?.authMethod ?? '';
+    if (stored?.loginRequired == true || stored?.renewalPending == true) {
+      authError = 'Please sign in again to renew this session safely.';
     }
+    if (accountChanged || stored == null) {
+      entitlement = EntitlementState.none;
+      entitlementError = null;
+      userProfile = null;
+      profileError = null;
+      accountOrgInvites = [];
+      accountOrgInvitesError = null;
+      isRedeemingReferral = false;
+      referralError = null;
+      referralMessage = null;
+      referralSummary = null;
+      rank = null;
+      rankError = null;
+      awaitingWebCallback = false;
+    }
+    notifyListeners();
   }
 
   Future<void> refreshEntitlement() async {
+    final generation = sessions.generation;
     final token = _token;
     if (token == null || token.isEmpty) {
       entitlement = EntitlementState.none;
@@ -730,13 +763,15 @@ class WalletAuthController extends ChangeNotifier {
     entitlementError = null;
     notifyListeners();
     try {
-      entitlement = await _authClient.fetchSubscription(token);
+      final updated = await _authClient.fetchSubscription(token);
+      if (generation != sessions.generation || !isAuthenticated) return;
+      entitlement = updated;
     } on AuthException catch (e) {
+      if (generation != sessions.generation) return;
       entitlementError = e.message;
-      entitlement = EntitlementState.none;
     } catch (e) {
+      if (generation != sessions.generation) return;
       entitlementError = e.toString();
-      entitlement = EntitlementState.none;
     } finally {
       isLoadingEntitlement = false;
       notifyListeners();
@@ -744,6 +779,7 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> refreshProfile() async {
+    final generation = sessions.generation;
     final token = _token;
     if (token == null || token.isEmpty) {
       userProfile = null;
@@ -754,13 +790,15 @@ class WalletAuthController extends ChangeNotifier {
     profileError = null;
     notifyListeners();
     try {
-      userProfile = await _authClient.fetchProfile(token);
+      final updated = await _authClient.fetchProfile(token);
+      if (generation != sessions.generation || !isAuthenticated) return;
+      userProfile = updated;
     } on AuthException catch (e) {
+      if (generation != sessions.generation) return;
       profileError = e.message;
-      userProfile = null;
     } catch (e) {
+      if (generation != sessions.generation) return;
       profileError = e.toString();
-      userProfile = null;
     } finally {
       isLoadingProfile = false;
       notifyListeners();
@@ -768,6 +806,7 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> refreshAccountOrgInvites() async {
+    final generation = sessions.generation;
     final token = _token;
     if (token == null || token.isEmpty) {
       accountOrgInvites = [];
@@ -778,13 +817,15 @@ class WalletAuthController extends ChangeNotifier {
     accountOrgInvitesError = null;
     notifyListeners();
     try {
-      accountOrgInvites = await _authClient.fetchAccountOrgInvites(token);
+      final updated = await _authClient.fetchAccountOrgInvites(token);
+      if (generation != sessions.generation || !isAuthenticated) return;
+      accountOrgInvites = updated;
     } on AuthException catch (e) {
+      if (generation != sessions.generation) return;
       accountOrgInvitesError = e.message;
-      accountOrgInvites = [];
     } catch (e) {
+      if (generation != sessions.generation) return;
       accountOrgInvitesError = e.toString();
-      accountOrgInvites = [];
     } finally {
       isLoadingAccountOrgInvites = false;
       notifyListeners();
@@ -836,15 +877,18 @@ class WalletAuthController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    final generation = sessions.generation;
     isRedeemingReferral = true;
     referralError = null;
     referralMessage = null;
     notifyListeners();
     try {
-      referralSummary = await _authClient.redeemReferralCode(
+      final updated = await _authClient.redeemReferralCode(
         code: trimmed,
         bearerToken: token,
       );
+      if (generation != sessions.generation || !isAuthenticated) return false;
+      referralSummary = updated;
       // XP unlocks only once the referee qualifies (active org membership), so
       // the message stays outcome-neutral. Lifetime XP lives on the rank
       // endpoint, not the profile — refresh it so any award shows.
@@ -864,6 +908,7 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> refreshRank() async {
+    final generation = sessions.generation;
     final token = _token;
     if (token == null || token.isEmpty) {
       rank = RankStanding.zero;
@@ -874,10 +919,14 @@ class WalletAuthController extends ChangeNotifier {
     rankError = null;
     notifyListeners();
     try {
-      rank = await _authClient.fetchRank(token);
+      final updated = await _authClient.fetchRank(token);
+      if (generation != sessions.generation || !isAuthenticated) return;
+      rank = updated;
     } on AuthException catch (e) {
+      if (generation != sessions.generation) return;
       if (e.statusCode != 401) rankError = e.message;
     } catch (e) {
+      if (generation != sessions.generation) return;
       rankError = e.toString();
     } finally {
       isLoadingRank = false;
@@ -902,23 +951,15 @@ class WalletAuthController extends ChangeNotifier {
   Future<void> _persistSession(
     AuthSession session, {
     required String method,
+    required int expectedGeneration,
     String? mwaToken,
   }) async {
-    _token = session.token;
-    walletAddress = session.walletAddress;
-    userId = session.userId;
-    role = session.role;
-    authMethod = method;
-    if (mwaToken != null) _mwaAuthToken = mwaToken;
-    await _store.write(
-      token: session.token,
-      walletAddress: session.walletAddress,
-      userId: session.userId,
-      role: session.role,
-      authMethod: method,
-      mwaAuthToken: mwaToken ?? _mwaAuthToken,
+    await sessions.install(
+      session,
+      method: method,
+      mwaToken: mwaToken,
+      expectedGeneration: expectedGeneration,
     );
-    notifyListeners();
   }
 
   void _onModalConnect(ModalConnect? event) {
@@ -939,11 +980,12 @@ class WalletAuthController extends ChangeNotifier {
   }
 
   Future<void> _authenticateConnectedWallet() async {
+    final loginGeneration = sessions.generation;
     final modal = appKitModal;
     if (modal == null || !modal.isConnected) return;
     // Reown can report the connection both from init() and onModalConnect;
     // a second concurrent run would request a second wallet signature.
-    if (isAuthenticating || isAuthenticated) return;
+    if (isAuthenticating || (isAuthenticated && !needsSessionLogin)) return;
 
     isAuthenticating = true;
     authError = null;
@@ -966,7 +1008,11 @@ class WalletAuthController extends ChangeNotifier {
       // modal afterwards would pop a route that is already gone — the home
       // screen — or use its now-deactivated context.
       _closeModalSafely(modal);
-      await _persistSession(session, method: 'reown');
+      await _persistSession(
+        session,
+        method: 'reown',
+        expectedGeneration: loginGeneration,
+      );
       await refreshEntitlement();
       await refreshProfile();
       await refreshAccountOrgInvites();
@@ -1046,6 +1092,8 @@ class WalletAuthController extends ChangeNotifier {
 
   @override
   void dispose() {
+    sessions.onChanged = null;
+    sessions.onTerminated = null;
     appKitModal?.onModalConnect.unsubscribe(_onModalConnect);
     appKitModal?.onModalDisconnect.unsubscribe(_onModalDisconnect);
     appKitModal?.onModalError.unsubscribe(_onModalError);

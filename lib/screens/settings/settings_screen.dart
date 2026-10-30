@@ -571,6 +571,20 @@ List<Widget> _accountSection(BuildContext context, bool wide) {
   }
   return [
     const _AccountCard(),
+    if (app.auth.needsSessionLogin)
+      SettingsGroup(
+        children: [
+          SettingItem(
+            title: 'Sign in again',
+            description:
+                'Reconnect your account to renew this session. Your local data is kept.',
+            control: PillButton(
+              'Sign in again',
+              onTap: () => openSignIn(context),
+            ),
+          ),
+        ],
+      ),
     const SizedBox(height: 26),
     const SettingsGroup(
       title: 'Organizations',
@@ -588,7 +602,15 @@ List<Widget> _accountSection(BuildContext context, bool wide) {
             'Sign out',
             icon: Symbols.logout,
             tone: PillTone.danger,
-            onTap: app.signOut,
+            onTap: () async {
+              await app.signOut();
+              final message = app.auth.authError;
+              if (context.mounted && message != null) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(message)));
+              }
+            },
           ),
         ),
       ],

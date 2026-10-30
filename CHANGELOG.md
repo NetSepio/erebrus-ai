@@ -2,6 +2,47 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
+## 1.1.1+3 — 2026-10-30
+
+### Sign-in
+
+- Stay signed in: the app adopts the gateway's rotating refresh sessions and
+  renews the access token in the background before it expires, instead of
+  signing you out after 24 hours. Existing logins upgrade once, silently.
+- Network errors, timeouts, rate limits and gateway errors no longer sign you
+  out or clear account, organization or entitlement data. When a session
+  cannot be renewed safely, Settings shows **Sign in again** and keeps your
+  local data.
+- A suspended account is signed out with a suspension message instead of
+  "session expired".
+- Sign-out revokes the session on the gateway, and says so when revocation
+  could not be confirmed (for example while offline).
+- Signing out or switching accounts mid-request can no longer show the
+  previous account's data.
+- Session credentials live in an app-specific Keychain/Keystore namespace,
+  excluded from Android backups and device transfer.
+- Android: launch no longer hangs when Android recreates the app in a process
+  the background-serving service kept alive.
+- Gateway requests identify the platform (Android, iOS or desktop), so the
+  account activity log shows where you signed in.
+
+### Builds and releases
+
+- Push a `v*` tag matching `pubspec.yaml` to publish a GitHub Release: signed
+  Play Store APK + App Bundle and dApp Store APK (certificates verified), Windows
+  and Linux packages, a release manifest and SHA-256 checksums, with notes taken
+  from this changelog. macOS joins once CI signing is configured.
+- CI scans the git history for secrets and builds every platform again: Apple
+  builds use Xcode 26+ (needed for on-device transcription), the generated
+  Swift package is pinned to iOS 17 / macOS 14, Linux installs the GStreamer
+  and app-indicator libraries, the Android NDK install no longer fails, and the
+  Windows TurboQuant runtime install is completed when `flutter build` stops
+  early.
+- Android release builds are shrunk and obfuscated with R8 again (it was
+  turned off when the store flavors were added, which Play Console flagged as
+  1% obfuscation). The App Bundle carries its mapping file, and each GitHub
+  Release attaches the mapping files for the APKs.
+
 ## 1.1.0+2 — 2026-09-29
 
 ### Sign-in fixes

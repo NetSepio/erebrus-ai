@@ -118,27 +118,11 @@ copy_artifact() {
   ok "artifact → ${dest##${ROOT_DIR}/} ($(du -h "${dest}" | awk '{print $1}'))"
 }
 
-# Flutter regenerates FlutterGeneratedPluginSwiftPackage at tool defaults
-# (.iOS("13.0") / .macOS("10.15")). erebrus_mlx / erebrus_speech need iOS 17
-# and macOS 14 (same as Runner). Pin after pub get / before Apple builds.
+# Flutter regenerates FlutterGeneratedPluginSwiftPackage at tool defaults on
+# `pub get`; erebrus_mlx / erebrus_speech need iOS 17 / macOS 14 (same as
+# Runner). Shared with CI — see scripts/pin-spm-platforms.sh.
 ensure_spm_platform_versions() {
-  # Flutter always regenerates FlutterGeneratedPluginSwiftPackage at tool
-  # defaults (.iOS("13.0") / .macOS("10.15")) on `pub get`. Official bump only
-  # happens inside `flutter build ios|macos` via updateMinimumDeployment.
-  # erebrus_mlx / erebrus_speech require iOS 17 / macOS 14 (same as Runner).
-  local ios_min="${EREBRUS_IOS_MIN:-17.0}"
-  local macos_min="${EREBRUS_MACOS_MIN:-14.0}"
-  local ios_pkg="${ROOT_DIR}/ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
-  local macos_pkg="${ROOT_DIR}/macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
-
-  if [[ -f "${ios_pkg}" ]] && ! grep -qF ".iOS(\"${ios_min}\")" "${ios_pkg}"; then
-    /usr/bin/perl -pi -e "s/\\.iOS\\(\"[0-9.]+\"\\)/.iOS(\"${ios_min}\")/g" "${ios_pkg}"
-    ok "SPM iOS package pin → ${ios_min}"
-  fi
-  if [[ -f "${macos_pkg}" ]] && ! grep -qF ".macOS(\"${macos_min}\")" "${macos_pkg}"; then
-    /usr/bin/perl -pi -e "s/\\.macOS\\(\"[0-9.]+\"\\)/.macOS(\"${macos_min}\")/g" "${macos_pkg}"
-    ok "SPM macOS package pin → ${macos_min}"
-  fi
+  "${SCRIPT_DIR}/pin-spm-platforms.sh"
 }
 
 # ---------------------------------------------------------------------------

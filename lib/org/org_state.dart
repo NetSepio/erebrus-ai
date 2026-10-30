@@ -14,7 +14,7 @@ import 'shared_model.dart';
 class OrgState extends ChangeNotifier {
   OrgState({required this._auth, OrgClient? client})
     : _client = client ?? OrgClient() {
-    _client.onUnauthorized = _auth.handleBearerUnauthorized;
+    _client.sessionRepository = _auth.sessions;
     _auth.addListener(_onAuthChanged);
     _onAuthChanged();
   }
@@ -44,19 +44,27 @@ class OrgState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (_loadedForToken == _token) return;
-    _loadedForToken = _token;
+    if (_loadedForToken == _auth.sessionIdentity) return;
+    orgs = [];
+    selectedOrg = null;
+    orgModels = [];
+    error = null;
+    _loadedForToken = _auth.sessionIdentity;
+    notifyListeners();
     unawaited(_loadCache().then((_) => refreshOrgs()));
   }
 
   Future<void> refreshOrgs() async {
+    final generation = _auth.sessions.generation;
     final token = _token;
     if (token == null || token.isEmpty) return;
     isLoading = true;
     error = null;
     notifyListeners();
     try {
-      orgs = await _client.fetchOrganizations(token);
+      final updated = await _client.fetchOrganizations(token);
+      if (generation != _auth.sessions.generation || !isAuthenticated) return;
+      orgs = updated;
       final selectedId = selectedOrg?.id;
       if (orgs.isEmpty) {
         selectedOrg = null;
@@ -69,15 +77,11 @@ class OrgState extends ChangeNotifier {
       await refreshOrgModels();
       await _persistCache();
     } on OrgException catch (e) {
+      if (generation != _auth.sessions.generation) return;
       error = e.message;
-      orgs = [];
-      selectedOrg = null;
-      orgModels = [];
     } catch (e) {
+      if (generation != _auth.sessions.generation) return;
       error = e.toString();
-      orgs = [];
-      selectedOrg = null;
-      orgModels = [];
     } finally {
       isLoading = false;
       notifyListeners();
@@ -103,6 +107,7 @@ class OrgState extends ChangeNotifier {
   }
 
   Future<void> refreshOrgModels() async {
+    final generation = _auth.sessions.generation;
     final token = _token;
     final org = selectedOrg;
     if (token == null || token.isEmpty || org == null) {
@@ -114,14 +119,20 @@ class OrgState extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      orgModels = await _client.fetchOrgModels(org.id, token);
+      final updated = await _client.fetchOrgModels(org.id, token);
+      if (generation != _auth.sessions.generation ||
+          !isAuthenticated ||
+          selectedOrg?.id != org.id) {
+        return;
+      }
+      orgModels = updated;
       await _persistCache();
     } on OrgException catch (e) {
+      if (generation != _auth.sessions.generation) return;
       error = e.message;
-      orgModels = [];
     } catch (e) {
+      if (generation != _auth.sessions.generation) return;
       error = e.toString();
-      orgModels = [];
     } finally {
       isLoading = false;
       notifyListeners();

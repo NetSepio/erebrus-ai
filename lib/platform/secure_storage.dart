@@ -6,9 +6,26 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class ErebrusSecureStorage {
   const ErebrusSecureStorage._();
 
+  /// App-specific, non-synchronizing namespace for rotating session secrets.
+  /// No shared access group and no cloud/device migration of refresh tokens.
+  static const FlutterSecureStorage sessions = FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      storageNamespace: 'io.erebrus.ai.auth.v2',
+      resetOnError: false,
+    ),
+    iOptions: IOSOptions(
+      accountName: 'io.erebrus.ai.auth.v2',
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+    mOptions: MacOsOptions(
+      accountName: 'io.erebrus.ai.auth.v2',
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
+
   static const FlutterSecureStorage instance = FlutterSecureStorage(
     aOptions: AndroidOptions(
-      resetOnError: true,
+      resetOnError: false,
       migrateOnAlgorithmChange: true,
     ),
   );

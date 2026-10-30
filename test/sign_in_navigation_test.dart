@@ -1,5 +1,6 @@
 import 'package:erebrus_ai/app.dart';
 import 'package:erebrus_ai/auth/auth_session_store.dart';
+import 'package:erebrus_ai/auth/session_mutex.dart';
 import 'package:erebrus_ai/auth/entitlement_state.dart';
 import 'package:erebrus_ai/auth/gateway_auth_client.dart';
 import 'package:erebrus_ai/auth/user_org_invite.dart';
@@ -8,6 +9,7 @@ import 'package:erebrus_ai/auth/wallet_auth_controller.dart';
 import 'package:erebrus_ai/data/catalog_service.dart';
 import 'package:erebrus_ai/data/model_catalog.dart';
 import 'package:erebrus_ai/org/org_state.dart';
+import 'package:erebrus_ai/screens/auth/sign_in.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +37,7 @@ void main() {
 
     final auth = WalletAuthController(
       authClient: _FakeAuthClient(),
+      sessionMutex: _TestMutex(),
       store: _MemorySessionStore(),
     );
     await tester.pumpWidget(
@@ -78,9 +81,112 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'retained sessions can sign in again without closing the page early',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = _MemorySessionStore()
+        ..session = const StoredAuthSession(
+          token: 'old',
+          userId: 'user-1',
+          walletAddress: '',
+          role: 'user',
+          authMethod: 'email',
+          renewalPending: true,
+        );
+      final auth = WalletAuthController(
+        authClient: _FakeAuthClient(),
+        store: store,
+        sessionMutex: _TestMutex(),
+      );
+      await auth.loadPersistedSession();
+      final org = OrgState(auth: auth);
+      await tester.pumpWidget(ErebrusApp(auth: auth, orgState: org));
+      await tester.pumpAndSettle();
+      openSignIn(tester.element(find.text('SETTINGS')));
+      await tester.pumpAndSettle();
+      await auth.revalidateSession();
+      await tester.pumpAndSettle();
+      expect(find.text('Welcome to Erebrus AI'), findsOneWidget);
+      await auth.verifyEmailLoginCode(
+        email: 'user@example.com',
+        code: '123456',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Welcome to Erebrus AI'), findsNothing);
+      expect(auth.bearerToken, 'session-token');
+      await tester.pumpWidget(const SizedBox.shrink());
+      org.dispose();
+      auth.dispose();
+    },
+  );
+
+  testWidgets('resuming after 25 hours renews without a suspended timer', (
+    tester,
+  ) async {
+    var now = DateTime.utc(2026, 10, 19);
+    final client = _FakeAuthClient()..now = () => now;
+    final store = _MemorySessionStore()
+      ..session = StoredAuthSession(
+        token: 'old',
+        refreshToken: 'refresh-old',
+        sessionId: 'session',
+        userId: 'user-1',
+        role: 'user',
+        walletAddress: '',
+        authMethod: 'email',
+        expiresAt: now.add(const Duration(hours: 24)),
+        refreshExpiresAt: now.add(const Duration(days: 30)),
+      );
+    final auth = WalletAuthController(
+      authClient: client,
+      store: store,
+      sessionMutex: _TestMutex(),
+      now: () => now,
+    );
+    await auth.loadPersistedSession();
+    final org = OrgState(auth: auth);
+    await tester.pumpWidget(ErebrusApp(auth: auth, orgState: org));
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    now = now.add(const Duration(hours: 25));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(client.refreshes, 1);
+    expect(auth.bearerToken, 'replacement');
+    expect(store.session!.refreshToken, 'refresh-replacement');
+    await tester.pumpWidget(const SizedBox.shrink());
+    org.dispose();
+    auth.dispose();
+  });
 }
 
 class _FakeAuthClient extends GatewayAuthClient {
+  int refreshes = 0;
+  DateTime Function() now = DateTime.now;
+
+  @override
+  Future<AuthSession> refreshSession(String token) async {
+    refreshes++;
+    return AuthSession(
+      token: 'replacement',
+      refreshToken: 'refresh-replacement',
+      tokenType: 'Bearer',
+      sessionId: 'session',
+      userId: 'user-1',
+      role: 'user',
+      walletAddress: '',
+      expiresAt: now().add(const Duration(hours: 24)),
+      refreshExpiresAt: now().add(const Duration(days: 30)),
+    );
+  }
+
   @override
   Future<AuthSession> emailLoginVerify({
     required String email,
@@ -116,6 +222,9 @@ class _MemorySessionStore extends AuthSessionStore {
   StoredAuthSession? session;
 
   @override
+  Future<void> save(StoredAuthSession value) async => session = value;
+
+  @override
   Future<StoredAuthSession?> read() async => session;
 
   @override
@@ -139,4 +248,9 @@ class _MemorySessionStore extends AuthSessionStore {
       mwaAuthToken: mwaAuthToken,
     );
   }
+}
+
+class _TestMutex extends SessionMutex {
+  @override
+  Future<T> synchronized<T>(Future<T> Function() action) => action();
 }

@@ -29,40 +29,54 @@ void main() {
   });
 
   group('PersonaService unit tests', () {
-    test('provides built-in personas and allows custom saving and deleting', () async {
-      final service = PersonaService.instance;
-      expect(service.builtIns, isNotEmpty);
-      expect(service.defaultPersona.name, isNotEmpty);
+    test(
+      'provides built-in personas and allows custom saving and deleting',
+      () async {
+        final service = PersonaService.instance;
+        expect(service.builtIns, isNotEmpty);
+        expect(service.defaultPersona.name, isNotEmpty);
 
-      // Create a custom persona
-      const custom = MockPersona(
-        'Custom Test Bot',
-        'CB',
-        'TEMP 0.8 · 1024 MAX',
-        builtIn: false,
-        systemPrompt: 'You are a test bot.',
-        maxTokens: 1024,
-      );
+        // Create a custom persona
+        const custom = MockPersona(
+          'Custom Test Bot',
+          'CB',
+          'TEMP 0.8 · 1024 MAX',
+          builtIn: false,
+          systemPrompt: 'You are a test bot.',
+          maxTokens: 1024,
+        );
 
-      final saved = await service.save(custom);
-      expect(saved.id, isNotNull);
-      expect(saved.name, equals('Custom Test Bot'));
-      expect(service.userPersonas.any((p) => p.effectiveId == saved.effectiveId), isTrue);
-      expect(service.byId(saved.effectiveId), isNotNull);
+        final saved = await service.save(custom);
+        expect(saved.id, isNotNull);
+        expect(saved.name, equals('Custom Test Bot'));
+        expect(
+          service.userPersonas.any((p) => p.effectiveId == saved.effectiveId),
+          isTrue,
+        );
+        expect(service.byId(saved.effectiveId), isNotNull);
 
-      // Modify the saved persona
-      final updated = saved.copyWith(name: 'Updated Test Bot');
-      await service.save(updated);
-      expect(service.byId(saved.effectiveId)?.name, equals('Updated Test Bot'));
+        // Modify the saved persona
+        final updated = saved.copyWith(name: 'Updated Test Bot');
+        await service.save(updated);
+        expect(
+          service.byId(saved.effectiveId)?.name,
+          equals('Updated Test Bot'),
+        );
 
-      // Delete the persona
-      await service.delete(saved.effectiveId);
-      expect(service.userPersonas.any((p) => p.effectiveId == saved.effectiveId), isFalse);
-    });
+        // Delete the persona
+        await service.delete(saved.effectiveId);
+        expect(
+          service.userPersonas.any((p) => p.effectiveId == saved.effectiveId),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('PersonasScreen widget tests', () {
-    testWidgets('renders desktop layout with list and editor side-by-side', (tester) async {
+    testWidgets('renders desktop layout with list and editor side-by-side', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -75,9 +89,7 @@ void main() {
         AppScope(
           state: appState,
           child: const MaterialApp(
-            home: Scaffold(
-              body: PersonasScreen(wide: true),
-            ),
+            home: Scaffold(body: PersonasScreen(wide: true)),
           ),
         ),
       );
@@ -102,9 +114,7 @@ void main() {
         AppScope(
           state: appState,
           child: const MaterialApp(
-            home: Scaffold(
-              body: PersonasScreen(wide: false),
-            ),
+            home: Scaffold(body: PersonasScreen(wide: false)),
           ),
         ),
       );
@@ -115,7 +125,9 @@ void main() {
       expect(find.text('Concise Analyst'), findsOneWidget);
     });
 
-    testWidgets('PersonaEditor renders form fields and controls', (tester) async {
+    testWidgets('PersonaEditor renders form fields and controls', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);

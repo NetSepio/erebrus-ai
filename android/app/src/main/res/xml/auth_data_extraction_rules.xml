@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="io.erebrus.ai.auth.v2.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:io.erebrus.ai.auth.v2.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:io.erebrus.ai.auth.v2.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="io.erebrus.ai.auth.v2.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:io.erebrus.ai.auth.v2.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:io.erebrus.ai.auth.v2.xml" />
+    </device-transfer>
+</data-extraction-rules>

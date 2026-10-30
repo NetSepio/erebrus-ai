@@ -70,16 +70,26 @@ explicit `.env` values override them for development and alternate deployments.
 
 ## Session persistence
 
-`AuthSessionStore` uses `flutter_secure_storage`:
+Sign-in follows the gateway's rotating refresh-session contract (see the
+gateway's `docs/GATEWAY.md`, "Session contract"). Design details and the
+failure matrix are in [persistent-auth-sessions.md](persistent-auth-sessions.md).
 
-- `erebrus_ai_gateway_token`
-- `erebrus_ai_wallet_address`
-- `erebrus_ai_user_id`
-- `erebrus_ai_user_role`
-- `erebrus_ai_auth_method`
-- `erebrus_ai_mwa_auth_token`
-
-The token is read at startup in `WalletAuthController.initialize()`.
+- `AuthSessionRepository` owns the credentials. One secure-storage record,
+  `erebrus_ai_session_v2`, holds the access token, refresh token, expiry
+  metadata and renewal journal. Legacy `erebrus_ai_*` keys migrate into it on
+  first read.
+- Every protected request renews the access token when it expires within 60
+  seconds, and retries once on `401 ACCESS_TOKEN_EXPIRED`. Concurrent requests
+  share one refresh.
+- `REFRESH_TOKEN_INVALID`, `REFRESH_TOKEN_REUSED`, `SESSION_REVOKED` and
+  `403 ACCOUNT_SUSPENDED` end the session; suspension shows its own message.
+  Network errors, timeouts, 429/5xx and business errors keep the session.
+- Older logins without a refresh token upgrade once through
+  `POST /api/v2/auth/session`.
+- Sign-out revokes the session remotely (`POST /api/v2/auth/logout`) and
+  reports when revocation could not be confirmed.
+- Every gateway request sends `X-Erebrus-Client: android | ios | desktop` so
+  the account activity log shows the platform.
 
 ---
 

@@ -18,7 +18,9 @@
         android:label="Erebrus AI"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:fullBackupContent="@xml/auth_backup_rules"
+        android:dataExtractionRules="@xml/auth_data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1,17 +1,18 @@
-import 'dart:convert';
-import 'dart:io';
-
 import '../auth/runtime_config.dart';
+import '../auth/gateway_auth_client.dart';
+import '../auth/auth_session_repository.dart';
 import 'ai_org.dart';
 import 'shared_model.dart';
 
 /// Thin HTTP client for Erebrus AI organization endpoints.
 class OrgClient {
-  OrgClient({String? gatewayUrl, this.onUnauthorized})
+  OrgClient({String? gatewayUrl})
     : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
-  Future<void> Function(String bearerToken)? onUnauthorized;
+  final GatewayAuthClient _transport = GatewayAuthClient();
+  set sessionRepository(AuthSessionRepository value) =>
+      _transport.sessionRepository = value;
 
   /// `GET /api/v2/orgs` — requires bearer token.
   Future<List<AiOrg>> fetchOrganizations(String bearerToken) async {
@@ -55,11 +56,9 @@ class OrgClient {
     required String personaId,
     required String bearerToken,
   }) async {
-    await _postJson(
-      Uri.parse('$_base/api/v2/organizations/$orgId/personas'),
-      {'persona_id': personaId},
-      bearerToken: bearerToken,
-    );
+    await _postJson(Uri.parse('$_base/api/v2/organizations/$orgId/personas'), {
+      'persona_id': personaId,
+    }, bearerToken: bearerToken);
   }
 
   /// `POST /api/v2/organizations/{id}/invites` — invite a user by email/wallet.
@@ -69,102 +68,42 @@ class OrgClient {
     required String role,
     required String bearerToken,
   }) async {
-    await _postJson(
-      Uri.parse('$_base/api/v2/organizations/$orgId/invites'),
-      {'recipient': recipient, 'role': role},
-      bearerToken: bearerToken,
-    );
+    await _postJson(Uri.parse('$_base/api/v2/organizations/$orgId/invites'), {
+      'recipient': recipient,
+      'role': role,
+    }, bearerToken: bearerToken);
   }
 
-  Future<dynamic> _getJson(Uri uri, {String? bearerToken}) async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(uri);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (bearerToken != null && bearerToken.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearerToken');
-      }
-      final res = await req.close();
-      final text = await utf8.decodeStream(res);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        final error = _apiError(res.statusCode, text);
-        if (res.statusCode == HttpStatus.unauthorized &&
-            bearerToken != null &&
-            bearerToken.isNotEmpty) {
-          await onUnauthorized?.call(bearerToken);
-        }
-        throw OrgException(
-          error.message,
-          statusCode: res.statusCode,
-          code: error.code,
-        );
-      }
-      return jsonDecode(text);
-    } on SocketException catch (e) {
-      throw OrgException('Cannot reach gateway ($_base): ${e.message}');
-    } finally {
-      client.close(force: true);
-    }
-  }
+  Future<dynamic> _getJson(Uri uri, {String? bearerToken}) =>
+      _request('GET', uri, bearerToken: bearerToken);
 
   Future<dynamic> _postJson(
     Uri uri,
     Map<String, dynamic> body, {
     String? bearerToken,
-  }) async {
-    final client = HttpClient();
-    try {
-      final req = await client.postUrl(uri);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      if (bearerToken != null && bearerToken.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearerToken');
-      }
-      final encoded = jsonEncode(body);
-      req.contentLength = utf8.encode(encoded).length;
-      req.write(encoded);
-      final res = await req.close();
-      final text = await utf8.decodeStream(res);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        final error = _apiError(res.statusCode, text);
-        if (res.statusCode == HttpStatus.unauthorized &&
-            bearerToken != null &&
-            bearerToken.isNotEmpty) {
-          await onUnauthorized?.call(bearerToken);
-        }
-        throw OrgException(
-          error.message,
-          statusCode: res.statusCode,
-          code: error.code,
-        );
-      }
-      if (text.isEmpty) return const {};
-      return jsonDecode(text);
-    } on SocketException catch (e) {
-      throw OrgException('Cannot reach gateway ($_base): ${e.message}');
-    } finally {
-      client.close(force: true);
-    }
-  }
+  }) => _request('POST', uri, body: body, bearerToken: bearerToken);
 
-  static _ApiError _apiError(int status, String body) {
+  Future<dynamic> _request(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+    String? bearerToken,
+  }) async {
     try {
-      final j = jsonDecode(body);
-      if (j is Map) {
-        final rawError = j['error'];
-        final msg = rawError is Map
-            ? rawError['message'] ?? j['message'] ?? j['detail']
-            : rawError ?? j['message'] ?? j['detail'];
-        final code = rawError is Map
-            ? rawError['code'] ?? j['code'] ?? j['error_code']
-            : j['code'] ?? j['error_code'];
-        if (msg != null) {
-          return _ApiError(msg.toString(), code?.toString());
-        }
-        return _ApiError('Gateway error ($status)', code?.toString());
-      }
-    } catch (_) {}
-    return _ApiError('Gateway error ($status)', null);
+      return await _transport.requestJson(
+        method,
+        uri,
+        body: body,
+        bearerToken: bearerToken,
+      );
+    } on AuthException catch (error) {
+      throw OrgException(
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
+        retryAt: error.retryAt,
+      );
+    }
   }
 
   static String _normalizeBase(String url) {
@@ -176,18 +115,13 @@ class OrgClient {
 }
 
 class OrgException implements Exception {
-  OrgException(this.message, {this.statusCode, this.code});
+  OrgException(this.message, {this.statusCode, this.code, this.retryAt});
   final String message;
   final int? statusCode;
   final String? code;
+  final DateTime? retryAt;
   String? get errorCode => code;
 
   @override
   String toString() => message;
-}
-
-class _ApiError {
-  const _ApiError(this.message, this.code);
-  final String message;
-  final String? code;
 }

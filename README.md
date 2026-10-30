@@ -25,9 +25,9 @@ AI node.
 | Platform | Role | Where to get it |
 | --- | --- | --- |
 | **macOS** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
-| **Windows** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
-| **Linux** | Desktop server + client | Build from source — [docs/BUILD.md](docs/BUILD.md) |
-| **Android** | Client + optional server | Play Store AAB + dApp Store APK — [docs/BUILD.md](docs/BUILD.md) |
+| **Windows** | Desktop server + client | [GitHub Releases](https://github.com/NetSepio/erebrus-ai/releases) or build from source |
+| **Linux** | Desktop server + client | [GitHub Releases](https://github.com/NetSepio/erebrus-ai/releases) (x64) or build from source |
+| **Android** | Client + optional server | [GitHub Releases](https://github.com/NetSepio/erebrus-ai/releases) (Play Store + dApp Store builds) |
 | **iOS** | Client + in-app server | Build from source; TestFlight signing pending |
 | **Web** | Not supported | Browsers cannot run local LLMs in MVP |
 
@@ -79,10 +79,20 @@ lib/
 
 ## CI / Releases
 
-- **CI:** Every PR/push to `main` runs `flutter analyze` and `flutter test`.
-  See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-- **Releases:** Trigger manually in GitHub Actions or push a `v*` tag.
-  See [`.github/workflows/release.yml`](.github/workflows/release.yml).
+- **CI** ([`ci.yml`](.github/workflows/ci.yml)) runs on every pull request and
+  push to `main`: a gitleaks history scan, `flutter analyze`, the benchmark
+  gate, and `flutter test`, then release builds for macOS (arm64 + x86_64,
+  unsigned), iOS (unsigned), Windows, Linux, and Android, with checks on the
+  packaged llama.cpp, Whisper, and TurboQuant runtimes.
+- **Releases** ([`release.yml`](.github/workflows/release.yml)) run when a
+  `v*` tag that matches `pubspec.yaml` is pushed (`version: 1.1.1+3` → tag
+  `v1.1.1`), and need a `## 1.1.1+3` section in [CHANGELOG.md](CHANGELOG.md).
+  The workflow builds signed Play Store (APK + AAB) and dApp Store (APK)
+  Android artifacts, verifies each signing certificate, packages Windows and
+  Linux, and publishes a GitHub Release with a manifest and SHA-256 checksums.
+  A manual run builds the same artifacts without publishing.
+- Required secrets, variables, and the macOS signing gate are listed in
+  [docs/BUILD.md](docs/BUILD.md#8-ci-and-releases).
 
 ---
 

@@ -307,11 +307,10 @@ class ConnectionService extends ChangeNotifier {
     // callers await this to read fresh state.
     // The callback must not return the removed future: whenComplete would
     // then wait on the very future it is completing.
-    return _inFlightRefresh[connection.id] ??= _refresh(
-      connection,
-    ).whenComplete(() {
-      _inFlightRefresh.remove(connection.id);
-    });
+    return _inFlightRefresh[connection.id] ??= _refresh(connection)
+        .whenComplete(() {
+          _inFlightRefresh.remove(connection.id);
+        });
   }
 
   Future<void> _refresh(ModelConnection connection) async {

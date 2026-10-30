@@ -69,14 +69,17 @@ void main() {
       );
     });
 
-    test('health check is public while model metadata and inference are authenticated', () {
-      expect(isPublicLocalServerMetadataRequest('GET', 'health'), isTrue);
-      expect(isPublicLocalServerMetadataRequest('GET', 'v1/models'), isFalse);
-      expect(
-        isPublicLocalServerMetadataRequest('POST', 'v1/chat/completions'),
-        isFalse,
-      );
-    });
+    test(
+      'health check is public while model metadata and inference are authenticated',
+      () {
+        expect(isPublicLocalServerMetadataRequest('GET', 'health'), isTrue);
+        expect(isPublicLocalServerMetadataRequest('GET', 'v1/models'), isFalse);
+        expect(
+          isPublicLocalServerMetadataRequest('POST', 'v1/chat/completions'),
+          isFalse,
+        );
+      },
+    );
 
     test('formats IPv6 model-list URLs correctly', () {
       const node = DiscoveredNode(

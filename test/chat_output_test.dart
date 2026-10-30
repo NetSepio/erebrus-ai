@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('removes complete leading think blocks', () {
     expect(
-      sanitizeAssistantText('<think>private reasoning</think>\n\nVisible answer'),
+      sanitizeAssistantText(
+        '<think>private reasoning</think>\n\nVisible answer',
+      ),
       'Visible answer',
     );
   });

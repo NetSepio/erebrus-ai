@@ -88,7 +88,13 @@ flutter run -d linux
 ```
 
 - Same web-login path as macOS.
-- Linux may need `pkg-config` and GTK development headers for Flutter.
+- Linux needs the Flutter toolchain plus the plugins' system libraries
+  (Ubuntu/Debian package names, as installed in CI):
+
+  ```bash
+  sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev \
+    libsecret-1-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libayatana-appindicator3-dev
+  ```
 
 ### iOS
 
@@ -147,6 +153,62 @@ App icons are generated from `assets/icons/erebrus-ai-icon-1024.png` using
 ```bash
 dart run flutter_launcher_icons:main
 ```
+
+---
+
+## 8. CI and releases
+
+Workflows live in `.github/workflows/`. CI (`ci.yml`) needs no secrets.
+
+Apple builds need Xcode 26 or newer (`erebrus_speech` uses `SpeechAnalyzer`);
+the workflows select the newest stable Xcode 26+ on the runner. After every
+`flutter pub get`, `scripts/pin-spm-platforms.sh` pins the generated plugin
+Swift package to iOS 17 / macOS 14 (`scripts/build-all-release.sh` calls it
+too).
+
+### Cutting a release
+
+1. Bump `version:` in `pubspec.yaml` (for example `1.1.1+3`) and add a
+   `## 1.1.1+3 — YYYY-MM-DD` section to `CHANGELOG.md`.
+2. Commit, then push the commit and an annotated `v1.1.1` tag together:
+   `git push --atomic origin main v1.1.1`.
+3. `release.yml` fails fast if the tag does not match `pubspec.yaml` or the
+   changelog section is missing, then publishes the GitHub Release.
+
+Release assets:
+
+| Asset | Use |
+|-------|-----|
+| `erebrus-ai-playstore-vX.Y.Z.aab` | Play Console upload |
+| `erebrus-ai-playstore-vX.Y.Z.apk` | Sideload (Play Store key) |
+| `erebrus-ai-dappstore-vX.Y.Z.apk` | Solana dApp Store (dApp Store key) |
+| `erebrus-ai-windows-vX.Y.Z.zip` | Windows x64 |
+| `erebrus-ai-linux-vX.Y.Z.tar.gz` | Linux x64 (built on Ubuntu 24.04) |
+| `erebrus-ai-macos-vX.Y.Z.zip` | Only when `ENABLE_MACOS_BUILD=true` |
+| `erebrus-ai-r8-mapping-vX.Y.Z.zip` | R8 mapping files for both flavors, to deobfuscate APK stack traces |
+| `erebrus-ai-manifest-vX.Y.Z.json`, `erebrus-ai-sha256sums-vX.Y.Z.txt` | Sizes, SHA-256, signing certificates |
+
+Android release builds are arm64-only, like `scripts/build-all-release.sh`.
+They are shrunk and obfuscated with R8 (Flutter's default). App-specific keep
+rules live in `android/app/proguard-rules.pro`. The App Bundle carries its own
+mapping file, which the Play Console uses automatically. If a plugin breaks only
+in release builds (a missing class or `TypeToken` error), add a keep rule
+there; `flutter build apk --no-shrink` confirms that R8 is the cause.
+
+### Secrets and variables
+
+| Name | Kind | Purpose |
+|------|------|---------|
+| `PLAYSTORE_KEYSTORE_BASE64`, `PLAYSTORE_STORE_PASSWORD`, `PLAYSTORE_KEY_ALIAS`, `PLAYSTORE_KEY_PASSWORD` | Secret | Play Store signing key (`base64 -i erebrus-ai-playstore.jks`) |
+| `DAPPSTORE_KEYSTORE_BASE64`, `DAPPSTORE_STORE_PASSWORD`, `DAPPSTORE_KEY_ALIAS`, `DAPPSTORE_KEY_PASSWORD` | Secret | dApp Store signing key; must be a different certificate |
+| `REOWN_PROJECT_ID` | Secret or variable | Required; wallet sign-in |
+| `GOOGLE_SERVER_CLIENT_ID`, `APPLE_SERVICE_ID`, `APPLE_REDIRECT_URI` | Secret or variable | Optional; app defaults apply when unset |
+| `GATEWAY_URL`, `EREBRUS_WEB_ORIGIN`, `MODEL_CATALOG_BASE_URL` | Variable | Optional; default to production |
+| `ENABLE_MACOS_BUILD` | Variable | `true` once CI can sign for team `76KW3AMAW5`; until then the macOS release job is skipped |
+
+`scripts/write-ci-env.sh` writes these values to `.env` (bundled as an asset
+and passed with `--dart-define-from-file`), skipping empty ones so app
+defaults still apply.
 
 ---
 

@@ -20,7 +20,8 @@ class ToolActivity {
     id: json['id'] as String? ?? '',
     name: json['name'] as String? ?? '',
     label: json['label'] as String? ?? '',
-    status: ToolActivityStatus.values
+    status:
+        ToolActivityStatus.values
             .where((value) => value.name == json['status'])
             .firstOrNull ??
         ToolActivityStatus.done,

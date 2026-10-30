@@ -27,6 +27,7 @@ class SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<SignInPage> {
   WalletAuthController? _auth;
+  String? _initialSessionIdentity;
 
   @override
   void didChangeDependencies() {
@@ -34,6 +35,7 @@ class _SignInPageState extends State<SignInPage> {
     final auth = AppScope.of(context).auth;
     if (identical(_auth, auth)) return;
     _auth?.removeListener(_onAuthChanged);
+    _initialSessionIdentity = auth.sessionIdentity;
     _auth = auth..addListener(_onAuthChanged);
     if (PlatformCapabilities.usesReown) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -51,7 +53,12 @@ class _SignInPageState extends State<SignInPage> {
   bool _closing = false;
 
   void _onAuthChanged() {
-    if (_closing || _auth?.isAuthenticated != true || !mounted) return;
+    if (_closing ||
+        _auth?.isAuthenticated != true ||
+        !mounted ||
+        _auth?.sessionIdentity == _initialSessionIdentity) {
+      return;
+    }
     // Sign-in notifies many times (session, entitlement, profile, …). Close
     // exactly once, after the current frame, and only while this page is
     // still on the stack — popping again would remove the home route.

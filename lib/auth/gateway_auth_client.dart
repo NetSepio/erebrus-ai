@@ -3,6 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'auth_config.dart';
+import 'auth_exception.dart';
+import 'auth_session.dart';
+import 'auth_session_repository.dart';
+
+export 'auth_exception.dart';
+export 'auth_session.dart';
 import 'entitlement_state.dart';
 import 'runtime_config.dart';
 import 'user_org_invite.dart';
@@ -13,11 +19,12 @@ const kDefaultGatewayUrl = 'https://gateway.erebrus.io';
 
 /// Wallet auth + account data against the Erebrus gateway (v2).
 class GatewayAuthClient {
-  GatewayAuthClient({String? gatewayUrl, this.onUnauthorized})
+  GatewayAuthClient({String? gatewayUrl})
     : _base = _normalizeBase(gatewayUrl ?? RuntimeConfig.gatewayUrl);
 
   final String _base;
-  Future<void> Function(String bearerToken)? onUnauthorized;
+  AuthSessionRepository? sessionRepository;
+  final Map<String, DateTime> _throttles = {};
 
   /// Start wallet login — `GET /api/v2/auth`.
   Future<AuthChallenge> fetchFlowId({
@@ -45,15 +52,19 @@ class GatewayAuthClient {
       'signature': signature,
       'public_key': publicKey,
     });
-    return AuthSession(
-      token: (map['token'] ?? '').toString(),
-      userId: (map['user_id'] ?? '').toString(),
-      role: (map['role'] ?? 'user').toString(),
-      walletAddress: publicKey,
-    );
+    return AuthSession.fromJson({...map, 'wallet_address': publicKey});
   }
 
   /// `GET /api/v2/subscriptions` — requires bearer token.
+  Future<void> validateImportedAccess(String token) async {
+    await requestJson(
+      'GET',
+      Uri.parse('$_base/api/v2/subscriptions'),
+      bearerToken: token,
+      intercept: false,
+    );
+  }
+
   Future<EntitlementState> fetchSubscription(String bearerToken) async {
     final map = await _getJson(
       Uri.parse('$_base/api/v2/subscriptions'),
@@ -212,14 +223,31 @@ class GatewayAuthClient {
     return _identitySession(map);
   }
 
-  AuthSession _identitySession(Map<String, dynamic> map) => AuthSession(
-    token: (map['token'] ?? '').toString(),
-    userId: (map['user_id'] ?? '').toString(),
-    role: (map['role'] ?? 'user').toString(),
-    walletAddress:
-        (map['wallet_address'] ?? map['wallet'] ?? map['public_key'] ?? '')
-            .toString(),
-  );
+  AuthSession _identitySession(Map<String, dynamic> map) =>
+      AuthSession.fromJson(map);
+
+  Future<AuthSession> refreshSession(String refreshToken) async =>
+      AuthSession.fromJson(
+        await _postJson(Uri.parse('$_base/api/v2/auth/refresh'), {
+          'refresh_token': refreshToken,
+        }, intercept: false),
+      );
+
+  Future<AuthSession> upgradeSession(String accessToken) async =>
+      AuthSession.fromJson(
+        await _postJson(
+          Uri.parse('$_base/api/v2/auth/session'),
+          const {},
+          bearerToken: accessToken,
+          intercept: false,
+        ),
+      );
+
+  Future<void> revokeSession(String refreshToken) async {
+    await _postJson(Uri.parse('$_base/api/v2/auth/logout'), {
+      'refresh_token': refreshToken,
+    }, intercept: false);
+  }
 
   /// `GET /api/v2/auth/methods` — which login methods the gateway has configured.
   Future<AuthMethods> fetchAuthMethods() async {
@@ -236,137 +264,208 @@ class GatewayAuthClient {
     }
   }
 
+  /// Platform label the gateway records in account activity and metrics.
+  static String get clientLabel {
+    if (Platform.isAndroid) return 'android';
+    if (Platform.isIOS) return 'ios';
+    return 'desktop';
+  }
+
   static const _connectTimeout = Duration(seconds: 15);
   static const _responseTimeout = Duration(seconds: 30);
 
-  HttpClient _newClient() => HttpClient()..connectionTimeout = _connectTimeout;
-
-  AuthException _transportError(Object error) => switch (error) {
-    SocketException(:final message) => AuthException(
-      'Cannot reach gateway ($_base): $message',
-    ),
-    TimeoutException() => AuthException(
-      'The gateway took too long to respond — check your connection and try again',
-    ),
-    HandshakeException() => AuthException(
-      'Secure connection to the gateway failed — check the device date and network',
-    ),
-    HttpException(:final message) => AuthException(
-      'Gateway connection failed: $message',
-    ),
-    FormatException() => AuthException(
-      'The gateway returned an unexpected response',
-    ),
-    _ => AuthException(error.toString()),
-  };
-
-  Future<dynamic> _getJson(Uri uri, {String? bearerToken}) async {
-    final client = _newClient();
-    try {
-      final req = await client.getUrl(uri);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (bearerToken != null && bearerToken.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearerToken');
-      }
-      final res = await req.close().timeout(_responseTimeout);
-      final text = await utf8.decodeStream(res).timeout(_responseTimeout);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        final error = _apiError(res.statusCode, text);
-        if (res.statusCode == HttpStatus.unauthorized &&
-            bearerToken != null &&
-            bearerToken.isNotEmpty) {
-          await onUnauthorized?.call(bearerToken);
-        }
-        throw AuthException(
-          error.message,
-          statusCode: res.statusCode,
-          code: error.code,
-        );
-      }
-      return jsonDecode(text);
-    } on AuthException {
-      rethrow;
-    } on Object catch (e) {
-      if (e is! SocketException &&
-          e is! TimeoutException &&
-          e is! HttpException &&
-          e is! FormatException) {
-        rethrow;
-      }
-      throw _transportError(e);
-    } finally {
-      client.close(force: true);
-    }
-  }
+  Future<dynamic> _getJson(Uri uri, {String? bearerToken}) =>
+      requestJson('GET', uri, bearerToken: bearerToken);
 
   Future<Map<String, dynamic>> _postJson(
     Uri uri,
     Map<String, dynamic> body, {
     String? bearerToken,
+    bool intercept = true,
+  }) async => Map<String, dynamic>.from(
+    await requestJson(
+          'POST',
+          uri,
+          body: body,
+          bearerToken: bearerToken,
+          intercept: intercept,
+        )
+        as Map,
+  );
+
+  /// Shared transport for account, entitlement, referral and org endpoints.
+  /// The encoded body and caller's headers (including idempotency keys) are
+  /// captured once and reused verbatim for the single access-expiry retry.
+  Future<dynamic> requestJson(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+    String? bearerToken,
+    Map<String, String> headers = const {},
+    bool intercept = true,
   }) async {
-    final client = _newClient();
+    final encoded = body == null ? null : jsonEncode(body);
+    final repository = sessionRepository;
+    final excluded = const {
+      '/api/v2/auth/refresh',
+      '/api/v2/auth/logout',
+      '/api/v2/auth/session',
+    }.contains(uri.path);
+    if (!intercept ||
+        excluded ||
+        repository == null ||
+        bearerToken?.isNotEmpty != true) {
+      return _rawRequest(method, uri, encoded, bearerToken, headers);
+    }
+    var session = await repository.validSession(bearerToken!);
     try {
-      final req = await client.postUrl(uri);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      if (bearerToken != null && bearerToken.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearerToken');
-      }
-      final encoded = jsonEncode(body);
-      req.contentLength = utf8.encode(encoded).length;
-      req.write(encoded);
-      final res = await req.close().timeout(_responseTimeout);
-      final text = await utf8.decodeStream(res).timeout(_responseTimeout);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        final error = _apiError(res.statusCode, text);
-        if (res.statusCode == HttpStatus.unauthorized &&
-            bearerToken != null &&
-            bearerToken.isNotEmpty) {
-          await onUnauthorized?.call(bearerToken);
+      dynamic result;
+      try {
+        result = await _rawRequest(
+          method,
+          uri,
+          encoded,
+          session.token,
+          headers,
+        );
+      } on AuthException catch (error) {
+        if (error.statusCode != 401 || error.code != 'ACCESS_TOKEN_EXPIRED') {
+          rethrow;
         }
-        throw AuthException(
-          error.message,
-          statusCode: res.statusCode,
-          code: error.code,
+        session = await repository.renewRejected(session);
+        result = await _rawRequest(
+          method,
+          uri,
+          encoded,
+          session.token,
+          headers,
         );
       }
-      if (text.isEmpty) return const {};
-      final decoded = jsonDecode(text);
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return const {};
+      await repository.assertCurrent(session);
+      return result;
+    } on AuthException catch (error) {
+      await repository.handleFailure(session, error);
+      rethrow;
+    }
+  }
+
+  Future<dynamic> _rawRequest(
+    String method,
+    Uri uri,
+    String? body,
+    String? bearerToken,
+    Map<String, String> headers,
+  ) async {
+    final throttleKey = '$method $uri';
+    final retryAt = _throttles[throttleKey];
+    if (retryAt?.isAfter(DateTime.now()) == true) {
+      throw AuthException(
+        'The gateway asked us to wait before trying again.',
+        statusCode: 429,
+        retryAt: retryAt,
+      );
+    }
+    final client = HttpClient()..connectionTimeout = _connectTimeout;
+    var submitted = false;
+    try {
+      final request = await client
+          .openUrl(method, uri)
+          .timeout(_connectTimeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      request.headers.set('X-Erebrus-Client', clientLabel);
+      headers.forEach(request.headers.set);
+      if (bearerToken?.isNotEmpty == true) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $bearerToken',
+        );
+      }
+      if (body != null) {
+        request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        final bytes = utf8.encode(body);
+        request.contentLength = bytes.length;
+        submitted = true;
+        request.add(bytes);
+      }
+      submitted = true;
+      final response = await request.close().timeout(_responseTimeout);
+      final text = await utf8.decodeStream(response).timeout(_responseTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final deadline = _retryAt(
+          response.headers.value(HttpHeaders.retryAfterHeader),
+        );
+        if (deadline != null) _throttles[throttleKey] = deadline;
+        throw _apiError(response.statusCode, text, deadline);
+      }
+      return text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
     } on AuthException {
       rethrow;
-    } on Object catch (e) {
-      if (e is! SocketException &&
-          e is! TimeoutException &&
-          e is! HttpException &&
-          e is! FormatException) {
-        rethrow;
-      }
-      throw _transportError(e);
+    } on SocketException {
+      throw AuthException(
+        'Cannot reach the gateway. Check your connection.',
+        requestMayHaveBeenSent: submitted,
+      );
+    } on TimeoutException {
+      throw AuthException(
+        'The gateway took too long to respond.',
+        requestMayHaveBeenSent: submitted,
+      );
+    } on HandshakeException {
+      throw AuthException(
+        'Secure connection to the gateway failed.',
+        requestMayHaveBeenSent: submitted,
+      );
+    } on HttpException {
+      throw AuthException(
+        'Gateway connection failed.',
+        requestMayHaveBeenSent: submitted,
+      );
+    } on FormatException {
+      throw AuthException('The gateway returned an unexpected response.');
     } finally {
       client.close(force: true);
     }
   }
 
-  static _ApiError _apiError(int status, String body) {
+  static DateTime? _retryAt(String? value) {
+    if (value == null) return null;
+    final seconds = int.tryParse(value);
+    if (seconds != null) {
+      return DateTime.now().toUtc().add(
+        Duration(seconds: seconds < 0 ? 0 : seconds),
+      );
+    }
     try {
-      final j = jsonDecode(body);
-      if (j is Map) {
-        final rawError = j['error'];
-        final msg = rawError is Map
-            ? rawError['message'] ?? j['message'] ?? j['detail']
-            : rawError ?? j['message'] ?? j['detail'];
-        final code = rawError is Map
-            ? rawError['code'] ?? j['code'] ?? j['error_code']
-            : j['code'] ?? j['error_code'];
-        if (msg != null) {
-          return _ApiError(msg.toString(), code?.toString());
-        }
-        return _ApiError('Gateway error ($status)', code?.toString());
+      return HttpDate.parse(value).toUtc();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static AuthException _apiError(int status, String body, DateTime? retryAt) {
+    try {
+      final json = jsonDecode(body);
+      if (json is Map) {
+        final raw = json['error'];
+        final message = raw is Map
+            ? raw['message'] ?? json['message'] ?? json['detail']
+            : json['message'] ?? json['detail'] ?? raw;
+        final code = raw is Map
+            ? raw['code'] ?? json['code'] ?? json['error_code']
+            : json['code'] ?? json['error_code'] ?? raw;
+        return AuthException(
+          message?.toString() ?? 'Gateway error ($status)',
+          statusCode: status,
+          code: code?.toString(),
+          retryAt: retryAt,
+        );
       }
     } catch (_) {}
-    return _ApiError('Gateway error ($status)', null);
+    return AuthException(
+      'Gateway error ($status)',
+      statusCode: status,
+      retryAt: retryAt,
+    );
   }
 
   static String _normalizeBase(String url) {
@@ -381,19 +480,6 @@ class AuthChallenge {
   const AuthChallenge({required this.flowId, required this.message});
   final String flowId;
   final String message;
-}
-
-class AuthSession {
-  const AuthSession({
-    required this.token,
-    required this.userId,
-    required this.role,
-    required this.walletAddress,
-  });
-  final String token;
-  final String userId;
-  final String role;
-  final String walletAddress;
 }
 
 /// The caller's referral standing (`GET /api/v2/referrals/me` and the response
@@ -496,23 +582,6 @@ class RankStanding {
 
   static int _asInt(dynamic v) =>
       v is int ? v : (v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0);
-}
-
-class AuthException implements Exception {
-  AuthException(this.message, {this.statusCode, this.code});
-  final String message;
-  final int? statusCode;
-  final String? code;
-  String? get errorCode => code;
-
-  @override
-  String toString() => message;
-}
-
-class _ApiError {
-  const _ApiError(this.message, this.code);
-  final String message;
-  final String? code;
 }
 
 /// Which login methods the gateway has configured.

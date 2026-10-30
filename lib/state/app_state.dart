@@ -115,7 +115,9 @@ class AppState extends ChangeNotifier {
 
   /// Web search will actually be offered on the next message.
   bool get webSearchActive =>
-      webSearchInChat && WebTools.instance.isReady && selectedModelSupportsTools;
+      webSearchInChat &&
+      WebTools.instance.isReady &&
+      selectedModelSupportsTools;
 
   Future<void> setWebSearchInChat(bool value) async {
     webSearchInChat = value;

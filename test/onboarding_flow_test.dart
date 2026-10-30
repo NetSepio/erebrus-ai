@@ -32,52 +32,52 @@ void main() {
   });
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({
-      'onboarding_complete': false,
-    });
+    SharedPreferences.setMockInitialValues({'onboarding_complete': false});
   });
 
-  testWidgets('OnboardingFlow renders initial slide and steps through stories', (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'OnboardingFlow renders initial slide and steps through stories',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final auth = WalletAuthController();
-    final orgState = OrgState(auth: auth);
-    final appState = AppState(auth: auth, orgState: orgState);
+      final auth = WalletAuthController();
+      final orgState = OrgState(auth: auth);
+      final appState = AppState(auth: auth, orgState: orgState);
 
-    await tester.pumpWidget(
-      AppScope(
-        state: appState,
-        child: const MaterialApp(
-          home: Scaffold(
-            body: OnboardingFlow(),
-          ),
+      await tester.pumpWidget(
+        AppScope(
+          state: appState,
+          child: const MaterialApp(home: Scaffold(body: OnboardingFlow())),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // Slide 1
-    expect(find.text('01 / PRIVATE AI'), findsOneWidget);
-    expect(find.text('Your models. Your hardware. Your rules.'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-    expect(find.text('SKIP'), findsOneWidget);
+      // Slide 1
+      expect(find.text('01 / PRIVATE AI'), findsOneWidget);
+      expect(
+        find.text('Your models. Your hardware. Your rules.'),
+        findsOneWidget,
+      );
+      expect(find.text('Continue'), findsOneWidget);
+      expect(find.text('SKIP'), findsOneWidget);
 
-    // Advance to Slide 2
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+      // Advance to Slide 2
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('02 / ONE NETWORK'), findsOneWidget);
-    expect(find.text('Every device shares its models.'), findsOneWidget);
+      expect(find.text('02 / ONE NETWORK'), findsOneWidget);
+      expect(find.text('Every device shares its models.'), findsOneWidget);
 
-    // Advance to Slide 3
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+      // Advance to Slide 3
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('03 / GUEST FIRST'), findsOneWidget);
-    expect(find.text('No account. Unless you want one.'), findsOneWidget);
-  });
+      expect(find.text('03 / GUEST FIRST'), findsOneWidget);
+      expect(find.text('No account. Unless you want one.'), findsOneWidget);
+    },
+  );
 
   testWidgets('OnboardingFlow skip jumps to model setup step', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -91,11 +91,7 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         state: appState,
-        child: const MaterialApp(
-          home: Scaffold(
-            body: OnboardingFlow(),
-          ),
-        ),
+        child: const MaterialApp(home: Scaffold(body: OnboardingFlow())),
       ),
     );
     await tester.pumpAndSettle();

@@ -6,6 +6,7 @@ import 'app.dart';
 import 'data/catalog_service.dart';
 import 'auth/deep_link_handler.dart';
 import 'auth/runtime_config.dart';
+import 'auth/session_mutex.dart';
 import 'auth/wallet_auth_controller.dart';
 import 'org/org_state.dart';
 import 'platform/desktop_shell.dart';
@@ -26,6 +27,7 @@ import 'services/power_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SessionMutex.initialize();
   await RuntimeConfig.load();
 
   // Keep downloads / serving alive in the background and the screen on.

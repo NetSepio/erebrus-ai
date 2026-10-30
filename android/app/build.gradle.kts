@@ -76,12 +76,9 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            isShrinkResources = false
-        }
-    }
+    // Release builds keep the Flutter Gradle plugin's defaults: R8 shrinks and
+    // obfuscates code and removes unused resources, using Flutter's keep rules
+    // plus proguard-rules.pro. Play Console flags unobfuscated release code.
 
     androidComponents {
         onVariants { variant ->
