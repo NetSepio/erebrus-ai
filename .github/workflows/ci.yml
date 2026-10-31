@@ -108,6 +108,12 @@ jobs:
           if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed'; then
             xcodebuild -downloadComponent MetalToolchain
           fi
+          # mlx-swift ships a build plugin (CudaBuild) that Xcode runs only
+          # after someone trusts it in the IDE, which CI cannot do. The runner
+          # is discarded after the job and Package.resolved pins every package
+          # to a commit. (Apple's key is spelled "Validatation".)
+          defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
+          defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES
 
       - run: cp env.example .env
       - run: flutter pub get
@@ -160,6 +166,12 @@ jobs:
           if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed'; then
             xcodebuild -downloadComponent MetalToolchain
           fi
+          # mlx-swift ships a build plugin (CudaBuild) that Xcode runs only
+          # after someone trusts it in the IDE, which CI cannot do. The runner
+          # is discarded after the job and Package.resolved pins every package
+          # to a commit. (Apple's key is spelled "Validatation".)
+          defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
+          defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES
 
       - run: cp env.example .env
       - run: flutter pub get

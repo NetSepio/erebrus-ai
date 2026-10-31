@@ -167,7 +167,12 @@ older Xcode cannot load (Xcode 26.3 crashes resolving packages with
 `macos-26` / `macos-26-intel` runners, select the newest stable Xcode, and
 install its Metal toolchain, a separate component since Xcode 26 that
 `mlx-swift` needs for its shaders (locally:
-`xcodebuild -downloadComponent MetalToolchain`).
+`xcodebuild -downloadComponent MetalToolchain`). `mlx-swift` also ships a
+build plugin (`CudaBuild`) that Xcode runs only once it is trusted. Locally,
+build once in Xcode and choose **Trust & Enable**; CI sets
+`IDESkipPackagePluginFingerprintValidatation` and
+`IDESkipMacroFingerprintValidation` in the `com.apple.dt.Xcode` defaults
+instead.
 After every `flutter pub get`, `scripts/pin-spm-platforms.sh` pins the
 generated plugin Swift package to iOS 17 / macOS 14
 (`scripts/build-all-release.sh` calls it too).
