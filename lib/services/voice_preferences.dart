@@ -1,13 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'speech_package_manager.dart';
 import 'whisper_model_manager.dart';
 
 /// Which speech-to-text engine dictation and transcription use.
 enum DictationEngine {
-  /// Prefer the operating system's on-device recognizer and fall back to the
-  /// local Whisper model when the OS cannot handle the chosen language.
-  auto('Automatic', 'System speech when available, otherwise local Whisper'),
+  /// Prefer the operating system's on-device recognizer, then a downloaded
+  /// local model that suits this device and language.
+  auto(
+    'Automatic',
+    'System speech when available, otherwise the best downloaded local model',
+  ),
 
   /// Only the operating system's on-device recognizer (Apple SpeechAnalyzer).
   system('System speech', 'Built-in on-device recognizer'),
@@ -16,7 +20,13 @@ enum DictationEngine {
   whisper(
     'Local transcription',
     'Runs a Whisper speech-to-text model locally and works offline',
-  );
+  ),
+
+  /// NVIDIA Parakeet TDT: fast, accurate, 25 European languages.
+  parakeet('Parakeet', 'Fast, accurate local model for 25 European languages'),
+
+  /// Moonshine: lightweight English model for phones.
+  moonshine('Moonshine', 'Lightweight local English model for phones');
 
   const DictationEngine(this.label, this.description);
 
@@ -57,6 +67,7 @@ class VoicePreferences extends ChangeNotifier {
       _locale = preferences.getString(_localeKey) ?? 'auto';
       _readAloudEnabled = preferences.getBool(_readAloudKey) ?? true;
       await WhisperModelManager.loadSelection();
+      await SpeechPackageManager.loadSelection();
     } on Object catch (error) {
       debugPrint('[Voice] preference load failed: $error');
     } finally {
@@ -82,6 +93,11 @@ class VoicePreferences extends ChangeNotifier {
 
   Future<void> setWhisperModel(String specId) async {
     await WhisperModelManager.select(specId);
+    notifyListeners();
+  }
+
+  Future<void> setMoonshineModel(String specId) async {
+    await SpeechPackageManager.selectMoonshine(specId);
     notifyListeners();
   }
 

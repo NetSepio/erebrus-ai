@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/transcription_session.dart';
 import '../../services/chat_service.dart';
+import '../../services/speech_package_manager.dart';
 import '../../services/transcript_prompt_template_service.dart';
 import '../../services/transcription_contract.dart';
 import '../../services/transcription_service.dart';
@@ -64,6 +65,7 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   final _service = TranscriptionService.instance;
   bool _speechReady = false;
   bool _whisperReady = false;
+  String _localModelName = '';
   bool _checkingReadiness = true;
   String _selectedLocale = VoicePreferences.instance.locale;
 
@@ -76,8 +78,9 @@ class _TranscribeScreenState extends State<TranscribeScreen>
     // This tab stays mounted, so follow Settings → Voice changes live.
     VoicePreferences.instance.addListener(_onVoicePreferencesChanged);
     WhisperModelManager.selectedSpecId.addListener(_refreshReadiness);
-    for (final spec in WhisperModelManager.specs) {
-      WhisperModelManager.forSpec(spec).addListener(_onWhisperModelChanged);
+    SpeechPackageManager.selectedMoonshineId.addListener(_refreshReadiness);
+    for (final manager in _modelManagers) {
+      manager.addListener(_onWhisperModelChanged);
     }
     _refreshReadiness();
   }
@@ -87,11 +90,20 @@ class _TranscribeScreenState extends State<TranscribeScreen>
     WidgetsBinding.instance.removeObserver(this);
     VoicePreferences.instance.removeListener(_onVoicePreferencesChanged);
     WhisperModelManager.selectedSpecId.removeListener(_refreshReadiness);
-    for (final spec in WhisperModelManager.specs) {
-      WhisperModelManager.forSpec(spec).removeListener(_onWhisperModelChanged);
+    SpeechPackageManager.selectedMoonshineId.removeListener(_refreshReadiness);
+    for (final manager in _modelManagers) {
+      manager.removeListener(_onWhisperModelChanged);
     }
     super.dispose();
   }
+
+  /// Every local speech model whose download state affects readiness.
+  static List<ChangeNotifier> get _modelManagers => [
+    for (final spec in WhisperModelManager.specs)
+      WhisperModelManager.forSpec(spec),
+    for (final spec in SpeechPackageManager.specs)
+      SpeechPackageManager.forSpec(spec),
+  ];
 
   DictationEngine _engine = VoicePreferences.instance.engine;
 
@@ -113,7 +125,12 @@ class _TranscribeScreenState extends State<TranscribeScreen>
   /// Re-checks readiness when a speech-model download, delete or rollback
   /// completes. Managers also notify on every download chunk; skip those.
   void _onWhisperModelChanged() {
-    if (WhisperModelManager.instance.downloading) return;
+    if (WhisperModelManager.instance.downloading ||
+        SpeechPackageManager.specs.any(
+          (spec) => SpeechPackageManager.forSpec(spec).downloading,
+        )) {
+      return;
+    }
     _refreshReadiness();
   }
 
@@ -152,13 +169,18 @@ class _TranscribeScreenState extends State<TranscribeScreen>
         speechReady = false;
       }
     }
-    final whisper =
-        engine != DictationEngine.system &&
-        await WhisperModelManager.instance.installedPath() != null;
+    // The local engine a recording would fall back to (or use outright).
+    final local = (await _service.chooseEngine(
+      locale: _selectedLocale,
+      systemSpeechReady: false,
+    )).backend;
     if (!mounted) return;
     setState(() {
       _speechReady = speechReady;
-      _whisperReady = whisper;
+      _whisperReady = local != null;
+      _localModelName = local == null
+          ? ''
+          : TranscriptionService.localModelName(local);
       _checkingReadiness = false;
     });
   }
@@ -193,6 +215,7 @@ class _TranscribeScreenState extends State<TranscribeScreen>
           checkingReadiness: _checkingReadiness,
           speechReady: _speechReady,
           whisperReady: _whisperReady,
+          localModelName: _localModelName,
           onSetup: _setupTranscription,
           wide: widget.wide,
           locale: _selectedLocale,
@@ -429,6 +452,7 @@ class _RecorderPane extends StatelessWidget {
     required this.checkingReadiness,
     required this.speechReady,
     required this.whisperReady,
+    required this.localModelName,
     required this.onSetup,
     required this.wide,
     required this.locale,
@@ -440,6 +464,7 @@ class _RecorderPane extends StatelessWidget {
   final bool checkingReadiness;
   final bool speechReady;
   final bool whisperReady;
+  final String localModelName;
   final Future<void> Function() onSetup;
   final bool wide;
   final String locale;
@@ -486,6 +511,7 @@ class _RecorderPane extends StatelessWidget {
             checking: checkingReadiness,
             speechReady: speechReady,
             whisperReady: whisperReady,
+            localModelName: localModelName,
             onSetup: onSetup,
           ),
           const SizedBox(height: 12),
@@ -532,10 +558,7 @@ class _RecorderPane extends StatelessWidget {
                           if (busy) ...[
                             const SizedBox(height: 3),
                             Text(
-                              service.activeBackend ==
-                                      TranscriptionBackendKind.whisperCpp
-                                  ? 'WHISPER.CPP · ON DEVICE'
-                                  : 'SPEECHANALYZER · ON DEVICE',
+                              '${service.activeBackend.displayName.toUpperCase()} · ON DEVICE',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppText.mono(
@@ -579,6 +602,13 @@ class _RecorderPane extends StatelessWidget {
                         )
                       : _LiveTranscript(service: service),
                 ),
+                if (busy && service.engineNotice.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    service.engineNotice,
+                    style: AppText.grotesk(12.5, color: AppColors.warn),
+                  ),
+                ],
                 if (service.state == TranscriptionUiState.failed ||
                     (service.state == TranscriptionUiState.paused &&
                         service.error.isNotEmpty)) ...[
@@ -649,12 +679,16 @@ class _TranscriptionReadinessCard extends StatelessWidget {
     required this.checking,
     required this.speechReady,
     required this.whisperReady,
+    required this.localModelName,
     required this.onSetup,
   });
 
   final bool checking;
   final bool speechReady;
+
+  /// Whether a downloaded local model ([localModelName]) can record.
   final bool whisperReady;
+  final String localModelName;
   final Future<void> Function() onSetup;
 
   @override
@@ -669,7 +703,7 @@ class _TranscriptionReadinessCard extends StatelessWidget {
         : speechReady
         ? 'SpeechAnalyzer ready'
         : whisperReady
-        ? '${spec.displayName} ready'
+        ? '$localModelName ready'
         : 'Transcription setup required';
     final detail = manager.downloading
         ? '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}% of ${spec.sizeLabel} · verified before activation'
@@ -678,7 +712,8 @@ class _TranscriptionReadinessCard extends StatelessWidget {
         : speechReady
         ? 'Uses Apple on-device speech assets. No chat model is required.'
         : whisperReady
-        ? 'Uses the verified local Whisper model. No chat model is required.'
+        ? 'Uses the verified local $localModelName model. No chat model is '
+              'required.'
         : 'SpeechAnalyzer is unavailable here. Download the verified '
               '${spec.sizeLabel} ${spec.displayName} model before recording '
               '(change it in Settings → Voice). No chat model is required.';
@@ -1132,7 +1167,7 @@ class _RecordingControls extends StatelessWidget {
           Text(
             service.state == TranscriptionUiState.preparing
                 ? 'Preparing the private transcription engine…'
-                : service.activeBackend == TranscriptionBackendKind.whisperCpp
+                : service.activeBackend.transcribesRecordedWav
                 ? 'Transcribing the saved audio on device…'
                 : 'Saving transcript and audio…',
             textAlign: TextAlign.center,

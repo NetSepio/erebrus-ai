@@ -14,6 +14,10 @@ AI node.
   use the tray icon to reopen or quit the app.
 - **Mobile companion** — iOS and Android discover nodes and run small models
   while open.
+- **Private transcription** — record and transcribe on device with system
+  speech, Whisper, Parakeet (25 European languages) or Moonshine (English,
+  phone-sized). Automatic picks the best engine for the device and language;
+  audio never leaves the device.
 - **Team workspaces** — join an organization to access shared models.
 - **Catalog-driven model browser** — inspect compatible GGUF and MLX packages,
   capabilities, provenance, licenses, and local storage from one screen.
@@ -87,7 +91,7 @@ lib/
   push to `main`: a gitleaks history scan, `flutter analyze`, the benchmark
   gate, and `flutter test`, then release builds for macOS (arm64 + x86_64,
   unsigned), iOS (unsigned), Windows, Linux, and Android, with checks on the
-  packaged llama.cpp, Whisper, and TurboQuant runtimes.
+  packaged llama.cpp, Whisper, sherpa-onnx, and TurboQuant runtimes.
 - **Releases** ([`release.yml`](.github/workflows/release.yml)) run when a
   `v*` tag that matches `pubspec.yaml` is pushed (`version: 1.1.1+3` → tag
   `v1.1.1`), and need a `## 1.1.1+3` section in [CHANGELOG.md](CHANGELOG.md).

@@ -136,6 +136,15 @@ jobs:
           binary="build/macos/Build/Products/Release/Erebrus AI.app/Contents/Frameworks/whisper_ggml_plus.framework/Versions/A/whisper_ggml_plus"
           lipo "$binary" -verify_arch arm64 x86_64
 
+      # Parakeet/Moonshine resolve sherpa-onnx through the process image, so
+      # the app executable must link the bundled library.
+      - name: Verify universal sherpa-onnx runtime
+        run: |
+          app="build/macos/Build/Products/Release/Erebrus AI.app/Contents"
+          archs=" $(lipo -archs "$app/Frameworks/libsherpa-onnx-c-api.dylib") "
+          [[ "$archs" == *" arm64 "* && "$archs" == *" x86_64 "* ]]
+          otool -L "$app/MacOS/Erebrus AI" | grep -q 'libsherpa-onnx-c-api.dylib'
+
   build-ios:
     name: Build iOS (unsigned)
     needs: verify
@@ -254,6 +263,13 @@ jobs:
           # The archive checksum (enforced by CMake) and the manifest pin the source;
           # --version reports the enclosing repo's commit, so only check it runs.
           & $runtime --version 2>&1 | Out-Null
+
+      - name: Verify bundled sherpa-onnx runtime
+        shell: pwsh
+        run: |
+          foreach ($dll in "sherpa-onnx-c-api.dll", "onnxruntime.dll") {
+            if (!(Test-Path "build/windows/x64/runner/Release/$dll")) { throw "$dll was not bundled" }
+          }
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package Windows app
@@ -309,6 +325,11 @@ jobs:
           # --version reports the enclosing repo's commit, so only check it runs.
           "$runtime" --version > /dev/null 2>&1
 
+      - name: Verify bundled sherpa-onnx runtime
+        run: |
+          test -f build/linux/x64/release/bundle/lib/libsherpa-onnx-c-api.so
+          test -f build/linux/x64/release/bundle/lib/libonnxruntime.so
+
   build-android:
     name: Build Android APK
     needs: verify
@@ -347,13 +368,15 @@ jobs:
       # Debug-signed here: no release keys in CI. release.yml signs.
       - run: scripts/ci-annotate.sh flutter build apk --flavor playstore --release
 
-      - name: Verify packaged Whisper ABIs
+      - name: Verify packaged Whisper and sherpa-onnx ABIs
         run: |
           unzip -l build/app/outputs/flutter-apk/app-playstore-release.apk > apk-contents.txt
           grep -q 'lib/arm64-v8a/libwhisper.so' apk-contents.txt
           grep -q 'lib/armeabi-v7a/libwhisper.so' apk-contents.txt
           grep -q 'lib/x86_64/libwhisper.so' apk-contents.txt
           grep -q 'lib/arm64-v8a/liblib_llama_cpp_android.so' apk-contents.txt
+          grep -q 'lib/arm64-v8a/libsherpa-onnx-c-api.so' apk-contents.txt
+          grep -q 'lib/arm64-v8a/libonnxruntime.so' apk-contents.txt
           if grep -q 'liberebrus_turboquant_android' apk-contents.txt; then
             echo "Uncertified TurboQuant Android runtime must not ship" >&2
             exit 1

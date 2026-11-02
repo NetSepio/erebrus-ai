@@ -2,6 +2,31 @@ enum TranscriptionBackendKind {
   speechAnalyzer,
   whisperCpp,
   androidOnDeviceRecognizer,
+
+  /// NVIDIA Parakeet TDT on sherpa-onnx.
+  parakeet,
+
+  /// Useful Sensors Moonshine on sherpa-onnx.
+  moonshine,
+}
+
+extension TranscriptionBackendKindDetails on TranscriptionBackendKind {
+  /// Local engines record a 16 kHz mono WAV and transcribe it after stop.
+  bool get transcribesRecordedWav => switch (this) {
+    TranscriptionBackendKind.whisperCpp ||
+    TranscriptionBackendKind.parakeet ||
+    TranscriptionBackendKind.moonshine => true,
+    _ => false,
+  };
+
+  /// Short engine name shown while recording.
+  String get displayName => switch (this) {
+    TranscriptionBackendKind.speechAnalyzer => 'SpeechAnalyzer',
+    TranscriptionBackendKind.whisperCpp => 'whisper.cpp',
+    TranscriptionBackendKind.androidOnDeviceRecognizer => 'Android speech',
+    TranscriptionBackendKind.parakeet => 'Parakeet',
+    TranscriptionBackendKind.moonshine => 'Moonshine',
+  };
 }
 
 enum AudioInputKind { liveMicrophone, file }

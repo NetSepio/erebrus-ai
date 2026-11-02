@@ -2,7 +2,7 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
-## Unreleased
+## 1.1.2+4 — 2026-11-02
 
 ### Model catalog
 
@@ -28,6 +28,28 @@ Notable user-facing changes to Erebrus AI are documented here.
   TurboQuant runtime would otherwise misread such a file.
 - Desktop: the download row no longer overflows for models that support GPU
   offload.
+
+### Voice
+
+- Two new local speech engines in Settings → Voice, running on sherpa-onnx:
+  **Parakeet** (NVIDIA Parakeet TDT 0.6B v3, about 670 MB, 25 European
+  languages with punctuation) and **Moonshine** (Tiny or Base, about
+  120–290 MB, English only, sized for phones). Each download is pinned to an
+  immutable revision and checked byte-for-byte against its SHA-256 before
+  use.
+- **Automatic** keeps the existing default — on-device system speech first —
+  and, where that is unavailable, uses the best downloaded model for the
+  device and language: Parakeet on laptops, desktops, gaming rigs and 12 GB+
+  phones, then Whisper (Moonshine for English on phones).
+- Choosing Parakeet, Moonshine, Whisper or System speech explicitly always
+  wins when it can run. When it cannot (not downloaded, wrong language), the
+  recording falls back to Automatic and the Transcribe screen says why,
+  instead of failing.
+- Parakeet and Moonshine recordings are split by voice activity, so saved
+  transcripts carry per-utterance timecodes. Decoding runs off the UI thread
+  and Cancel stops it immediately.
+- The bundled sherpa-onnx and ONNX Runtime libraries add about 25 MB on
+  iOS, 27 MB per Android ABI and 55 MB to the universal macOS app.
 
 ## 1.1.1+3 — 2026-10-30
 

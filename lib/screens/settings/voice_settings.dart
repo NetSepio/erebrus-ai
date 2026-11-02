@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:record/record.dart';
 
+import '../../services/device_info_service.dart';
+import '../../services/speech_package_manager.dart';
 import '../../services/speech_service.dart';
+import '../../services/transcription_engine.dart';
 import '../../services/transcription_service.dart';
 import '../../services/voice_preferences.dart';
 import '../../services/whisper_model_manager.dart';
@@ -106,6 +109,9 @@ class _VoiceSettingsContentState extends State<VoiceSettingsContent> {
         VoicePreferences.instance,
         WhisperModelManager.selectedSpecId,
         WhisperModelManager.instance,
+        SpeechPackageManager.selectedMoonshineId,
+        SpeechPackageManager.parakeet,
+        SpeechPackageManager.moonshine,
         SpeechService.instance,
       ]),
       builder: (context, _) {
@@ -115,6 +121,10 @@ class _VoiceSettingsContentState extends State<VoiceSettingsContent> {
         final usesWhisper =
             prefs.engine == DictationEngine.whisper ||
             (prefs.engine == DictationEngine.auto && !systemAvailable);
+        final automatic = prefs.engine == DictationEngine.auto;
+        final englishOnly =
+            (usesWhisper && prefs.whisperModel.englishOnly) ||
+            prefs.engine == DictationEngine.moonshine;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -127,8 +137,8 @@ class _VoiceSettingsContentState extends State<VoiceSettingsContent> {
                       ? (_systemSpeechAvailable == null
                             ? 'Checking this device’s speech support…'
                             : systemAvailable
-                            ? 'Uses on-device system speech; falls back to local Whisper for unsupported languages.'
-                            : 'System speech isn’t available here, so the local Whisper model is used.')
+                            ? 'Uses on-device system speech; falls back to a downloaded local model for unsupported languages.'
+                            : 'System speech isn’t available here, so the best downloaded local model is used: Parakeet, then Whisper (Moonshine for English on phones).')
                       : prefs.engine.description,
                   control: EreSelect<DictationEngine>(
                     value: prefs.engine,
@@ -150,8 +160,25 @@ class _VoiceSettingsContentState extends State<VoiceSettingsContent> {
                     ],
                   ),
                 ),
-                if (usesWhisper || prefs.engine != DictationEngine.system)
-                  const _SpeechModelItem(),
+                if (usesWhisper || automatic) const _SpeechModelItem(),
+                if (automatic || prefs.engine == DictationEngine.parakeet)
+                  _SpeechPackageItem(
+                    title: 'Parakeet model',
+                    manager: SpeechPackageManager.parakeet,
+                    note:
+                        automatic &&
+                            !parakeetSuitsDevice(DeviceInfoService.detect())
+                        ? 'Automatic uses it on laptops, desktops and 12 GB+ '
+                              'phones; choose Parakeet above to use it here.'
+                        : '',
+                  ),
+                if (automatic || prefs.engine == DictationEngine.moonshine)
+                  _SpeechPackageItem(
+                    title: 'Moonshine model',
+                    manager: SpeechPackageManager.moonshine,
+                    options: SpeechPackageManager.moonshineSpecs,
+                    onSelect: prefs.setMoonshineModel,
+                  ),
                 SettingItem(
                   title: 'Microphone',
                   description: _micGranted == true
@@ -168,7 +195,7 @@ class _VoiceSettingsContentState extends State<VoiceSettingsContent> {
                 ),
                 SettingItem(
                   title: 'Dictation language',
-                  description: usesWhisper && prefs.whisperModel.englishOnly
+                  description: englishOnly
                       ? 'The selected speech model only recognizes English'
                       : 'Language to recognize',
                   control: EreSelect<String>(
@@ -398,6 +425,152 @@ class _SpeechModelItem extends StatelessWidget {
         title: Text('Delete ${manager.spec.displayName}?'),
         content: Text(
           'Frees ${manager.spec.sizeLabel}. Local transcription needs a speech model; you can download it again anytime.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await manager.delete();
+  }
+}
+
+/// Download, verify and delete row for a sherpa-onnx speech package, with an
+/// optional size picker.
+class _SpeechPackageItem extends StatelessWidget {
+  const _SpeechPackageItem({
+    required this.title,
+    required this.manager,
+    this.options = const [],
+    this.onSelect,
+    this.note = '',
+  });
+
+  final String title;
+  final SpeechPackageManager manager;
+  final List<SpeechPackageSpec> options;
+  final ValueChanged<String>? onSelect;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final spec = manager.spec;
+    return FutureBuilder<String?>(
+      future: manager.installedPath(),
+      builder: (context, snapshot) {
+        final installed = snapshot.data != null;
+        final checking = snapshot.connectionState != ConnectionState.done;
+        final Widget status;
+        if (manager.downloading) {
+          status = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 110,
+                child: EreProgressBar(value: manager.progress.clamp(0, 1)),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '${(manager.progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                style: AppText.mono(11, color: AppColors.textTertiary),
+              ),
+              const SizedBox(width: 10),
+              PillButton(
+                'Cancel',
+                compact: true,
+                onTap: manager.cancelDownload,
+              ),
+            ],
+          );
+        } else {
+          status = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                checking
+                    ? 'Checking…'
+                    : installed
+                    ? 'Downloaded · verified'
+                    : 'Not downloaded',
+                style: AppText.grotesk(
+                  12,
+                  color: installed ? AppColors.success : AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (installed)
+                PillButton(
+                  'Delete',
+                  compact: true,
+                  tone: PillTone.danger,
+                  onTap: () => _delete(context),
+                )
+              else if (!checking)
+                PillButton(
+                  'Download',
+                  compact: true,
+                  icon: Symbols.download,
+                  onTap: () => _install(context),
+                ),
+            ],
+          );
+        }
+        final description = [
+          '${spec.summary} · ${spec.sizeLabel} · ${spec.license}. Runs '
+              'locally and offline; checksum-verified before use.',
+          if (note.isNotEmpty) note,
+        ].join(' ');
+        return SettingItem(
+          title: title,
+          description: description,
+          control: options.length > 1
+              ? EreSelect<String>(
+                  value: spec.id,
+                  onChanged: manager.downloading ? null : onSelect,
+                  options: [
+                    for (final option in options)
+                      SelectOption(
+                        option.id,
+                        option.displayName,
+                        description: option.summary,
+                        trailing: option.sizeLabel,
+                      ),
+                  ],
+                )
+              : _ValueLabel(spec.displayName),
+          below: status,
+        );
+      },
+    );
+  }
+
+  Future<void> _install(BuildContext context) async {
+    try {
+      await manager.install();
+    } on SpeechPackageDownloadCancelled {
+      return;
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Speech model download failed: $error')),
+      );
+    }
+  }
+
+  Future<void> _delete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${manager.spec.displayName}?'),
+        content: Text(
+          'Frees ${manager.spec.sizeLabel}. You can download it again anytime.',
         ),
         actions: [
           TextButton(

@@ -2,7 +2,7 @@ name: erebrus_ai
 description: "Erebrus AI — local LLM runner. Download models, chat on-device, and serve them to your network."
 publish_to: 'none'
 
-version: 1.1.1+3
+version: 1.1.2+4
 
 environment:
   sdk: ^3.12.2
@@ -51,6 +51,9 @@ dependencies:
   # Native runtime is exact-pinned because its bundled whisper.cpp source is
   # part of the trusted execution path.
   whisper_ggml_plus: 1.5.2
+  # Parakeet and Moonshine run on sherpa-onnx. Exact-pinned for the same
+  # reason; 1.13.8 is the last release of the 1.x line.
+  sherpa_onnx: 1.13.8
   record: ^7.1.1
   erebrus_turboquant:
     path: third_party/erebrus_turboquant

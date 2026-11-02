@@ -155,11 +155,9 @@ class TranscriptionSessionRepository extends ChangeNotifier {
       if (await file.exists()) {
         audio = await _audioMetadata(
           file,
-          codec: backend == TranscriptionBackendKind.whisperCpp ? 'pcm' : '',
-          sampleRate: backend == TranscriptionBackendKind.whisperCpp
-              ? 16000
-              : 0,
-          channels: backend == TranscriptionBackendKind.whisperCpp ? 1 : 0,
+          codec: backend.transcribesRecordedWav ? 'pcm' : '',
+          sampleRate: backend.transcribesRecordedWav ? 16000 : 0,
+          channels: backend.transcribesRecordedWav ? 1 : 0,
         );
       }
     }

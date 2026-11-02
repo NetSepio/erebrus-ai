@@ -21,6 +21,7 @@ list(APPEND FLUTTER_FFI_PLUGIN_LIST
   erebrus_turboquant
   jni
   lib_llama_cpp_windows
+  sherpa_onnx_windows
   whisper_ggml_plus
 )
 

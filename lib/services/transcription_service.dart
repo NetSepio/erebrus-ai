@@ -11,8 +11,12 @@ import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/transcription_session.dart';
+import 'device_info_service.dart';
 import 'inference_service.dart';
+import 'sherpa_onnx_backend.dart';
+import 'speech_package_manager.dart';
 import 'transcription_contract.dart';
+import 'transcription_engine.dart';
 import 'transcription_session_repository.dart';
 import 'voice_preferences.dart';
 import 'whisper_cpp_backend.dart';
@@ -80,10 +84,12 @@ class TranscriptionService extends ChangeNotifier {
   double _playbackSpeed = 1;
   bool _playing = false;
   bool _initialized = false;
-  bool _usingWhisper = false;
+  TranscriptionBackendKind _backend = TranscriptionBackendKind.speechAnalyzer;
+  String _backendVersion = 'SpeechAnalyzer';
+  String _engineNotice = '';
   bool _cancelRequested = false;
   String? _activeAudioPath;
-  WhisperCppBackend? _whisperBackend;
+  TranscriptionBackend? _localBackend;
   Future<void> _draftCheckpoint = Future.value();
 
   TranscriptionUiState get state => _state;
@@ -113,9 +119,13 @@ class TranscriptionService extends ChangeNotifier {
       _state == TranscriptionUiState.preparing ||
       _state == TranscriptionUiState.finalizing;
   bool get hasUnfinishedRecording => isCapturing || isBusy;
-  TranscriptionBackendKind get activeBackend => _usingWhisper
-      ? TranscriptionBackendKind.whisperCpp
-      : TranscriptionBackendKind.speechAnalyzer;
+  TranscriptionBackendKind get activeBackend => _backend;
+
+  /// Why the engine chosen in Settings → Voice was not used for this
+  /// recording; empty when it was.
+  String get engineNotice => _engineNotice;
+
+  bool get _recordsWav => _backend.transcribesRecordedWav;
 
   List<TranscriptionSession> searchSessions(String query) =>
       _repository.search(query);
@@ -171,7 +181,8 @@ class TranscriptionService extends ChangeNotifier {
       ..stop();
     _cancelRequested = false;
     _activeAudioPath = null;
-    _whisperBackend = null;
+    _localBackend = null;
+    _engineNotice = '';
     _current = null;
     notifyListeners();
 
@@ -184,24 +195,25 @@ class TranscriptionService extends ChangeNotifier {
       _throwIfCancelled();
       SpeechAnalyzerProbe? speechProbe;
       final resolvedLocale = resolveTranscriptionLocale(locale);
-      final engine = VoicePreferences.instance.engine;
-      if (engine != DictationEngine.whisper) {
-        try {
-          speechProbe = await speech.probe(locale: resolvedLocale);
-        } on Object {
-          speechProbe = null;
-        }
+      try {
+        speechProbe = await speech.probe(locale: resolvedLocale);
+      } on Object {
+        speechProbe = null;
       }
+      final decision = await chooseEngine(
+        locale: locale,
+        systemSpeechReady:
+            speechProbe?.available == true &&
+            speechProbe?.localeSupported == true,
+      );
+      _throwIfCancelled();
+      final backend = decision.backend;
+      if (backend == null) throw StateError(decision.notice);
+      _backend = backend;
+      _engineNotice = decision.notice;
+      _backendVersion = _versionFor(backend);
       final useSpeechAnalyzer =
-          speechProbe?.available == true &&
-          speechProbe?.localeSupported == true;
-      if (engine == DictationEngine.system && !useSpeechAnalyzer) {
-        throw StateError(
-          'System speech is unavailable for this language on this device. '
-          'Choose Local transcription in Settings → Voice.',
-        );
-      }
-      _usingWhisper = !useSpeechAnalyzer;
+          backend == TranscriptionBackendKind.speechAnalyzer;
       await _saveDraft(status: TranscriptionSessionStatus.recording);
       if (useSpeechAnalyzer) {
         _locale = speechProbe!.locale.isEmpty
@@ -219,13 +231,6 @@ class TranscriptionService extends ChangeNotifier {
         );
       } else {
         _locale = locale.trim().isEmpty ? 'auto' : locale;
-        final modelPath = await WhisperModelManager.instance.installedPath();
-        if (modelPath == null) {
-          final spec = WhisperModelManager.selectedSpec;
-          throw StateError(
-            'Download ${spec.displayName} (${spec.sizeLabel}) in Settings → Voice before recording on this device',
-          );
-        }
         if (!await _recorder.hasPermission()) {
           throw StateError('Microphone permission is required');
         }
@@ -264,7 +269,7 @@ class TranscriptionService extends ChangeNotifier {
   Future<void> pause() async {
     if (_state != TranscriptionUiState.recording) return;
     try {
-      if (_usingWhisper) {
+      if (_recordsWav) {
         await _recorder.pause();
       } else {
         await speech.pause();
@@ -282,7 +287,7 @@ class TranscriptionService extends ChangeNotifier {
   Future<void> resume() async {
     if (_state != TranscriptionUiState.paused) return;
     try {
-      if (_usingWhisper) {
+      if (_recordsWav) {
         await _recorder.resume();
       } else {
         await speech.resume();
@@ -315,23 +320,18 @@ class TranscriptionService extends ChangeNotifier {
       await _saveDraft(status: TranscriptionSessionStatus.finalizing);
       late final String raw;
       late final String audioPath;
-      var backend = TranscriptionBackendKind.speechAnalyzer;
-      var backendVersion = 'SpeechAnalyzer';
-      if (_usingWhisper) {
+      if (_recordsWav) {
         final recordedPath = await _recorder.stop();
         if (recordedPath == null) {
           throw StateError('The recorder did not return an audio file');
         }
         audioPath = recordedPath;
+        // Free the chat model's memory before loading the speech model.
         await InferenceService.instance.unload();
-        final modelPath = await WhisperModelManager.instance.installedPath();
-        if (modelPath == null) {
-          throw StateError('The verified Whisper model is unavailable');
-        }
-        final whisperBackend = WhisperCppBackend(modelPath: modelPath);
-        _whisperBackend = whisperBackend;
-        await whisperBackend.prepare(TranscriptionConfig(locale: _locale));
-        await for (final event in whisperBackend.transcribe(
+        final localBackend = await _createLocalBackend(_backend);
+        _localBackend = localBackend;
+        await localBackend.prepare(TranscriptionConfig(locale: _locale));
+        await for (final event in localBackend.transcribe(
           AudioInput.file(audioPath),
         )) {
           _throwIfCancelled();
@@ -345,11 +345,9 @@ class TranscriptionService extends ChangeNotifier {
               break;
           }
         }
-        final result = await whisperBackend.finish();
-        _whisperBackend = null;
+        final result = await localBackend.finish();
+        _localBackend = null;
         raw = result.text;
-        backend = TranscriptionBackendKind.whisperCpp;
-        backendVersion = 'whisper.cpp 1.8.3';
       } else {
         final result = await speech.stop();
         _throwIfCancelled();
@@ -369,10 +367,10 @@ class TranscriptionService extends ChangeNotifier {
         rawTranscript: raw,
         segments: _segments,
         audioPath: audioPath,
-        backend: backend,
-        backendVersion: backendVersion,
-        audioSampleRate: _usingWhisper ? 16000 : 0,
-        audioChannels: _usingWhisper ? 1 : 0,
+        backend: _backend,
+        backendVersion: _backendVersion,
+        audioSampleRate: _recordsWav ? 16000 : 0,
+        audioChannels: _recordsWav ? 1 : 0,
       );
       _partialText = '';
       _activeSessionId = null;
@@ -395,9 +393,9 @@ class TranscriptionService extends ChangeNotifier {
     _ticker?.cancel();
     await _subscription?.cancel();
     _subscription = null;
-    await _whisperBackend?.cancel();
+    await _localBackend?.cancel();
     try {
-      if (_usingWhisper) {
+      if (_recordsWav) {
         await _recorder.cancel();
       } else {
         await speech.cancel();
@@ -554,9 +552,9 @@ class TranscriptionService extends ChangeNotifier {
     await _subscription?.cancel();
     _subscription = null;
     try {
-      if (_usingWhisper) {
-        await _whisperBackend?.cancel();
-        _whisperBackend = null;
+      if (_recordsWav) {
+        await _localBackend?.cancel();
+        _localBackend = null;
         final stoppedPath = await _recorder.stop();
         _activeAudioPath ??= stoppedPath;
       } else {
@@ -590,7 +588,7 @@ class TranscriptionService extends ChangeNotifier {
       locale: _locale,
       status: status,
       backend: activeBackend,
-      backendVersion: _usingWhisper ? 'whisper.cpp 1.8.3' : 'SpeechAnalyzer',
+      backendVersion: _backendVersion,
       rawTranscript: finalizedText,
       segments: _segments,
       audioPath: includeAudio ? _activeAudioPath : null,
@@ -633,13 +631,91 @@ class TranscriptionService extends ChangeNotifier {
     _error = '';
     _activeSessionId = null;
     _activeAudioPath = null;
-    _whisperBackend = null;
+    _localBackend = null;
+    _engineNotice = '';
     _cancelRequested = false;
     _startedAt = null;
     _elapsed = Duration.zero;
     _current = null;
     notifyListeners();
   }
+
+  /// The engine a recording started now would use; the Transcribe screen
+  /// uses it to show readiness without starting a session.
+  Future<TranscriptionEngineDecision> chooseEngine({
+    required String locale,
+    required bool systemSpeechReady,
+  }) async {
+    final resolvedLocale = resolveTranscriptionLocale(locale);
+    final whisper = WhisperModelManager.selectedSpec;
+    final parakeet = SpeechPackageManager.parakeet;
+    final moonshine = SpeechPackageManager.moonshine;
+    final requested = locale.trim().toLowerCase();
+    return chooseTranscriptionEngine(
+      TranscriptionEngineInputs(
+        preference: VoicePreferences.instance.engine,
+        locale: resolvedLocale,
+        localeChosen: requested.isNotEmpty && requested != 'auto',
+        device: DeviceInfoService.detect(),
+        systemSpeechReady: systemSpeechReady,
+        whisperInstalled:
+            await WhisperModelManager.instance.installedPath() != null,
+        whisperEnglishOnly: whisper.englishOnly,
+        parakeet: await parakeet.installedPath() != null ? parakeet.spec : null,
+        moonshine: await moonshine.installedPath() != null
+            ? moonshine.spec
+            : null,
+      ),
+    );
+  }
+
+  Future<TranscriptionBackend> _createLocalBackend(
+    TranscriptionBackendKind kind,
+  ) async {
+    Future<String> installed(Future<String?> path, String name) async =>
+        await path ?? (throw StateError('The verified $name is unavailable'));
+    return switch (kind) {
+      TranscriptionBackendKind.parakeet => SherpaOnnxBackend(
+        spec: SpeechPackageManager.parakeetV3,
+        packagePath: await installed(
+          SpeechPackageManager.parakeet.installedPath(),
+          'Parakeet model',
+        ),
+      ),
+      TranscriptionBackendKind.moonshine => SherpaOnnxBackend(
+        spec: SpeechPackageManager.selectedMoonshineSpec,
+        packagePath: await installed(
+          SpeechPackageManager.moonshine.installedPath(),
+          'Moonshine model',
+        ),
+      ),
+      _ => WhisperCppBackend(
+        modelPath: await installed(
+          WhisperModelManager.instance.installedPath(),
+          'Whisper model',
+        ),
+      ),
+    };
+  }
+
+  /// Model name for a local engine, as shown on the readiness card.
+  static String localModelName(TranscriptionBackendKind kind) => switch (kind) {
+    TranscriptionBackendKind.parakeet =>
+      SpeechPackageManager.parakeetV3.displayName,
+    TranscriptionBackendKind.moonshine =>
+      SpeechPackageManager.selectedMoonshineSpec.displayName,
+    _ => WhisperModelManager.selectedSpec.displayName,
+  };
+
+  static String _versionFor(TranscriptionBackendKind kind) => switch (kind) {
+    TranscriptionBackendKind.whisperCpp => 'whisper.cpp 1.8.3',
+    TranscriptionBackendKind.parakeet =>
+      '$sherpaOnnxVersion · ${SpeechPackageManager.parakeetV3.displayName}',
+    TranscriptionBackendKind.moonshine =>
+      '$sherpaOnnxVersion · '
+          '${SpeechPackageManager.selectedMoonshineSpec.displayName}',
+    _ => 'SpeechAnalyzer',
+  };
 
   static Duration _seconds(double? value) => Duration(
     microseconds: ((value ?? 0) * Duration.microsecondsPerSecond).round(),
