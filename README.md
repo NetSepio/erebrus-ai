@@ -17,6 +17,10 @@ AI node.
 - **Team workspaces** — join an organization to access shared models.
 - **Catalog-driven model browser** — inspect compatible GGUF and MLX packages,
   capabilities, provenance, licenses, and local storage from one screen.
+  Recommendations follow the catalog's per-device picks for phones, laptops,
+  desktops and gaming rigs, and only offer packages that fit the device.
+  Uncensored community builds are labelled, rank after official and
+  experimental models, and ask for confirmation before download.
 
 ---
 

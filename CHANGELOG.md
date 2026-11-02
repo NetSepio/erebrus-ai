@@ -2,6 +2,33 @@
 
 Notable user-facing changes to Erebrus AI are documented here.
 
+## Unreleased
+
+### Model catalog
+
+- Supports the 60-model catalog (2026.11.02). Onboarding and the model
+  browser now follow the catalog's per-device recommendations for phones,
+  laptops, desktops and gaming rigs, falling back to smaller bands when a
+  pick does not fit the device's memory.
+- Recommendations only name models the device can actually run. Previously
+  a 32 GB Windows or Linux PC could be recommended an experimental model it
+  could not download.
+- Phones no longer offer a download for models that cannot fit in memory;
+  the card shows **TOO LARGE** and the memory the smallest package needs.
+- Recommendations list official/stable models first, then experimental
+  packages, then uncensored (reduced-safety) community builds. Uncensored
+  builds are labelled **UNCENSORED** and ask for confirmation before
+  download in onboarding and the model browser. Experimental packages are
+  labelled.
+- Models whose only package needs a runtime this build does not include
+  (such as the PrismML llama.cpp fork) are hidden instead of failing after
+  download.
+- Importing a GGUF that uses a quantization type the bundled runtimes cannot
+  load (for example Q2_0) is refused up front. On Windows and Linux the
+  TurboQuant runtime would otherwise misread such a file.
+- Desktop: the download row no longer overflows for models that support GPU
+  offload.
+
 ## 1.1.1+3 — 2026-10-30
 
 ### Sign-in

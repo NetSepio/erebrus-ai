@@ -16,6 +16,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/ere_controls.dart';
 import '../../widgets/onboarding_art.dart';
+import '../../widgets/reduced_safety_dialog.dart';
 import '../../widgets/spark_logo.dart';
 
 /// Cross-platform onboarding: three skippable story pages followed by a
@@ -336,6 +337,7 @@ class _FirstModelPageState extends State<FirstModelPage> {
       profile,
       catalog: catalog,
       preferredVariants: _preferredVariants,
+      editorial: CatalogService.recommendations,
     );
     final primaryIds = {
       rec.recommended.id,
@@ -345,9 +347,14 @@ class _FirstModelPageState extends State<FirstModelPage> {
     for (final candidate in exploratoryResolved) {
       compatibleModels.putIfAbsent(candidate.model.id, () => candidate.model);
     }
-    final moreModels = compatibleModels.values
+    final compatible = compatibleModels.values
         .where((entry) => !primaryIds.contains(entry.id))
         .toList();
+    // Uncensored builds stay available but list after every other model.
+    final moreModels = [
+      ...compatible.where((entry) => !entry.reducedSafety),
+      ...compatible.where((entry) => entry.reducedSafety),
+    ];
     setState(() {
       _profile = profile;
       _recommendation = rec;
@@ -379,6 +386,9 @@ class _FirstModelPageState extends State<FirstModelPage> {
   }
 
   Future<void> _onDownload(CatalogEntry entry) async {
+    if (!await confirmReducedSafetyDownload(context, entry) || !mounted) {
+      return;
+    }
     final variant = _variantFor(entry);
     var ok = false;
     var cancelled = false;
@@ -1069,9 +1079,13 @@ class _AltModelCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        entry.mobileStatus.toLowerCase() == 'experimental'
-                            ? '${entry.spec} · EXPERIMENTAL'
-                            : entry.spec,
+                        [
+                          entry.spec,
+                          if (entry.mobileStatus.toLowerCase() ==
+                              'experimental')
+                            'EXPERIMENTAL',
+                          if (entry.reducedSafety) 'UNCENSORED',
+                        ].join(' · '),
                         style: AppText.mono(
                           10.5,
                           color: AppColors.textTertiary,

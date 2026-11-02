@@ -26,6 +26,7 @@ import '../../org/shared_model.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
+import '../../widgets/reduced_safety_dialog.dart';
 import '../../widgets/adaptive_row.dart';
 import '../../widgets/ere_controls.dart';
 import '../auth/sign_in.dart';
@@ -756,6 +757,10 @@ class _LocalListState extends State<_LocalList> {
   late Future<List<CatalogEntry>> _catalogFuture;
   final Map<String, ModelVariant> _preferredVariants = {};
   final Map<String, BackendKind> _preferredBackends = {};
+
+  /// Variants that fit this device's exploratory memory budget on an
+  /// operational backend; only these are offered for download.
+  final Set<String> _deviceVariantIds = {};
   List<BackendCapabilities> _capabilities = const [];
   late DeviceProfile _device;
   String? _selectedEntryId;
@@ -783,7 +788,17 @@ class _LocalListState extends State<_LocalList> {
       device: _device,
       backends: capabilities,
     );
-    for (final candidate in resolved) {
+    // Same exploratory pass as onboarding: experimental and minimum-fit
+    // packages stay reachable, while anything beyond it is not downloadable.
+    final exploratory = const InferencePlanner().resolve(
+      models: catalog,
+      device: _device,
+      backends: capabilities,
+      allowExperimental: true,
+      memoryBudgetFraction: 0.85,
+    );
+    _deviceVariantIds.addAll(exploratory.map((c) => c.variant.id));
+    for (final candidate in [...resolved, ...exploratory]) {
       _preferredVariants.putIfAbsent(
         candidate.model.id,
         () => candidate.variant,
@@ -853,6 +868,7 @@ class _LocalListState extends State<_LocalList> {
 
   List<ModelVariant> _variantsForDevice(CatalogEntry entry) => entry.variants
       .where((variant) => variant.isActive)
+      .where((variant) => _deviceVariantIds.contains(variant.id))
       .where((variant) => _backendForVariant(variant) != null)
       .toList(growable: false);
 
@@ -875,6 +891,7 @@ class _LocalListState extends State<_LocalList> {
                 .where(
                   (entry) =>
                       entry.status != 'deprecated' &&
+                      entry.hasShippedBackend &&
                       (entry.variants.isNotEmpty ||
                           entry.downloadUrl.isNotEmpty),
                 )
@@ -1258,10 +1275,21 @@ class _LocalListState extends State<_LocalList> {
     final updateAvailable =
         variant != null && ModelPackageService.instance.hasUpdate(variant);
     final deviceVariants = _variantsForDevice(entry);
+    // Packaged entries must resolve a device variant; only legacy entries
+    // without variants fall back to the single-file GGUF download.
+    final downloadable = variant != null || entry.variants.isEmpty;
     final model = MockModel(
       entry.name,
       entry.letter,
-      '${entry.spec} · ${variant?.format.toUpperCase() ?? 'GGUF'} · $backendLabel',
+      [
+        if (downloadable)
+          '${entry.spec} · ${variant?.format.toUpperCase() ?? 'GGUF'} · $backendLabel'
+        else
+          '${entry.spec} · NEEDS ${formatGB(_minimumVariantRamGB(entry))} RAM',
+        if (variant?.releaseChannel.toLowerCase() == 'experimental')
+          'EXPERIMENTAL',
+        if (entry.reducedSafety) 'UNCENSORED',
+      ].join(' · '),
       id: entry.id,
       status: status,
       progress: _progressFor(entry),
@@ -1292,9 +1320,10 @@ class _LocalListState extends State<_LocalList> {
               variantId: variant?.id,
             )
           : null,
-      onDownload: status == ModelStatus.catalog
+      onDownload: status == ModelStatus.catalog && downloadable
           ? () => _download(context, app, entry, variant)
           : null,
+      catalogLabel: downloadable ? 'CATALOG' : 'TOO LARGE',
       onUpdate: updateAvailable
           ? () => _download(context, app, entry, variant, updating: true)
           : null,
@@ -1433,6 +1462,10 @@ class _LocalListState extends State<_LocalList> {
     ModelVariant? variant, {
     bool updating = false,
   }) async {
+    if (!updating) {
+      final accepted = await confirmReducedSafetyDownload(context, entry);
+      if (!accepted || !context.mounted) return;
+    }
     try {
       if (variant != null) {
         _preferredVariants[entry.id] = variant;
@@ -1648,6 +1681,15 @@ class _DesktopCatalogTile extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (entry.reducedSafety)
+                            const Tooltip(
+                              message: 'Uncensored community build',
+                              child: Icon(
+                                Symbols.gpp_maybe,
+                                size: 15,
+                                color: AppColors.danger,
+                              ),
+                            ),
                           if (entry.featured)
                             const Icon(
                               Symbols.kid_star,
@@ -1810,7 +1852,20 @@ class _DesktopModelDetail extends StatelessWidget {
                 ],
               ),
             ),
-            if (entry.featured)
+            if (entry.reducedSafety)
+              const _DetailBadge(
+                label: 'UNCENSORED',
+                icon: Symbols.gpp_maybe,
+                color: AppColors.danger,
+              )
+            else if (selectedVariant?.releaseChannel.toLowerCase() ==
+                'experimental')
+              const _DetailBadge(
+                label: 'EXPERIMENTAL',
+                icon: Symbols.science,
+                color: AppColors.warn,
+              )
+            else if (entry.featured)
               const _DetailBadge(
                 label: 'STAFF PICK',
                 icon: Symbols.kid_star,
@@ -1882,7 +1937,11 @@ class _DesktopModelDetail extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         if (deviceVariants.isEmpty)
-          const _DetailSurface(child: _EmptyVariantMessage())
+          _DetailSurface(
+            child: _EmptyVariantMessage(
+              minimumRamGB: _minimumVariantRamGB(entry),
+            ),
+          )
         else
           _DetailSurface(
             padding: const EdgeInsets.all(10),
@@ -1907,13 +1966,23 @@ class _DesktopModelDetail extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
                       children: [
-                        if (entry.supportsGpuOffload)
-                          const _DetailBadge(
-                            label: 'GPU OFFLOAD SUPPORTED',
-                            icon: Symbols.bolt,
-                            color: AppColors.success,
-                          ),
-                        const Spacer(),
+                        // The badge yields space to the action button on
+                        // narrow detail panes instead of overflowing.
+                        Expanded(
+                          child: entry.supportsGpuOffload
+                              ? const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: _DetailBadge(
+                                      label: 'GPU OFFLOAD SUPPORTED',
+                                      icon: Symbols.bolt,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                         Text(
                           backend?.catalogName.toUpperCase() ?? '',
                           style: AppText.mono(9.5, color: AppColors.textMuted),
@@ -2183,8 +2252,19 @@ class _VariantChoice extends StatelessWidget {
   );
 }
 
+/// Smallest minimum RAM across an entry's packages, or 0 when unknown.
+double _minimumVariantRamGB(CatalogEntry entry) {
+  final values = entry.variants
+      .map((variant) => variant.minimumRamGB)
+      .where((gb) => gb > 0);
+  if (values.isEmpty) return entry.minRamGB;
+  return values.reduce((a, b) => a < b ? a : b);
+}
+
 class _EmptyVariantMessage extends StatelessWidget {
-  const _EmptyVariantMessage();
+  const _EmptyVariantMessage({this.minimumRamGB = 0});
+
+  final double minimumRamGB;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -2193,7 +2273,11 @@ class _EmptyVariantMessage extends StatelessWidget {
       const SizedBox(width: 10),
       Expanded(
         child: Text(
-          'No catalog package is compatible with this device and its active runtimes.',
+          minimumRamGB > 0
+              ? 'Needs at least ${formatGB(minimumRamGB)} of memory. No package '
+                    'for this model fits this device on its active runtimes.'
+              : 'No catalog package is compatible with this device and its '
+                    'active runtimes.',
           style: AppText.grotesk(12.5, color: AppColors.textSecondary),
         ),
       ),
@@ -2338,6 +2422,7 @@ class _LocalModelCard extends StatelessWidget {
     this.onDelete,
     this.variantCount = 0,
     this.shared = false,
+    this.catalogLabel = 'CATALOG',
   });
 
   final MockModel model;
@@ -2350,6 +2435,9 @@ class _LocalModelCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final int variantCount;
   final bool shared;
+
+  /// Badge shown in place of the download action when there is none.
+  final String catalogLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2439,7 +2527,7 @@ class _LocalModelCard extends StatelessWidget {
                                     icon: Symbols.download,
                                     onTap: onDownload!,
                                   )
-                                : const StatusBadge('CATALOG'),
+                                : StatusBadge(catalogLabel),
                         },
                         if (onDelete != null) ...[
                           const SizedBox(width: 4),

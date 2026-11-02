@@ -398,10 +398,17 @@ class Recommendation {
 /// Filters by platform support, device tier, mobile status and available RAM,
 /// then ranks by fit (recommended RAM <= budget), catalog display order and
 /// parameter count. Falls back to the smallest fit if nothing comfortably runs.
+///
+/// When [preferredVariants] is given it is the set of models the device can
+/// actually resolve; anything missing from it is never recommended. When
+/// [editorial] has bands for this device class, its ordered picks lead and the
+/// heuristic ranking only fills the remaining slots. Experimental packages
+/// and then reduced-safety (uncensored) entries rank after everything else.
 Recommendation recommendModel(
   DeviceProfile device, {
   List<CatalogEntry>? catalog,
   Map<String, ModelVariant>? preferredVariants,
+  DeviceRecommendations editorial = DeviceRecommendations.empty,
 }) {
   final entries = catalog ?? modelCatalog;
   if (entries.isEmpty) {
@@ -519,8 +526,17 @@ Recommendation recommendModel(
         : (e.minRamGB > 0 ? e.minRamGB : recRam * 0.8);
     final fitsRecommended = recRam <= maxRamGB;
     final fitsMinimum = minRam <= maxRamGB;
-    final viable =
-        platformOk(e) && tierOk(e) && mobileStatusOk(e) && isActive(e);
+    final eligible =
+        platformOk(e) &&
+        tierOk(e) &&
+        mobileStatusOk(e) &&
+        isActive(e) &&
+        e.hasShippedBackend &&
+        (preferredVariants == null || preferredVariants.containsKey(e.id));
+    final experimental =
+        variant?.releaseChannel.toLowerCase() == 'experimental';
+    // Stable/beta, non-uncensored packages lead; the rest only fill slots.
+    final viable = eligible && !experimental && !e.reducedSafety;
 
     var score = 0.0;
     if (viable && fitsRecommended) score += 1000;
@@ -560,8 +576,35 @@ Recommendation recommendModel(
       if (e.sortOrder > 0) score -= e.sortOrder * 0.5;
     }
 
-    return _ScoredEntry(e, score, viable, fitsRecommended, fitsMinimum);
+    return _ScoredEntry(
+      e,
+      score,
+      viable,
+      fitsRecommended,
+      fitsMinimum,
+      eligible: eligible,
+      rank: e.reducedSafety ? 2 : (experimental ? 1 : 0),
+    );
   }).toList();
+
+  final editorialPicks = <CatalogEntry>[];
+  final scoredById = {for (final s in scored) s.entry.id: s};
+  for (final band in editorial.bandsFor(
+    mobileDevice: device.type == DeviceType.mobile,
+    ramClassGB: device.ramClassGB,
+  )) {
+    for (final id in band.modelIds) {
+      final s = scoredById[id];
+      if (s == null || !s.eligible || !s.fitsMinimum) continue;
+      // The catalog never auto-recommends uncensored builds; they only fill
+      // trailing slots below.
+      if (s.entry.reducedSafety) continue;
+      if (editorialPicks.any((pick) => pick.id == id)) continue;
+      editorialPicks.add(s.entry);
+      if (editorialPicks.length == 3) break;
+    }
+    if (editorialPicks.length == 3) break;
+  }
 
   // Prefer viable models that fit; widen the filter only when necessary.
   var pool = scored
@@ -573,11 +616,28 @@ Recommendation recommendModel(
   if (pool.isEmpty) {
     pool = scored.where((s) => s.viable).toList();
   }
-  if (pool.isEmpty) {
+  // Experimental, then uncensored, models that fit rank below the rest.
+  final trailing =
+      scored.where((s) => s.eligible && !s.viable && s.fitsMinimum).toList()
+        ..sort((a, b) {
+          final rankOrder = a.rank.compareTo(b.rank);
+          return rankOrder != 0 ? rankOrder : b.score.compareTo(a.score);
+        });
+  if (pool.isEmpty && editorialPicks.isEmpty && trailing.isEmpty) {
     // Last resort: pick the three smallest models that at least have a download.
-    final smallest = entries.where((e) => e.downloadUrl.isNotEmpty).toList()
-      ..sort((a, b) => a.sizeBytes.compareTo(b.sizeBytes));
-    final top = smallest.take(3).toList();
+    final smallest =
+        entries
+            .where(
+              (e) =>
+                  e.downloadUrl.isNotEmpty &&
+                  !e.reducedSafety &&
+                  e.hasShippedBackend,
+            )
+            .toList()
+          ..sort((a, b) => a.sizeBytes.compareTo(b.sizeBytes));
+    final top = smallest.isEmpty
+        ? entries.take(1).toList()
+        : smallest.take(3).toList();
     return Recommendation(
       top.first,
       top.length > 1 ? top.sublist(1) : const [],
@@ -586,7 +646,16 @@ Recommendation recommendModel(
   }
 
   pool.sort((a, b) => b.score.compareTo(a.score));
-  final top = pool.take(3).map((s) => s.entry).toList();
+  final top = <CatalogEntry>[];
+  for (final entry in [
+    ...editorialPicks,
+    ...pool.map((s) => s.entry),
+    ...trailing.map((s) => s.entry),
+  ]) {
+    if (top.any((pick) => pick.id == entry.id)) continue;
+    top.add(entry);
+    if (top.length == 3) break;
+  }
   return Recommendation(
     top.first,
     top.length > 1 ? top.sublist(1) : const [],
@@ -600,12 +669,22 @@ class _ScoredEntry {
     this.score,
     this.viable,
     this.fitsRecommended,
-    this.fitsMinimum,
-  );
+    this.fitsMinimum, {
+    required this.eligible,
+    required this.rank,
+  });
 
   final CatalogEntry entry;
   final double score;
+
+  /// Leads heuristic ranking (excludes experimental and uncensored).
   final bool viable;
   final bool fitsRecommended;
   final bool fitsMinimum;
+
+  /// Resolvable on this device; editorial picks and trailing slots use it.
+  final bool eligible;
+
+  /// 0 = stable/beta, 1 = experimental package, 2 = uncensored build.
+  final int rank;
 }

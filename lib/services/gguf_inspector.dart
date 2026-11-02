@@ -19,6 +19,15 @@ class GgufInspectionException implements Exception {
 class GgufInspector {
   const GgufInspector();
 
+  /// ggml tensor type ids the bundled runtimes can load.
+  ///
+  /// The stock llama.cpp builds end at Q1_0 (41). The TurboQuant fork reuses
+  /// 42-44 for KV-cache-only types and adds the TQ3_1S/TQ4_1S weight types
+  /// (45, 46), so a weight file using 42-44 (e.g. upstream or PrismML Q2_0)
+  /// would be misread there rather than rejected.
+  static bool isLoadableTensorType(int type) =>
+      type <= 41 || type == 45 || type == 46;
+
   Future<ImportedModelDraft> inspect(String path) async {
     final file = File(path);
     if (!await file.exists()) {
@@ -77,7 +86,13 @@ class GgufInspector {
           elements *= size;
         }
         parameterCount += elements;
-        await reader.u32(); // ggml tensor type
+        final tensorType = await reader.u32();
+        if (!isLoadableTensorType(tensorType)) {
+          throw GgufInspectionException(
+            'This GGUF uses a quantization type (ggml type $tensorType) that '
+            'the bundled llama.cpp runtimes cannot load.',
+          );
+        }
         await reader.u64(); // aligned data offset
       }
       if (reader.position >= length) {

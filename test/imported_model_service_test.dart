@@ -34,6 +34,27 @@ void main() {
     },
   );
 
+  test(
+    'GGUF inspection rejects tensor types no bundled runtime loads',
+    () async {
+      final file = File('${temporary.path}/ternary-Q2_0.gguf');
+      // Upstream/PrismML Q2_0 is ggml type 42, which TurboQuant reads as a
+      // KV-cache type.
+      await file.writeAsBytes(_testGguf(tensorType: 42), flush: true);
+
+      expect(
+        () => const GgufInspector().inspect(file.path),
+        throwsA(
+          isA<GgufInspectionException>().having(
+            (error) => error.message,
+            'message',
+            contains('ggml type 42'),
+          ),
+        ),
+      );
+    },
+  );
+
   test('GGUF inspection rejects a renamed non-GGUF file', () async {
     final file = File('${temporary.path}/fake.gguf');
     await file.writeAsString('this is not a model');
@@ -161,7 +182,7 @@ void main() {
   });
 }
 
-Uint8List _testGguf() {
+Uint8List _testGguf({int tensorType = 0}) {
   final bytes = BytesBuilder(copy: false);
 
   void u32(int value) {
@@ -194,7 +215,7 @@ Uint8List _testGguf() {
   u32(2); // dimensions
   u64(1000);
   u64(2000);
-  u32(0); // F32 tensor type
+  u32(tensorType); // F32 unless overridden
   u64(0); // tensor data offset
   bytes.add(List<int>.filled(32, 0));
   return bytes.takeBytes();

@@ -17,6 +17,7 @@ class CatalogService {
 
   /// In-memory cache of the last successfully parsed catalog.
   List<CatalogEntry> _entries = [];
+  DeviceRecommendations _recommendations = DeviceRecommendations.empty;
 
   /// Whether a fetch attempt has completed at least once.
   bool _loaded = false;
@@ -29,6 +30,10 @@ class CatalogService {
       List.unmodifiable(_instance._entries);
   static String? get lastError => _instance._lastError;
 
+  /// Editorial device picks from the last successfully parsed catalog.
+  static DeviceRecommendations get recommendations =>
+      _instance._recommendations;
+
   /// True once [fetch] has completed (success or failure).
   static bool get loaded => _instance._loaded;
 
@@ -39,11 +44,47 @@ class CatalogService {
   static Future<List<CatalogEntry>> fetch() => _instance._fetch();
 
   @visibleForTesting
-  static List<CatalogEntry> parsePayload(String text) {
+  static List<CatalogEntry> parsePayload(String text) =>
+      _parseDecoded(_decodeRoot(text));
+
+  /// Parses the catalog's `device_recommendations`, dropping picks that do
+  /// not name a model in the same payload.
+  @visibleForTesting
+  static DeviceRecommendations parseRecommendations(String text) =>
+      _recommendationsFrom(_decodeRoot(text), parsePayload(text));
+
+  static Map<String, dynamic> _decodeRoot(String text) {
     final decoded = json.decode(text);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Catalog root must be a JSON object');
     }
+    return decoded;
+  }
+
+  static DeviceRecommendations _recommendationsFrom(
+    Map<String, dynamic> decoded,
+    List<CatalogEntry> entries,
+  ) {
+    final ids = entries.map((entry) => entry.id).toSet();
+    final parsed = DeviceRecommendations.fromJson(
+      decoded['device_recommendations'] as Map<String, dynamic>?,
+    );
+    List<RecommendationBand> known(List<RecommendationBand> bands) => [
+      for (final band in bands)
+        RecommendationBand(
+          id: band.id,
+          minRamGB: band.minRamGB,
+          label: band.label,
+          modelIds: band.modelIds.where(ids.contains).toList(growable: false),
+        ),
+    ];
+    return DeviceRecommendations(
+      mobile: known(parsed.mobile),
+      computer: known(parsed.computer),
+    );
+  }
+
+  static List<CatalogEntry> _parseDecoded(Map<String, dynamic> decoded) {
     final schemaVersion = decoded['schema_version'] as String? ?? '';
     final schemaMajor = int.tryParse(schemaVersion.split('.').first);
     if (schemaMajor != 1) {
@@ -139,7 +180,9 @@ class CatalogService {
           );
         }
         final text = await response.transform(utf8.decoder).join();
-        _entries = parsePayload(text);
+        final decoded = _decodeRoot(text);
+        _entries = _parseDecoded(decoded);
+        _recommendations = _recommendationsFrom(decoded, _entries);
         _loaded = true;
         _lastFetch = now;
         debugPrint('[Catalog] loaded ${_entries.length} models from $url');
@@ -160,13 +203,18 @@ class CatalogService {
   /// Clears the remote cache. Useful for tests and offline recovery.
   static void useFallback() {
     _instance._entries = [];
+    _instance._recommendations = DeviceRecommendations.empty;
     _instance._loaded = true;
     _instance._lastFetch = DateTime.now();
   }
 
   /// Injects a catalog directly (useful for tests).
-  static void setEntries(List<CatalogEntry> entries) {
+  static void setEntries(
+    List<CatalogEntry> entries, {
+    DeviceRecommendations recommendations = DeviceRecommendations.empty,
+  }) {
     _instance._entries = entries;
+    _instance._recommendations = recommendations;
     _instance._lastError = null;
     _instance._loaded = true;
     _instance._lastFetch = DateTime.now();

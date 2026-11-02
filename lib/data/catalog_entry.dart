@@ -288,6 +288,8 @@ class CatalogEntry {
     this.fileSizeDisplay = '',
     this.variants = const [],
     this.preferredVariantId = '',
+    this.reducedSafety = false,
+    this.safetyNotes = '',
   });
 
   factory CatalogEntry.fromJson(Map<String, dynamic> json) {
@@ -298,7 +300,9 @@ class CatalogEntry {
     final runtimeMap = json['runtime'] as Map<String, dynamic>?;
     final modalitiesMap = json['modalities'] as Map<String, dynamic>?;
     final licenseMap = json['license'] as Map<String, dynamic>?;
+    final safetyMap = json['content_safety'] as Map<String, dynamic>?;
     final modelId = (json['id'] as String?) ?? '';
+    final collections = _stringList(json['collections']);
 
     final parameterCount =
         (modelMap?['parameter_count'] as num?)?.toDouble() ?? 0;
@@ -480,7 +484,7 @@ class CatalogEntry {
       mobileFriendly: mobileFriendly,
       desktopFriendly: desktopFriendly,
       tags: _stringList(json['tags']),
-      collections: _stringList(json['collections']),
+      collections: collections,
       badges: _stringList(displayMap?['badges']),
       minRamGB: (dsMap?['minimum_ram_gb'] as num?)?.toDouble() ?? 0,
       recRamGB: (dsMap?['recommended_ram_gb'] as num?)?.toDouble() ?? 0,
@@ -498,6 +502,11 @@ class CatalogEntry {
       status: (statusMap?['catalog_state'] as String?) ?? 'active',
       variants: variants,
       preferredVariantId: projectedVariant?.id ?? '',
+      reducedSafety:
+          (safetyMap?['alignment'] as String?)?.toLowerCase() == 'reduced' ||
+          safetyMap?['gate_recommended'] == true ||
+          collections.contains('uncensored'),
+      safetyNotes: (safetyMap?['notes'] as String?) ?? '',
     );
   }
 
@@ -596,6 +605,26 @@ class CatalogEntry {
   /// llama.cpp/GGUF variant so an MLX package is never treated as a `.gguf`.
   final String preferredVariantId;
 
+  /// Community abliterated/uncensored builds with reduced safety alignment.
+  ///
+  /// The catalog asks clients to gate these: they are never auto-recommended
+  /// and require an explicit acknowledgement before download.
+  final bool reducedSafety;
+  final String safetyNotes;
+
+  /// Whether any variant targets a backend this build ships.
+  ///
+  /// Variants for forked runtimes (e.g. `llama.cpp-prismml`) are listed by the
+  /// catalog but cannot be loaded by the bundled llama.cpp. Legacy entries
+  /// without variants are plain llama.cpp GGUF downloads.
+  bool get hasShippedBackend =>
+      variants.isEmpty ||
+      variants.any(
+        (variant) =>
+            variant.supportsBackend('llama.cpp') ||
+            variant.supportsBackend('mlx'),
+      );
+
   ModelVariant? get preferredVariant {
     for (final variant in variants) {
       if (variant.id == preferredVariantId) return variant;
@@ -633,6 +662,77 @@ class CatalogEntry {
         capabilities.any(matches) ||
         matches(variant);
   }
+}
+
+/// One RAM band from the catalog's `device_recommendations`.
+class RecommendationBand {
+  const RecommendationBand({
+    required this.id,
+    required this.minRamGB,
+    this.label = '',
+    this.modelIds = const [],
+  });
+
+  factory RecommendationBand.fromJson(Map<String, dynamic> json) =>
+      RecommendationBand(
+        id: (json['band_id'] as String?) ?? '',
+        minRamGB: (json['min_ram_gb'] as num?)?.toDouble() ?? 0,
+        label: (json['label'] as String?) ?? '',
+        modelIds: (json['picks'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map((pick) => (pick['model_id'] as String?) ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList(growable: false),
+      );
+
+  final String id;
+  final double minRamGB;
+  final String label;
+
+  /// Ordered editorial picks; clients take the first that fits the device.
+  final List<String> modelIds;
+}
+
+/// Editorial per-device picks published alongside the model list.
+///
+/// Bands are sorted by ascending [RecommendationBand.minRamGB].
+class DeviceRecommendations {
+  const DeviceRecommendations({
+    this.mobile = const [],
+    this.computer = const [],
+  });
+
+  factory DeviceRecommendations.fromJson(Map<String, dynamic>? json) {
+    List<RecommendationBand> bands(dynamic value) =>
+        (value as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(RecommendationBand.fromJson)
+            .where((band) => band.modelIds.isNotEmpty)
+            .toList()
+          ..sort((a, b) => a.minRamGB.compareTo(b.minRamGB));
+    return DeviceRecommendations(
+      mobile: bands(json?['mobile']),
+      computer: bands(json?['computer']),
+    );
+  }
+
+  static const empty = DeviceRecommendations();
+
+  final List<RecommendationBand> mobile;
+  final List<RecommendationBand> computer;
+
+  bool get isEmpty => mobile.isEmpty && computer.isEmpty;
+
+  /// Bands for [mobileDevice] from the highest one [ramClassGB] meets down to
+  /// the smallest, so callers can fall back to lower bands.
+  List<RecommendationBand> bandsFor({
+    required bool mobileDevice,
+    required int ramClassGB,
+  }) => (mobileDevice ? mobile : computer)
+      .where((band) => band.minRamGB <= ramClassGB)
+      .toList()
+      .reversed
+      .toList(growable: false);
 }
 
 String formatBytes(int bytes) {

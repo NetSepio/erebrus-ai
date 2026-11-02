@@ -389,6 +389,156 @@ void main() {
     );
   });
 
+  group('catalog-driven recommendations', () {
+    const phone = DeviceProfile(
+      type: DeviceType.mobile,
+      ramBytes: 8 * 1024 * 1024 * 1024,
+      name: '8 GB phone',
+      platform: 'ios-arm64',
+    );
+    final small = _mobileEntry(
+      id: 'small',
+      name: 'Small',
+      parameterB: 1,
+      tier: 'mobile',
+      sortOrder: 10,
+      minimumRamGB: 1,
+      recommendedRamGB: 2,
+    );
+    final mid = _mobileEntry(
+      id: 'mid',
+      name: 'Mid',
+      parameterB: 2,
+      tier: 'mobile',
+      sortOrder: 20,
+      minimumRamGB: 2,
+      recommendedRamGB: 3,
+    );
+    final tooBig = _mobileEntry(
+      id: 'too-big',
+      name: 'Too Big',
+      parameterB: 4,
+      tier: 'mobile',
+      sortOrder: 30,
+      minimumRamGB: 6,
+      recommendedRamGB: 8,
+    );
+    final uncensored = _mobileEntry(
+      id: 'uncensored',
+      name: 'Uncensored',
+      parameterB: 2,
+      tier: 'mobile',
+      sortOrder: 5,
+      minimumRamGB: 1,
+      recommendedRamGB: 2,
+      featured: true,
+      reducedSafety: true,
+    );
+    final catalog = [small, mid, tooBig, uncensored];
+    Map<String, ModelVariant> variants(List<CatalogEntry> entries) => {
+      for (final entry in entries) entry.id: entry.variants.single,
+    };
+    List<String> ids(Recommendation r) => [
+      r.recommended.id,
+      ...r.alternatives.map((entry) => entry.id),
+    ];
+
+    test('parses reduced-safety entries and bands from the catalog', () {
+      final entry = CatalogEntry.fromJson({
+        ..._multiVariantJson(),
+        'content_safety': {
+          'alignment': 'reduced',
+          'method': 'abliterated',
+          'gate_recommended': true,
+          'notes': 'Gate before enabling.',
+        },
+      });
+      final bands = DeviceRecommendations.fromJson({
+        'mobile': [
+          {
+            'band_id': 'phone-8gb',
+            'min_ram_gb': 8,
+            'picks': [
+              {'model_id': 'mid'},
+            ],
+          },
+          {
+            'band_id': 'phone-3gb',
+            'min_ram_gb': 3,
+            'picks': [
+              {'model_id': 'small'},
+            ],
+          },
+        ],
+      });
+
+      expect(entry.reducedSafety, isTrue);
+      expect(entry.safetyNotes, 'Gate before enabling.');
+      expect(
+        bands
+            .bandsFor(mobileDevice: true, ramClassGB: 8)
+            .map((band) => band.id),
+        ['phone-8gb', 'phone-3gb'],
+      );
+      expect(bands.bandsFor(mobileDevice: false, ramClassGB: 64), isEmpty);
+    });
+
+    test('ranks uncensored models last and skips unresolved ones', () {
+      final recommendation = recommendModel(
+        phone,
+        catalog: catalog,
+        preferredVariants: variants([small, uncensored]),
+      );
+
+      expect(ids(recommendation), ['small', 'uncensored']);
+    });
+
+    test('experimental packages rank above uncensored builds', () {
+      final experimental = _mobileEntry(
+        id: 'experimental',
+        name: 'Experimental',
+        parameterB: 1,
+        tier: 'mobile',
+        sortOrder: 40,
+        minimumRamGB: 1,
+        recommendedRamGB: 2,
+        releaseChannel: 'experimental',
+      );
+      final entries = [uncensored, experimental, small];
+
+      final recommendation = recommendModel(
+        phone,
+        catalog: entries,
+        preferredVariants: variants(entries),
+      );
+
+      expect(ids(recommendation), ['small', 'experimental', 'uncensored']);
+    });
+
+    test('editorial picks lead, skip misfits and fall back to lower bands', () {
+      const editorial = DeviceRecommendations(
+        mobile: [
+          RecommendationBand(id: 'phone-3gb', minRamGB: 3, modelIds: ['small']),
+          RecommendationBand(
+            id: 'phone-8gb',
+            minRamGB: 8,
+            modelIds: ['too-big', 'uncensored', 'mid'],
+          ),
+        ],
+      );
+
+      final recommendation = recommendModel(
+        phone,
+        catalog: catalog,
+        preferredVariants: variants(catalog),
+        editorial: editorial,
+      );
+
+      // Uncensored never takes an editorial slot, only the trailing one.
+      expect(ids(recommendation), ['mid', 'small', 'uncensored']);
+    });
+  });
+
   test('Nano catalog includes a complete verified Apple MLX package', () {
     final entry = modelCatalog.first;
     final mlx = entry.variants.singleWhere(
@@ -429,6 +579,7 @@ CatalogEntry _mobileEntry({
   bool featured = false,
   String format = 'mlx',
   String releaseChannel = 'stable',
+  bool reducedSafety = false,
 }) {
   final variant = ModelVariant(
     id: '$id-$format',
@@ -459,6 +610,7 @@ CatalogEntry _mobileEntry({
     featured: featured,
     variants: [variant],
     preferredVariantId: variant.id,
+    reducedSafety: reducedSafety,
   );
 }
 
