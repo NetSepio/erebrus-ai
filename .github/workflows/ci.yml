@@ -263,6 +263,7 @@ jobs:
           # The archive checksum (enforced by CMake) and the manifest pin the source;
           # --version reports the enclosing repo's commit, so only check it runs.
           & $runtime --version 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Verify bundled sherpa-onnx runtime
         shell: pwsh
@@ -270,7 +271,6 @@ jobs:
           foreach ($dll in "sherpa-onnx-c-api.dll", "onnxruntime.dll") {
             if (!(Test-Path "build/windows/x64/runner/Release/$dll")) { throw "$dll was not bundled" }
           }
-          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package Windows app
         shell: pwsh
